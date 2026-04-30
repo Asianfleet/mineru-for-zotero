@@ -1,0 +1,188 @@
+import { assert } from "chai";
+import {
+  createMinerUClient,
+  MinerURequestError,
+} from "../src/modules/mineruClient";
+
+describe("mineruClient", function () {
+  it("submits a local PDF through the official batch upload flow", async function () {
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+    const client = createMinerUClient({
+      apiKey: "secret-token",
+      readBinary: async () => new Uint8Array([1, 2, 3]),
+      fetch: async (url, init) => {
+        calls.push({ url: String(url), init });
+        if (String(url).endsWith("/api/v4/file-urls/batch")) {
+          return jsonResponse({
+            code: 0,
+            data: {
+              batch_id: "batch-1",
+              file_urls: ["https://upload.example/a"],
+            },
+          });
+        }
+        return new Response("", { status: 200 });
+      },
+    });
+
+    const result = await client.submitPdf("C:/tmp/a.pdf");
+
+    assert.deepEqual(result, { taskID: "batch-1" });
+    assert.equal(calls[0].url, "https://mineru.net/api/v4/file-urls/batch");
+    assert.equal(calls[0].init?.method, "POST");
+    assert.equal(
+      (calls[0].init?.headers as Record<string, string>).Authorization,
+      "Bearer secret-token",
+    );
+    assert.equal(calls[1].url, "https://upload.example/a");
+    assert.equal(calls[1].init?.method, "PUT");
+  });
+
+  it("throws request errors without leaking the API key", async function () {
+    const client = createMinerUClient({
+      apiKey: "secret-token",
+      readBinary: async () => new Uint8Array([1]),
+      fetch: async () => new Response("bad", { status: 500 }),
+    });
+
+    try {
+      await client.submitPdf("C:/tmp/a.pdf");
+      assert.fail("Expected submitPdf to throw");
+    } catch (error) {
+      assert.instanceOf(error, MinerURequestError);
+      assert.include((error as Error).message, "submit");
+      assert.include((error as Error).message, "500");
+      assert.notInclude((error as Error).message, "secret-token");
+    }
+  });
+
+  it("polls batch results and reports terminal failure", async function () {
+    const client = createMinerUClient({
+      apiKey: "secret-token",
+      fetch: async () =>
+        jsonResponse({
+          code: 0,
+          data: {
+            extract_result: [{ state: "failed", err_msg: "quota exceeded" }],
+          },
+        }),
+    });
+
+    const result = await client.pollTask("batch-1");
+
+    assert.deepEqual(result, {
+      status: "failed",
+      error: "quota exceeded",
+    });
+  });
+
+  it("downloads markdown and raw json from full_zip_url", async function () {
+    const client = createMinerUClient({
+      apiKey: "secret-token",
+      fetch: async (url) => {
+        if (String(url).includes("/extract-results/")) {
+          return jsonResponse({
+            code: 0,
+            data: {
+              extract_result: [
+                {
+                  state: "done",
+                  full_zip_url: "https://download.example/full.zip",
+                },
+              ],
+            },
+          });
+        }
+        return new Response(createStoredZipBytes({
+          "full.md": "# Title",
+          "layout.json": JSON.stringify({ pages: [{ pageNo: 1 }] }),
+        }));
+      },
+    });
+
+    const result = await client.downloadResult("batch-1");
+
+    assert.equal(result.markdown, "# Title");
+    assert.deepEqual(result.rawResult, { pages: [{ pageNo: 1 }] });
+  });
+});
+
+function jsonResponse(value: unknown): Response {
+  return new Response(JSON.stringify(value), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function createStoredZipBytes(files: Record<string, string>): Uint8Array {
+  const encoder = new TextEncoder();
+  const localParts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
+  let offset = 0;
+
+  for (const [name, content] of Object.entries(files)) {
+    const nameBytes = encoder.encode(name);
+    const contentBytes = encoder.encode(content);
+    const crc = crc32(contentBytes);
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    const local = new DataView(localHeader.buffer);
+    local.setUint32(0, 0x04034b50, true);
+    local.setUint16(4, 20, true);
+    local.setUint16(8, 0, true);
+    local.setUint32(14, crc, true);
+    local.setUint32(18, contentBytes.length, true);
+    local.setUint32(22, contentBytes.length, true);
+    local.setUint16(26, nameBytes.length, true);
+    localHeader.set(nameBytes, 30);
+
+    const centralHeader = new Uint8Array(46 + nameBytes.length);
+    const central = new DataView(centralHeader.buffer);
+    central.setUint32(0, 0x02014b50, true);
+    central.setUint16(4, 20, true);
+    central.setUint16(6, 20, true);
+    central.setUint16(10, 0, true);
+    central.setUint32(16, crc, true);
+    central.setUint32(20, contentBytes.length, true);
+    central.setUint32(24, contentBytes.length, true);
+    central.setUint16(28, nameBytes.length, true);
+    central.setUint32(42, offset, true);
+    centralHeader.set(nameBytes, 46);
+
+    localParts.push(localHeader, contentBytes);
+    centralParts.push(centralHeader);
+    offset += localHeader.length + contentBytes.length;
+  }
+
+  const centralOffset = offset;
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  endView.setUint32(0, 0x06054b50, true);
+  endView.setUint16(8, Object.keys(files).length, true);
+  endView.setUint16(10, Object.keys(files).length, true);
+  endView.setUint32(12, centralSize, true);
+  endView.setUint32(16, centralOffset, true);
+
+  return concatBytes([...localParts, ...centralParts, end]);
+}
+
+function concatBytes(parts: Uint8Array[]): Uint8Array {
+  const result = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
+  return result;
+}
+
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let i = 0; i < 8; i += 1) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
