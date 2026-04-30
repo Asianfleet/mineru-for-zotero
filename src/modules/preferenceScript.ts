@@ -1,131 +1,77 @@
 import { config } from "../../package.json";
-import { getString } from "../utils/locale";
+import { createStorage } from "./storage";
+
+const STORAGE_ROOT = "ProfD/mineru-copy";
 
 export async function registerPrefsScripts(_window: Window) {
-  // This function is called when the prefs window is opened
-  // See addon/content/preferences.xhtml onpaneload
-  if (!addon.data.prefs) {
-    addon.data.prefs = {
-      window: _window,
-      columns: [
-        {
-          dataKey: "title",
-          label: getString("prefs-table-title"),
-          fixedWidth: true,
-          width: 100,
-        },
-        {
-          dataKey: "detail",
-          label: getString("prefs-table-detail"),
-        },
-      ],
-      rows: [
-        {
-          title: "Orange",
-          detail: "It's juicy",
-        },
-        {
-          title: "Banana",
-          detail: "It's sweet",
-        },
-        {
-          title: "Apple",
-          detail: "I mean the fruit APPLE",
-        },
-      ],
-    };
-  } else {
-    addon.data.prefs.window = _window;
+  const storageRoot = getMinerUStorageRoot();
+  const storage = createStorage(storageRoot);
+  const document = _window.document;
+
+  setText(
+    document,
+    `${config.addonRef}-data-folder-path`,
+    await formatL10n(_window, "pref-data-folder-path", { path: storageRoot }),
+  );
+
+  void updateParsedCount(_window, storage);
+
+  document
+    .getElementById(`${config.addonRef}-open-data-folder`)
+    ?.addEventListener("click", () => {
+      void storage.openDataFolder();
+    });
+}
+
+export function getMinerUStorageRoot(): string {
+  return STORAGE_ROOT;
+}
+
+async function updateParsedCount(
+  _window: Window,
+  storage: ReturnType<typeof createStorage>,
+): Promise<void> {
+  try {
+    const count = await storage.countReadyResults();
+    setText(
+      _window.document,
+      `${config.addonRef}-parsed-count`,
+      await formatL10n(_window, "pref-parsed-count", { count }),
+    );
+  } catch {
+    setText(
+      _window.document,
+      `${config.addonRef}-parsed-count`,
+      await formatL10n(_window, "pref-parsed-count-error"),
+    );
   }
-  updatePrefsUI();
-  bindPrefEvents();
 }
 
-async function updatePrefsUI() {
-  // You can initialize some UI elements on prefs window
-  // with addon.data.prefs.window.document
-  // Or bind some events to the elements
-  const renderLock = ztoolkit.getGlobal("Zotero").Promise.defer();
-  if (addon.data.prefs?.window == undefined) return;
-  const tableHelper = new ztoolkit.VirtualizedTable(addon.data.prefs?.window)
-    .setContainerId(`${config.addonRef}-table-container`)
-    .setProp({
-      id: `${config.addonRef}-prefs-table`,
-      // Do not use setLocale, as it modifies the Zotero.Intl.strings
-      // Set locales directly to columns
-      columns: addon.data.prefs?.columns,
-      showHeader: true,
-      multiSelect: true,
-      staticColumns: true,
-      disableFontSizeScaling: true,
-    })
-    .setProp("getRowCount", () => addon.data.prefs?.rows.length || 0)
-    .setProp(
-      "getRowData",
-      (index) =>
-        addon.data.prefs?.rows[index] || {
-          title: "no data",
-          detail: "no data",
-        },
-    )
-    // Show a progress window when selection changes
-    .setProp("onSelectionChange", (selection) => {
-      new ztoolkit.ProgressWindow(config.addonName)
-        .createLine({
-          text: `Selected line: ${addon.data.prefs?.rows
-            .filter((v, i) => selection.isSelected(i))
-            .map((row) => row.title)
-            .join(",")}`,
-          progress: 100,
-        })
-        .show();
-    })
-    // When pressing delete, delete selected line and refresh table.
-    // Returning false to prevent default event.
-    .setProp("onKeyDown", (event: KeyboardEvent) => {
-      if (event.key == "Delete" || (Zotero.isMac && event.key == "Backspace")) {
-        addon.data.prefs!.rows =
-          addon.data.prefs?.rows.filter(
-            (v, i) => !tableHelper.treeInstance.selection.isSelected(i),
-          ) || [];
-        tableHelper.render();
-        return false;
-      }
-      return true;
-    })
-    // For find-as-you-type
-    .setProp(
-      "getRowString",
-      (index) => addon.data.prefs?.rows[index].title || "",
-    )
-    // Render the table.
-    .render(-1, () => {
-      renderLock.resolve();
-    });
-  await renderLock.promise;
-  ztoolkit.log("Preference table rendered!");
+async function formatL10n(
+  _window: Window,
+  id: string,
+  args?: Record<string, string | number>,
+): Promise<string> {
+  const l10n = _window.document.l10n;
+  if (l10n?.formatValue) {
+    const value = await l10n.formatValue(id, args);
+    if (value) {
+      return value;
+    }
+  }
+
+  if (id === "pref-data-folder-path") {
+    return `Data folder: ${args?.path ?? ""}`;
+  }
+  if (id === "pref-parsed-count") {
+    return `Parsed PDFs: ${args?.count ?? 0}`;
+  }
+  return "Parsed PDFs: failed to read";
 }
 
-function bindPrefEvents() {
-  addon.data
-    .prefs!.window.document?.querySelector(
-      `#zotero-prefpane-${config.addonRef}-enable`,
-    )
-    ?.addEventListener("command", (e: Event) => {
-      ztoolkit.log(e);
-      addon.data.prefs!.window.alert(
-        `Successfully changed to ${(e.target as XUL.Checkbox).checked}!`,
-      );
-    });
-
-  addon.data
-    .prefs!.window.document?.querySelector(
-      `#zotero-prefpane-${config.addonRef}-input`,
-    )
-    ?.addEventListener("change", (e: Event) => {
-      ztoolkit.log(e);
-      addon.data.prefs!.window.alert(
-        `Successfully changed to ${(e.target as HTMLInputElement).value}!`,
-      );
-    });
+function setText(document: Document, id: string, value: string): void {
+  const element = document.getElementById(id);
+  if (element) {
+    element.textContent = value;
+  }
 }

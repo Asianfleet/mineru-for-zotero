@@ -34,3 +34,12 @@ export function setPref<K extends keyof PluginPrefsMap>(
 export function clearPref(key: string) {
   return Zotero.Prefs.clear(`${PREFS_PREFIX}.${key}`, true);
 }
+
+export function getApiKey(): string {
+  const value = getPref("apiKey");
+  return typeof value === "string" ? value : "";
+}
+
+export function setApiKey(value: string) {
+  return setPref("apiKey", value);
+}

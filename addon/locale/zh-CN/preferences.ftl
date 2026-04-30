@@ -1,5 +1,9 @@
 pref-title = MinerU for Zotero
-pref-enable =
-    .label = 开启
-pref-input = 输入
+pref-api-key = MinerU API Key
+pref-api-key-help = API Key 仅保存在本机 Zotero 首选项中，用于调用 MinerU API。
+pref-data-folder-title = 数据目录
+pref-open-data-folder = 打开数据文件夹
+pref-parsed-count = 已解析 PDF：{ $count }
+pref-parsed-count-error = 已解析 PDF：读取失败
+pref-data-folder-path = 数据目录：{ $path }
 pref-help = { $name } Build { $version } { $time }

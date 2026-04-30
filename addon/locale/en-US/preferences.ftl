@@ -1,5 +1,9 @@
 pref-title = MinerU for Zotero
-pref-enable =
-    .label = Enable
-pref-input = Input
+pref-api-key = MinerU API Key
+pref-api-key-help = The API Key is stored only in local Zotero preferences and used to call the MinerU API.
+pref-data-folder-title = Data Folder
+pref-open-data-folder = Open Data Folder
+pref-parsed-count = Parsed PDFs: { $count }
+pref-parsed-count-error = Parsed PDFs: failed to read
+pref-data-folder-path = Data folder: { $path }
 pref-help = { $name } Build { $version } { $time }
