@@ -1,0 +1,11 @@
+startup-begin = Addon is loading
+startup-finish = Addon is ready
+menuitem-label = MinerU for Zotero: Helper Examples
+menupopup-label = MinerU for Zotero: Menupopup
+menuitem-submenulabel = MinerU for Zotero
+menuitem-filemenulabel = MinerU for Zotero: File Menuitem
+prefs-title = MinerU for Zotero
+prefs-table-title = Title
+prefs-table-detail = Detail
+tabpanel-lib-tab-label = Lib Tab
+tabpanel-reader-tab-label = Reader Tab

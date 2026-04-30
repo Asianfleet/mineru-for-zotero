@@ -1,0 +1,11 @@
+item-section-example1-head-text =
+    .label = MinerU for Zotero: Item Info
+item-section-example1-sidenav-tooltip =
+    .tooltiptext = This is MinerU for Zotero section (item info)
+item-section-example2-head-text =
+    .label = MinerU for Zotero: Reader [{$status}]
+item-section-example2-sidenav-tooltip =
+    .tooltiptext = This is MinerU for Zotero section (reader)
+item-section-example2-button-tooltip =
+    .tooltiptext = Unregister this section
+item-info-row-example-label = Example Row

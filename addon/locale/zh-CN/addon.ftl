@@ -1,0 +1,11 @@
+startup-begin = 插件加载中
+startup-finish = 插件已就绪
+menuitem-label = MinerU for Zotero: 帮助工具样例
+menupopup-label = MinerU for Zotero: 弹出菜单
+menuitem-submenulabel = MinerU for Zotero：子菜单
+menuitem-filemenulabel = MinerU for Zotero: 文件菜单
+prefs-title = MinerU for Zotero
+prefs-table-title = 标题
+prefs-table-detail = 详情
+tabpanel-lib-tab-label = 库标签
+tabpanel-reader-tab-label = 阅读器标签
