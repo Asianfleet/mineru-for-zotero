@@ -1,0 +1,53 @@
+# Repository Guidelines
+
+## Project Structure & Module Organization
+
+This repository is a Zotero 7 plugin built with TypeScript and
+`zotero-plugin-scaffold`. Runtime source lives in `src/`: `index.ts` is the
+entry point, `hooks.ts` handles lifecycle behavior, `modules/` contains feature
+modules, and `utils/` contains shared helpers. Static plugin assets and Zotero
+metadata live in `addon/`, including `manifest.json`, `prefs.js`, XUL/XHTML/CSS
+under `addon/content/`, icons, and Fluent locale files under
+`addon/locale/<locale>/`. Type declarations live in `typings/`. Tests live in
+`test/` and use `*.test.ts` naming. Generated build output is under
+`.scaffold/build/` and should not be edited manually.
+
+## Build, Test, and Development Commands
+
+- `npm start`: runs `zotero-plugin serve`, builds in development mode, launches
+  Zotero, and watches `src/**` and `addon/**` for hot reload.
+- `npm run build`: creates a production plugin build with
+  `zotero-plugin build`, then runs `tsc --noEmit` for type checking.
+- `npm test`: runs the scaffold test suite.
+- `npm run lint:check`: checks Prettier formatting and ESLint rules.
+- `npm run lint:fix`: formats files and applies safe ESLint fixes.
+- `npm run release`: starts the configured release flow for versioning,
+  packaging, tags, and GitHub release assets.
+
+## Coding Style & Naming Conventions
+
+Use TypeScript ES modules and follow the existing two-space indentation. Prettier
+is configured with `printWidth: 80`, `tabWidth: 2`, and LF line endings. Keep
+module filenames descriptive and lower camel case where the project already does
+so, for example `preferenceScript.ts` or `mineruClient.ts`. Prefer small modules
+with explicit exported functions or classes over broad utility files. Locale keys
+belong in Fluent files, not inline UI strings.
+
+## Testing Guidelines
+
+Tests use Mocha and Chai through `zotero-plugin test`. Place unit tests in
+`test/` with names like `featureName.test.ts`, and keep shared fixtures in
+clearly named helper files such as `domainFixtures.ts`. Add or update tests for
+parsing, formatting, storage, client boundaries, and lifecycle behavior when
+those areas change. Run `npm test` plus `npm run lint:check` before opening a
+pull request.
+
+## Commit & Pull Request Guidelines
+
+Recent history follows Conventional Commits, such as
+`feat(mineru): add official api client boundary` and
+`test(mineru): add domain formatter normalizer coverage`. Use a short
+imperative subject with a meaningful scope. Pull requests should describe the
+behavioral change, list test results, link related issues, and include
+screenshots or recordings for visible Zotero UI changes. Do not commit local
+secrets from `.env`; use `.env.example` for documented configuration.
