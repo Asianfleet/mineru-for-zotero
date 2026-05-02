@@ -42,6 +42,29 @@ parsing, formatting, storage, client boundaries, and lifecycle behavior when
 those areas change. Run `npm test` plus `npm run lint:check` before opening a
 pull request.
 
+## Project Notes
+
+- When debugging the MinerU parsing pipeline, do not infer API behavior from UI
+  messages alone. Use tests or diagnostics to verify each boundary: upload,
+  task submission, polling, download, decompression, raw result schema, and box
+  normalization.
+- MinerU box data is not always stored in `pages[].blocks`. Real results may use
+  `pdf_info[].para_blocks` or `pdf_info[].layout_dets`; page size may be
+  `page_size`; regions may be `bbox` or `poly`; text may be under
+  `lines[].spans[].content`. For "missing box information" errors, inspect the
+  saved `mineru-result.json` and the schemas supported by the normalizer first.
+- Diagnose MinerU result ZIP download issues with network evidence. In the
+  Zotero/Firefox runtime, `fetch`, `Zotero.HTTP.request`, and
+  `Zotero.File.download` may behave differently for CDN URLs. If the built-in
+  network path returns an empty response, record the URL, byte count, response
+  headers, and verify any fallback with a reproducible download path.
+- Keep MinerU presigned URL requests as close to the signed request as possible.
+  Prefer a bare XHR PUT for uploads to presigned URLs so extra headers do not
+  change the signature calculation and trigger `SignatureDoesNotMatch`. After
+  downloading a ZIP locally, prefer ZIP readers available in the Zotero runtime,
+  such as `nsIZipReader`; do not assume `DecompressionStream("deflate-raw")` is
+  available in the target runtime.
+
 ## Commit & Pull Request Guidelines
 
 Recent history follows Conventional Commits, such as
