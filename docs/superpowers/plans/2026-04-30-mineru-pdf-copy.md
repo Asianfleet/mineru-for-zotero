@@ -1,12 +1,20 @@
 # MinerU PDF Box 快速复制 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. 若派发子代理，必须按项目规约只选择 `gpt-5.4` 模型，并按任务复杂度选择推理强度。
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. 若派发子代理，必须按项目规约只选择 `gpt-5.5` 模型，并按任务复杂度选择推理强度。
 
 **Goal:** 在 Zotero 7 插件中接入 MinerU PDF 解析，并在 PDF reader pane 中基于解析出的 box 快速复制 Markdown 内容。
 
 **Architecture:** 先把模板示例代码从生命周期里移除，建立 `storage`、`boxNormalizer`、`copyFormatter`、`mineruClient`、`parseManager`、`readerOverlay`、`settings` 七个边界清晰的模块。纯逻辑模块先用自动化测试锁住行为，Zotero UI 与 reader overlay 按可手动验证的垂直切片推进，每个关键 UI 切片结束后停止等待用户手动测试。
 
 **Tech Stack:** Zotero 7 plugin template、TypeScript、zotero-plugin-toolkit、Zotero prefs、Zotero plugin data directory、MinerU 官方 API、Zotero reader DOM。
+
+## 当前进度（2026-05-02）
+
+- Task 1-5 已完成并已有对应提交；Task 6 的右键菜单解析主链路已跑通，用户重试后已提示“解析成功”。
+- 为打通 Task 6，已在 MinerU client 边界补齐 Zotero 运行时下的真实网络兼容：裸 XHR 上传 presigned URL、Zotero HTTP JSON 请求、XHR/Zotero HTTP 下载 fallback、Windows `curl.exe` 文件下载 fallback、`nsIZipReader` 本地 ZIP 读取、空响应重试与诊断信息。
+- 为修复“解析结果缺少 box 信息”，`boxNormalizer` 已扩展支持真实 MinerU 结果结构：`pdf_info[].para_blocks`、`pdf_info[].layout_dets`、`page_size`、`poly`、`lines[].spans[].content` 和 `interline_equation`。
+- Task 6 仍有两个计划细项未完全收口：boxes 为空时还未保存 failed manifest；重复解析确认目前使用系统 `confirm` 的 OK/Cancel，而不是计划中的自定义“使用已有结果 / 重新解析并覆盖”按钮。
+- Task 7-9 的 reader toolbar、overlay 渲染、多选复制尚未开始；Task 10 仅提前完成了部分真实解析错误处理和自动化验证。
 
 ---
 
@@ -77,7 +85,7 @@
 - Create: `test/copyFormatter.test.ts`
 - Create: `test/boxNormalizer.test.ts`
 
-- [ ] **Step 1: 写共享领域类型**
+- [x] **Step 1: 写共享领域类型**
 
 `src/modules/domain.ts` 内容结构：
 
@@ -124,7 +132,7 @@ export type OverlayMode = "all" | "hover" | "off";
 export type FormulaCopyMode = "with-dollar" | "without-dollar";
 ```
 
-- [ ] **Step 2: 写 copy formatter 失败测试**
+- [x] **Step 2: 写 copy formatter 失败测试**
 
 `test/copyFormatter.test.ts` 覆盖：
 
@@ -155,7 +163,7 @@ describe("copyFormatter", function () {
 });
 ```
 
-- [ ] **Step 3: 写 normalizer 失败测试**
+- [x] **Step 3: 写 normalizer 失败测试**
 
 `test/boxNormalizer.test.ts` 覆盖：
 
@@ -190,7 +198,7 @@ describe("boxNormalizer", function () {
 });
 ```
 
-- [ ] **Step 4: 运行测试，确认失败**
+- [x] **Step 4: 运行测试，确认失败**
 
 Run:
 
@@ -200,7 +208,7 @@ Run:
 
 Expected: FAIL，错误包含 `Cannot find module '../src/modules/copyFormatter'` 或 `Cannot find module '../src/modules/boxNormalizer'`。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/modules/domain.ts test/domainFixtures.ts test/copyFormatter.test.ts test/boxNormalizer.test.ts
@@ -214,7 +222,7 @@ git commit -m "test(mineru): add domain formatter normalizer coverage"
 - Create: `src/modules/boxNormalizer.ts`
 - Modify: `test/domainFixtures.ts`
 
-- [ ] **Step 1: 写测试 fixture**
+- [x] **Step 1: 写测试 fixture**
 
 `test/domainFixtures.ts` 放入固定 page 尺寸和三类 box：
 
@@ -264,7 +272,7 @@ export const normalizedBoxes: NormalizedBox[] = [
 ];
 ```
 
-- [ ] **Step 2: 实现 copyFormatter**
+- [x] **Step 2: 实现 copyFormatter**
 
 `src/modules/copyFormatter.ts`：
 
@@ -285,7 +293,13 @@ export function formatFormulaForCopy(formula: string, mode: FormulaCopyMode): st
 }
 ```
 
-- [ ] **Step 3: 实现 boxNormalizer**
+- [x] **Step 3: 实现 boxNormalizer**
+
+执行补充（2026-05-02）：计划中的初版 normalizer 已完成后，又根据真实 MinerU 返回结果补充了两个回归测试和实现：
+
+- 支持 `pdf_info[].para_blocks`，从 `lines[].spans[].content` 提取 Markdown/公式内容。
+- 支持 `pdf_info[].layout_dets`，从 `category_type` 映射类型，从 `poly` 计算 bbox。
+- 支持 `page_size` 页尺寸、`page_idx + 1` 页码转换、`interline_equation`/`inline_equation` 到 `formula` 的类型映射。
 
 `src/modules/boxNormalizer.ts` 先兼容计划 fixture 和常见 MinerU JSON 层级：
 
@@ -360,7 +374,7 @@ function clamp01(value: number): number {
 }
 ```
 
-- [ ] **Step 4: 运行测试，确认通过**
+- [x] **Step 4: 运行测试，确认通过**
 
 Run:
 
@@ -370,7 +384,7 @@ Run:
 
 Expected: PASS。
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add src/modules/copyFormatter.ts src/modules/boxNormalizer.ts test/domainFixtures.ts
@@ -384,7 +398,7 @@ git commit -m "feat(mineru): normalize boxes and format copied markdown"
 - Create: `test/storage.test.ts`
 - Modify: `src/modules/domain.ts`
 
-- [ ] **Step 1: 写 storage 失败测试**
+- [x] **Step 1: 写 storage 失败测试**
 
 `test/storage.test.ts` 覆盖稳定目录名、manifest 写入读取、ready 判断和覆盖时旧结果保留：
 
@@ -414,7 +428,7 @@ describe("storage", function () {
 });
 ```
 
-- [ ] **Step 2: 实现 storage API**
+- [x] **Step 2: 实现 storage API**
 
 `src/modules/storage.ts` 对外接口固定为：
 
@@ -447,7 +461,7 @@ export interface StorageAdapter {
 5. 将临时目录移动为正式目录。
 6. 清理旧备份；清理失败只记录日志。
 
-- [ ] **Step 3: 运行测试**
+- [x] **Step 3: 运行测试**
 
 Run:
 
@@ -457,7 +471,7 @@ Run:
 
 Expected: PASS。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```powershell
 git add src/modules/storage.ts test/storage.test.ts src/modules/domain.ts
@@ -475,7 +489,7 @@ git commit -m "feat(mineru): persist parsed attachment results"
 - Modify: `src/modules/preferenceScript.ts`
 - Modify: `src/utils/prefs.ts`
 
-- [ ] **Step 1: 替换 prefs schema**
+- [x] **Step 1: 替换 prefs schema**
 
 `typings/prefs.d.ts` 中 `PluginPrefsMap` 改为：
 
@@ -491,7 +505,7 @@ PluginPrefsMap: {
 pref("apiKey", "");
 ```
 
-- [ ] **Step 2: 更新设置页 XHTML**
+- [x] **Step 2: 更新设置页 XHTML**
 
 保留 `onload`，页面包含：
 
@@ -506,7 +520,9 @@ pref("apiKey", "");
 <html:div id="__addonRef__-parsed-count" />
 ```
 
-- [ ] **Step 3: 实现设置页脚本**
+- [x] **Step 3: 实现设置页脚本**
+
+执行补充：设置页实现过程中已额外修复 Zotero 9 兼容问题、偏好页左侧不显示插件项的问题、数据目录按钮无文字的问题，以及提示消息无文字的问题。`mainWindow.ftl` 已加入 locale 初始化范围，避免 `ProgressWindow` 解析提示为空。
 
 `registerPrefsScripts(window)` 中：
 
@@ -515,7 +531,7 @@ pref("apiKey", "");
 3. 给 `#__addonRef__-open-data-folder` 绑定 click，调用 `storage.openDataFolder()`。
 4. 不在日志或 alert 中输出 API Key。
 
-- [ ] **Step 4: 构建验证**
+- [x] **Step 4: 构建验证**
 
 Run:
 
@@ -525,7 +541,7 @@ Run:
 
 Expected: exit code 0。
 
-- [ ] **Step 5: STOP: 手动测试检查点 A**
+- [x] **Step 5: STOP: 手动测试检查点 A**
 
 停止开发并请用户测试：
 
@@ -537,7 +553,7 @@ Expected: exit code 0。
 
 用户确认后才能继续 Task 5。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add typings/prefs.d.ts addon/prefs.js addon/content/preferences.xhtml addon/locale/zh-CN/preferences.ftl addon/locale/en-US/preferences.ftl src/modules/preferenceScript.ts src/utils/prefs.ts
@@ -550,7 +566,7 @@ git commit -m "feat(settings): add MinerU API key and data folder controls"
 - Create: `src/modules/mineruClient.ts`
 - Modify: `src/modules/domain.ts`
 
-- [ ] **Step 1: 复核官方文档并锁定 adapter 字段**
+- [x] **Step 1: 复核官方文档并锁定 adapter 字段**
 
 打开 MinerU 官方 API 文档，记录到 `src/modules/mineruClient.ts` 顶部注释：
 
@@ -568,7 +584,16 @@ export interface MinerUClient {
 }
 ```
 
-- [ ] **Step 2: 实现 API Key 注入与错误收敛**
+- [x] **Step 2: 实现 API Key 注入与错误收敛**
+
+执行补充：真实联调中针对 MinerU v4 和 Zotero/Firefox 运行时补充了以下修复：
+
+- 提交体补齐 `enable_table: true` 和 `model_version: "vlm"`，继续保留 `enable_formula`、`language`、`files`。
+- 上传 presigned URL 改为默认裸 XHR PUT，不附加额外 request headers，避免 `SignatureDoesNotMatch`。
+- 默认 JSON 请求优先走 `Zotero.HTTP.request` adapter；测试注入 `fetch` 时仍保留 fetch 路径。
+- HTTP 错误会摘要返回体中的 XML `Code`/`Message`，用于定位 403、签名错误等问题，同时不泄漏 API Key。
+- 下载 ZIP 时按顺序尝试直接 XHR、Zotero HTTP fallback、文件下载 fallback；Windows 下文件下载可通过 `curl.exe`，下载到本地后优先用 `nsIZipReader` 读取 ZIP。
+- 对空响应 ZIP 增加重试和诊断信息，错误信息包含安全 URL、字节数和 fallback 结果。
 
 `createMinerUClient({ apiKey })`：
 
@@ -577,7 +602,7 @@ export interface MinerUClient {
 3. HTTP 非 2xx 抛出 `MinerURequestError`，message 包含阶段名和 status code。
 4. MinerU 返回业务失败时抛出 `MinerUTaskError`，message 使用官方返回的错误摘要。
 
-- [ ] **Step 3: 构建验证**
+- [x] **Step 3: 构建验证**
 
 Run:
 
@@ -587,7 +612,7 @@ Run:
 
 Expected: exit code 0。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```powershell
 git add src/modules/mineruClient.ts src/modules/domain.ts
@@ -603,6 +628,8 @@ git commit -m "feat(mineru): add official api client boundary"
 - Modify: `addon/locale/en-US/mainWindow.ftl`
 
 - [ ] **Step 1: 实现 attachment 解析编排**
+
+进度说明（2026-05-02）：主流程已实现并经真实 Zotero/MinerU 重试跑通：selection 解析 PDF attachment、API Key 校验、提交、轮询、下载、normalizer、写入 storage、成功提示均已工作。当前仍未完全满足本 step 的计划细项：boxes 为空时尚未写入 failed manifest，只提示“解析结果缺少 box 信息”后返回；重复解析确认使用系统 `confirm`，按钮文案不是计划中的自定义双按钮。
 
 `parseManager` 对外暴露：
 
@@ -623,7 +650,9 @@ export async function parseAttachment(attachment: Zotero.Item, options?: { force
 8. boxes 为空时保存原始结果和失败 manifest，提示“解析结果缺少 box 信息”。
 9. boxes 非空时调用 `storage.writeResult()`。
 
-- [ ] **Step 2: 注册右键菜单**
+- [x] **Step 2: 注册右键菜单**
+
+执行补充：最终实现未使用 `ztoolkit.Menu.register("item", ...)`，而是在 `onMainWindowLoad` 中直接向 `zotero-itemmenu` 注入 XUL `menuitem`。这样避开了当前模板/Zotero 运行时下菜单注册不稳定的问题，并通过父菜单 `popupshowing` 动态更新 disabled 状态。后续冗余审查已删除无效的 `menuitem` 自身 `popupshowing` 监听。
 
 `hooks.ts` 的 `onMainWindowLoad` 注册 item menu：
 
@@ -642,7 +671,7 @@ ztoolkit.Menu.register("item", {
 - selection 是普通条目但没有 PDF attachment 时 disabled。
 - PDF attachment 或带 PDF attachment 的普通条目时可点击。
 
-- [ ] **Step 3: 删除模板示例注册**
+- [x] **Step 3: 删除模板示例注册**
 
 `hooks.ts` 删除 `BasicExampleFactory`、`UIExampleFactory`、`PromptExampleFactory`、`KeyExampleFactory`、`HelperExampleFactory` 的 import 和调用。保留：
 
@@ -652,7 +681,7 @@ ztoolkit.Menu.register("item", {
 - 插件 initialized 标记
 - `ztoolkit.unregisterAll()`
 
-- [ ] **Step 4: 构建验证**
+- [x] **Step 4: 构建验证**
 
 Run:
 
@@ -662,7 +691,9 @@ Run:
 
 Expected: exit code 0。
 
-- [ ] **Step 5: STOP: 手动测试检查点 B**
+- [x] **Step 5: STOP: 手动测试检查点 B**
+
+手动测试记录：用户已确认右键菜单入口出现，并在多轮网络/下载/解压/normalizer 修复后，重试提示“解析成功”。未覆盖项记录在 Step 1 的剩余缺口中。
 
 停止开发并请用户测试：
 
@@ -946,6 +977,8 @@ git commit -m "feat(reader): support multi-select box copying"
 - Modify: `src/modules/storage.ts`
 - Modify: `addon/locale/zh-CN/mainWindow.ftl`
 - Modify: `addon/locale/en-US/mainWindow.ftl`
+
+当前状态（2026-05-02）：本任务尚未整体开始；其中 MinerU client 的真实下载、解压、错误摘要、空响应重试和真实 API 解析成功路径已在 Task 5/6 联调中提前完成。reader overlay、box 复制、重新解析失败保留旧结果、boxes 为空写 failed manifest 等完整闭环仍待实现或补齐。
 
 - [ ] **Step 1: 完成错误路径提示**
 
