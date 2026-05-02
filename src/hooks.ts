@@ -1,4 +1,5 @@
 import { getString, initLocale } from "./utils/locale";
+import { parseSelectedAttachment, selectedHasPDFAttachment } from "./modules/parseManager";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { createZToolkit } from "./utils/ztoolkit";
 
@@ -29,6 +30,8 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   win.MozXULElement.insertFTLIfNeeded(
     `${addon.data.config.addonRef}-mainWindow.ftl`,
   );
+
+  registerItemMenu(win);
 }
 
 function registerPreferencePane(): void {
@@ -38,6 +41,34 @@ function registerPreferencePane(): void {
     label: getString("prefs-title"),
     image: `chrome://${addon.data.config.addonRef}/content/icons/favicon.png`,
   });
+}
+
+function registerItemMenu(win: _ZoteroTypes.MainWindow): void {
+  const doc = win.document;
+  const menu = doc.getElementById("zotero-itemmenu");
+  if (!menu || doc.getElementById("zotero-itemmenu-mineru-parse-pdf")) {
+    return;
+  }
+
+  const menuItem = doc.createXULElement("menuitem");
+  menuItem.id = "zotero-itemmenu-mineru-parse-pdf";
+  menuItem.setAttribute("label", getString("parse-menuitem-label"));
+  menuItem.addEventListener("command", () => {
+    void parseSelectedAttachment();
+  });
+  menu.appendChild(menuItem);
+  menu.addEventListener("popupshowing", () => {
+    void updateParseMenuItemState(menuItem);
+  });
+}
+
+async function updateParseMenuItemState(menuItem: Element): Promise<void> {
+  const enabled = await selectedHasPDFAttachment();
+  if (enabled) {
+    menuItem.removeAttribute("disabled");
+  } else {
+    menuItem.setAttribute("disabled", "true");
+  }
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {

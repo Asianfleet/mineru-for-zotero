@@ -2,6 +2,7 @@ import { assert } from "chai";
 import {
   createMinerUClient,
   MinerURequestError,
+  MinerUTaskError,
 } from "../src/modules/mineruClient";
 
 describe("mineruClient", function () {
@@ -30,12 +31,111 @@ describe("mineruClient", function () {
     assert.deepEqual(result, { taskID: "batch-1" });
     assert.equal(calls[0].url, "https://mineru.net/api/v4/file-urls/batch");
     assert.equal(calls[0].init?.method, "POST");
+    assert.deepInclude(JSON.parse(String(calls[0].init?.body)), {
+      enable_formula: true,
+      enable_table: true,
+      language: "auto",
+      model_version: "vlm",
+    });
     assert.equal(
       (calls[0].init?.headers as Record<string, string>).Authorization,
       "Bearer secret-token",
     );
     assert.equal(calls[1].url, "https://upload.example/a");
     assert.equal(calls[1].init?.method, "PUT");
+  });
+
+  it("uploads binary views through direct XHR without request headers", async function () {
+    const originalRequest = Zotero.HTTP.request;
+    const originalXMLHttpRequest = globalThis.XMLHttpRequest;
+    const calls: Array<{
+      method: string;
+      url: string;
+      body: string | Uint8Array | undefined;
+      headers: Record<string, string> | undefined;
+    }> = [];
+    const uploadCalls: Array<{
+      method: string;
+      url: string;
+      body: ArrayBuffer | ArrayBufferView | null;
+      headers: Record<string, string>;
+    }> = [];
+    (Zotero.HTTP as typeof Zotero.HTTP & {
+      request: typeof Zotero.HTTP.request;
+    }).request = async (method, url, options) => {
+      if (method === "PUT") {
+        throw new Error("PUT upload should bypass Zotero.HTTP.request");
+      }
+      calls.push({ method, url, body: options?.body, headers: options?.headers });
+      return xhrResponse(
+        method === "POST"
+          ? {
+              code: 0,
+              data: {
+                batch_id: "batch-1",
+                file_urls: ["https://upload.example/a"],
+              },
+            }
+          : "",
+      );
+    };
+    globalThis.XMLHttpRequest = class {
+      status = 200;
+      statusText = "OK";
+      response = new ArrayBuffer(0);
+      responseType = "";
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      private method = "";
+      private url = "";
+      private headers: Record<string, string> = {};
+
+      open(method: string, url: string) {
+        this.method = method;
+        this.url = url;
+      }
+
+      setRequestHeader(name: string, value: string) {
+        this.headers[name] = value;
+      }
+
+      getAllResponseHeaders() {
+        return "";
+      }
+
+      send(body?: Document | XMLHttpRequestBodyInit | null) {
+        uploadCalls.push({
+          method: this.method,
+          url: this.url,
+          body: body as ArrayBuffer | ArrayBufferView | null,
+          headers: this.headers,
+        });
+        this.onload?.();
+      }
+    } as unknown as typeof XMLHttpRequest;
+
+    try {
+      const client = createMinerUClient({
+        apiKey: "secret-token",
+        readBinary: async () =>
+          new DataView(new Uint8Array([1, 2, 3]).buffer) as unknown as Uint8Array,
+      });
+
+      const result = await client.submitPdf("C:/tmp/a.pdf");
+
+      assert.deepEqual(result, { taskID: "batch-1" });
+      assert.equal(uploadCalls[0].method, "PUT");
+      assert.equal(uploadCalls[0].url, "https://upload.example/a");
+      assert.deepEqual(uploadCalls[0].headers, {});
+      assert.deepEqual(Array.from(new Uint8Array(uploadCalls[0].body as ArrayBuffer)), [
+        1, 2, 3,
+      ]);
+    } finally {
+      (Zotero.HTTP as typeof Zotero.HTTP & {
+        request: typeof Zotero.HTTP.request;
+      }).request = originalRequest;
+      globalThis.XMLHttpRequest = originalXMLHttpRequest;
+    }
   });
 
   it("throws request errors without leaking the API key", async function () {
@@ -52,6 +152,53 @@ describe("mineruClient", function () {
       assert.instanceOf(error, MinerURequestError);
       assert.include((error as Error).message, "submit");
       assert.include((error as Error).message, "500");
+      assert.notInclude((error as Error).message, "secret-token");
+    }
+  });
+
+  it("includes response body summaries in request errors", async function () {
+    const client = createMinerUClient({
+      apiKey: "secret-token",
+      readBinary: async () => new Uint8Array([1]),
+      fetch: async () =>
+        new Response(
+          "<Error><Code>SignatureDoesNotMatch</Code><Message>bad signature</Message></Error>",
+          { status: 403 },
+        ),
+    });
+
+    try {
+      await client.submitPdf("C:/tmp/a.pdf");
+      assert.fail("Expected submitPdf to throw");
+    } catch (error) {
+      assert.instanceOf(error, MinerURequestError);
+      assert.include((error as Error).message, "submit");
+      assert.include((error as Error).message, "403");
+      assert.include((error as Error).message, "SignatureDoesNotMatch");
+      assert.include((error as Error).message, "bad signature");
+      assert.notInclude((error as Error).message, "secret-token");
+    }
+  });
+
+  it("wraps network errors with request stage without leaking the API key", async function () {
+    const client = createMinerUClient({
+      apiKey: "secret-token",
+      readBinary: async () => new Uint8Array([1]),
+      fetch: async () => {
+        throw new TypeError("NetworkError when attempting to fetch resource.");
+      },
+    });
+
+    try {
+      await client.submitPdf("C:/tmp/a.pdf");
+      assert.fail("Expected submitPdf to throw");
+    } catch (error) {
+      assert.instanceOf(error, MinerURequestError);
+      assert.include((error as Error).message, "submit");
+      assert.include(
+        (error as Error).message,
+        "NetworkError when attempting to fetch resource.",
+      );
       assert.notInclude((error as Error).message, "secret-token");
     }
   });
@@ -105,6 +252,283 @@ describe("mineruClient", function () {
     assert.equal(result.markdown, "# Title");
     assert.deepEqual(result.rawResult, { pages: [{ pageNo: 1 }] });
   });
+
+  it("downloads signed result URLs through direct XHR", async function () {
+    const originalRequest = Zotero.HTTP.request;
+    const originalXMLHttpRequest = globalThis.XMLHttpRequest;
+    const downloadCalls: Array<{
+      method: string;
+      url: string;
+      headers: Record<string, string>;
+    }> = [];
+    (Zotero.HTTP as typeof Zotero.HTTP & {
+      request: typeof Zotero.HTTP.request;
+    }).request = async (method, url) => {
+      if (String(url).includes("/extract-results/")) {
+        return xhrResponse({
+          code: 0,
+          data: {
+            extract_result: [
+              {
+                state: "done",
+                full_zip_url: "https://download.example/full.zip",
+              },
+            ],
+          },
+        });
+      }
+      throw new Error("Signed result download should bypass Zotero.HTTP.request");
+    };
+    globalThis.XMLHttpRequest = class {
+      status = 0;
+      statusText = "OK";
+      response = createStoredZipBytes({
+        "full.md": "# Title",
+        "layout.json": JSON.stringify({ pages: [{ pageNo: 1 }] }),
+      }).buffer;
+      responseType = "";
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      private method = "";
+      private url = "";
+      private headers: Record<string, string> = {};
+
+      open(method: string, url: string) {
+        this.method = method;
+        this.url = url;
+      }
+
+      setRequestHeader(name: string, value: string) {
+        this.headers[name] = value;
+      }
+
+      getAllResponseHeaders() {
+        return "";
+      }
+
+      send() {
+        downloadCalls.push({
+          method: this.method,
+          url: this.url,
+          headers: this.headers,
+        });
+        this.onload?.();
+      }
+    } as unknown as typeof XMLHttpRequest;
+
+    try {
+      const client = createMinerUClient({ apiKey: "secret-token" });
+      const result = await client.downloadResult("batch-1");
+
+      assert.equal(result.markdown, "# Title");
+      assert.deepEqual(result.rawResult, { pages: [{ pageNo: 1 }] });
+      assert.deepEqual(downloadCalls, [
+        { method: "GET", url: "https://download.example/full.zip", headers: {} },
+      ]);
+    } finally {
+      (Zotero.HTTP as typeof Zotero.HTTP & {
+        request: typeof Zotero.HTTP.request;
+      }).request = originalRequest;
+      globalThis.XMLHttpRequest = originalXMLHttpRequest;
+    }
+  });
+
+  it("falls back to Zotero HTTP when direct XHR download fails", async function () {
+    const originalRequest = Zotero.HTTP.request;
+    const originalXMLHttpRequest = globalThis.XMLHttpRequest;
+    (Zotero.HTTP as typeof Zotero.HTTP & {
+      request: typeof Zotero.HTTP.request;
+    }).request = async (method, url) => {
+      if (String(url).includes("/extract-results/")) {
+        return xhrResponse({
+          code: 0,
+          data: {
+            extract_result: [
+              {
+                state: "done",
+                full_zip_url: "https://download.example/full.zip",
+              },
+            ],
+          },
+        });
+      }
+      return xhrResponse(
+        createStoredZipBytes({
+          "full.md": "# Title",
+          "layout.json": JSON.stringify({ pages: [{ pageNo: 1 }] }),
+        }),
+      );
+    };
+    globalThis.XMLHttpRequest = class {
+      responseType = "";
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      open() {}
+      send() {
+        this.onerror?.();
+      }
+    } as unknown as typeof XMLHttpRequest;
+
+    try {
+      const client = createMinerUClient({ apiKey: "secret-token" });
+      const result = await client.downloadResult("batch-1");
+
+      assert.equal(result.markdown, "# Title");
+      assert.deepEqual(result.rawResult, { pages: [{ pageNo: 1 }] });
+    } finally {
+      (Zotero.HTTP as typeof Zotero.HTTP & {
+        request: typeof Zotero.HTTP.request;
+      }).request = originalRequest;
+      globalThis.XMLHttpRequest = originalXMLHttpRequest;
+    }
+  });
+
+  it("reports invalid zip response summaries", async function () {
+    const client = createMinerUClient({
+      apiKey: "secret-token",
+      fetch: async (url) => {
+        if (String(url).includes("/extract-results/")) {
+          return jsonResponse({
+            code: 0,
+            data: {
+              extract_result: [
+                {
+                  state: "done",
+                  full_zip_url: "https://download.example/full.zip",
+                },
+              ],
+            },
+          });
+        }
+        return new Response("<Error><Code>AccessDenied</Code></Error>");
+      },
+    });
+
+    try {
+      await client.downloadResult("batch-1");
+      assert.fail("Expected downloadResult to throw");
+    } catch (error) {
+      assert.instanceOf(error, MinerUTaskError);
+      assert.include((error as Error).message, "missing central directory");
+      assert.include((error as Error).message, "AccessDenied");
+      assert.include((error as Error).message, "attempts:");
+    }
+  });
+
+  it("falls back to md_url when full_zip_url is empty", async function () {
+    const client = createMinerUClient({
+      apiKey: "secret-token",
+      fetch: async (url) => {
+        if (String(url).includes("/extract-results/")) {
+          return jsonResponse({
+            code: 0,
+            data: {
+              extract_result: [
+                {
+                  state: "done",
+                  full_zip_url: "https://download.example/full.zip",
+                  md_url: "https://download.example/full.md",
+                },
+              ],
+            },
+          });
+        }
+        if (String(url).endsWith("/full.zip")) {
+          return new Response(new ArrayBuffer(0));
+        }
+        return new Response("# Title");
+      },
+    });
+
+    const result = await client.downloadResult("batch-1");
+
+    assert.equal(result.markdown, "# Title");
+    assert.deepEqual(result.rawResult, {
+      code: 0,
+      data: {
+        extract_result: [
+          {
+            state: "done",
+            full_zip_url: "https://download.example/full.zip",
+            md_url: "https://download.example/full.md",
+          },
+        ],
+      },
+    });
+  });
+
+  it("falls back to file download when network response is empty", async function () {
+    const client = createMinerUClient({
+      apiKey: "secret-token",
+      fetch: async (url) => {
+        if (String(url).includes("/extract-results/")) {
+          return jsonResponse({
+            code: 0,
+            data: {
+              extract_result: [
+                {
+                  state: "done",
+                  full_zip_url: "https://download.example/full.zip",
+                },
+              ],
+            },
+          });
+        }
+        return new Response(new ArrayBuffer(0));
+      },
+      downloadFileBytes: async () =>
+        createStoredZipBytes({
+          "full.md": "# Title",
+          "layout.json": JSON.stringify({ pages: [{ pageNo: 1 }] }),
+        }),
+    });
+
+    const result = await client.downloadResult("batch-1");
+
+    assert.equal(result.markdown, "# Title");
+    assert.deepEqual(result.rawResult, { pages: [{ pageNo: 1 }] });
+  });
+
+  it("retries empty full_zip_url downloads after refetching task results", async function () {
+    let extractCalls = 0;
+    let downloadCalls = 0;
+    const client = createMinerUClient({
+      apiKey: "secret-token",
+      maxDownloadAttempts: 2,
+      downloadRetryDelayMs: 0,
+      fetch: async (url) => {
+        if (String(url).includes("/extract-results/")) {
+          extractCalls += 1;
+          return jsonResponse({
+            code: 0,
+            data: {
+              extract_result: [
+                {
+                  state: "done",
+                  full_zip_url: `https://download.example/full-${extractCalls}.zip`,
+                },
+              ],
+            },
+          });
+        }
+        downloadCalls += 1;
+        if (downloadCalls === 1) {
+          return new Response(new ArrayBuffer(0));
+        }
+        return new Response(createStoredZipBytes({
+          "full.md": "# Title",
+          "layout.json": JSON.stringify({ pages: [{ pageNo: 1 }] }),
+        }));
+      },
+      downloadFileBytes: async () => new Uint8Array(),
+    });
+
+    const result = await client.downloadResult("batch-1");
+
+    assert.equal(result.markdown, "# Title");
+    assert.equal(extractCalls, 2);
+    assert.equal(downloadCalls, 2);
+  });
 });
 
 function jsonResponse(value: unknown): Response {
@@ -112,6 +536,21 @@ function jsonResponse(value: unknown): Response {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function xhrResponse(value: unknown, status = 200): XMLHttpRequest {
+  const response =
+    value instanceof Uint8Array
+      ? value.buffer
+      : new TextEncoder().encode(
+          typeof value === "string" ? value : JSON.stringify(value),
+        ).buffer;
+  return {
+    status,
+    statusText: "OK",
+    response,
+    getAllResponseHeaders: () => "Content-Type: application/json\r\n",
+  } as XMLHttpRequest;
 }
 
 function createStoredZipBytes(files: Record<string, string>): Uint8Array {
