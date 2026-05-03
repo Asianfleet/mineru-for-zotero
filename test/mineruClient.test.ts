@@ -253,6 +253,54 @@ describe("mineruClient", function () {
     assert.deepEqual(result.rawResult, { pages: [{ pageNo: 1 }] });
   });
 
+  it("prefers the zip json that contains page box data", async function () {
+    const client = createMinerUClient({
+      apiKey: "secret-token",
+      fetch: async (url) => {
+        if (String(url).includes("/extract-results/")) {
+          return jsonResponse({
+            code: 0,
+            data: {
+              extract_result: [
+                {
+                  state: "done",
+                  full_zip_url: "https://download.example/full.zip",
+                },
+              ],
+            },
+          });
+        }
+        return new Response(
+          createStoredZipBytes({
+            "full.md": "# Title",
+            "content_list.json": JSON.stringify([{ type: "text" }]),
+            "middle.json": JSON.stringify({
+              pdf_info: [
+                {
+                  page_idx: 0,
+                  page_size: [1000, 2000],
+                  para_blocks: [{ type: "text", bbox: [100, 400, 400, 500] }],
+                },
+              ],
+            }),
+          }),
+        );
+      },
+    });
+
+    const result = await client.downloadResult("batch-1");
+
+    assert.deepEqual(result.rawResult, {
+      pdf_info: [
+        {
+          page_idx: 0,
+          page_size: [1000, 2000],
+          para_blocks: [{ type: "text", bbox: [100, 400, 400, 500] }],
+        },
+      ],
+    });
+  });
+
   it("downloads signed result URLs through direct XHR", async function () {
     const originalRequest = Zotero.HTTP.request;
     const originalXMLHttpRequest = globalThis.XMLHttpRequest;

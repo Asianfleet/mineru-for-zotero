@@ -984,6 +984,8 @@ async function inflateRaw(
 }
 
 function readRawResultFromZip(zip: Map<string, string>): unknown | null {
+  let firstJson: unknown | null = null;
+
   for (const [name, value] of zip) {
     if (name === "full.md") {
       continue;
@@ -992,12 +994,46 @@ function readRawResultFromZip(zip: Map<string, string>): unknown | null {
       continue;
     }
     try {
-      return JSON.parse(value);
+      const parsed = JSON.parse(value) as unknown;
+      firstJson ??= parsed;
+      if (hasPageBoxData(parsed)) {
+        return parsed;
+      }
     } catch {
       continue;
     }
   }
-  return null;
+
+  return firstJson;
+}
+
+function hasPageBoxData(value: unknown): boolean {
+  const raw = value as { pages?: unknown; pdf_info?: unknown };
+  const pages = Array.isArray(raw.pages)
+    ? raw.pages
+    : Array.isArray(raw.pdf_info)
+      ? raw.pdf_info
+      : [];
+  return pages.some((page) => {
+    const rawPage = page as {
+      blocks?: unknown;
+      para_blocks?: unknown;
+      layout_dets?: unknown;
+    };
+    return [
+      rawPage.blocks,
+      rawPage.para_blocks,
+      rawPage.layout_dets,
+    ].some((blocks) => Array.isArray(blocks) && blocks.some(hasBlockGeometry));
+  });
+}
+
+function hasBlockGeometry(value: unknown): boolean {
+  const block = value as { bbox?: unknown; poly?: unknown };
+  return (
+    (Array.isArray(block.bbox) && block.bbox.length >= 4) ||
+    (Array.isArray(block.poly) && block.poly.length >= 4)
+  );
 }
 
 function findCentralDirectoryOffset(bytes: Uint8Array): number {

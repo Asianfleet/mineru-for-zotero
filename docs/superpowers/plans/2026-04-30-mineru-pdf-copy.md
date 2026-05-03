@@ -13,6 +13,7 @@
 - Task 1-5 已完成并已有对应提交；Task 6 的右键菜单解析主链路已跑通，用户重试后已提示“解析成功”。
 - 为打通 Task 6，已在 MinerU client 边界补齐 Zotero 运行时下的真实网络兼容：裸 XHR 上传 presigned URL、Zotero HTTP JSON 请求、XHR/Zotero HTTP 下载 fallback、Windows `curl.exe` 文件下载 fallback、`nsIZipReader` 本地 ZIP 读取、空响应重试与诊断信息。
 - 为修复“解析结果缺少 box 信息”，`boxNormalizer` 已扩展支持真实 MinerU 结果结构：`pdf_info[].para_blocks`、`pdf_info[].layout_dets`、`page_size`、`poly`、`lines[].spans[].content` 和 `interline_equation`。
+- 2026-05-03 再次复现“解析结果缺少 box 信息”后确认新的根因在 `mineruClient`：MinerU full zip 可能同时包含 `content_list.json` 与 `middle.json` 等多个 JSON，旧逻辑会取第一个非 `full.md` 的 JSON，若先读到不含 box geometry 的 JSON，就会让 normalizer 得到 0 个 box。已改为优先选择包含 `pages`/`pdf_info` 且 block 带 `bbox`/`poly` 的 JSON，并补充回归测试。
 - Task 6 仍有两个计划细项未完全收口：boxes 为空时还未保存 failed manifest；重复解析确认目前使用系统 `confirm` 的 OK/Cancel，而不是计划中的自定义“使用已有结果 / 重新解析并覆盖”按钮。
 - Task 7 的 reader toolbar 按钮与 per-reader state 骨架已完成到手动检查点 C：按钮位于 PDF reader toolbar 左侧区域、上一页/下一页按钮右侧；左键单击可开闭 floating panel；hover、tooltip、五个菜单项均正常；点击菜单项只更新 state 骨架，尚不渲染 overlay。
 - Task 7 调试期间已放弃 `Zotero.Reader.registerEventListener("renderToolbar")` 注入路径。该路径在当前 Zotero Reader toolbar 生命周期下会出现单击不触发、需要双击、菜单定位/跨 docgroup 等问题。当前实现改为扫描当前主窗口 reader tabs，进入 reader iframe document，按 Zotero Reader 源码锚点 `#next` / `.toolbar .start` 注入按钮，并将 panel 与按钮放在同一 document 中。
@@ -597,6 +598,7 @@ export interface MinerUClient {
 - 默认 JSON 请求优先走 `Zotero.HTTP.request` adapter；测试注入 `fetch` 时仍保留 fetch 路径。
 - HTTP 错误会摘要返回体中的 XML `Code`/`Message`，用于定位 403、签名错误等问题，同时不泄漏 API Key。
 - 下载 ZIP 时按顺序尝试直接 XHR、Zotero HTTP fallback、文件下载 fallback；Windows 下文件下载可通过 `curl.exe`，下载到本地后优先用 `nsIZipReader` 读取 ZIP。
+- full zip 内存在多个 JSON 时，不能按 ZIP 条目顺序直接返回第一个 JSON；应优先选择包含 `pages`/`pdf_info` 且 `blocks`/`para_blocks`/`layout_dets` 内有 `bbox` 或 `poly` 的 raw result，例如 `middle.json`，避免误选 `content_list.json` 后触发“解析结果缺少 box 信息”。
 - 对空响应 ZIP 增加重试和诊断信息，错误信息包含安全 URL、字节数和 fallback 结果。
 
 `createMinerUClient({ apiKey })`：
