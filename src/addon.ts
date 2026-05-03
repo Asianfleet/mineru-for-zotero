@@ -1,6 +1,8 @@
 import { config } from "../package.json";
 import { ColumnOptions, DialogHelper } from "zotero-plugin-toolkit";
 import hooks from "./hooks";
+import type { ReaderOverlayKey, ReaderOverlayState } from "./modules/readerOverlay";
+import type { ReaderToolbarRegistration } from "./modules/readerToolbar";
 import { createZToolkit } from "./utils/ztoolkit";
 
 class Addon {
@@ -19,6 +21,8 @@ class Addon {
       columns: Array<ColumnOptions>;
       rows: Array<{ [dataKey: string]: string }>;
     };
+    readerOverlays?: Map<ReaderOverlayKey, ReaderOverlayState>;
+    readerToolbar?: ReaderToolbarRegistration;
     dialog?: DialogHelper;
   };
   // Lifecycle hooks

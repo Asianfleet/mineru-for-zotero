@@ -8,13 +8,17 @@
 
 **Tech Stack:** Zotero 7 plugin template、TypeScript、zotero-plugin-toolkit、Zotero prefs、Zotero plugin data directory、MinerU 官方 API、Zotero reader DOM。
 
-## 当前进度（2026-05-02）
+## 当前进度（2026-05-03）
 
 - Task 1-5 已完成并已有对应提交；Task 6 的右键菜单解析主链路已跑通，用户重试后已提示“解析成功”。
 - 为打通 Task 6，已在 MinerU client 边界补齐 Zotero 运行时下的真实网络兼容：裸 XHR 上传 presigned URL、Zotero HTTP JSON 请求、XHR/Zotero HTTP 下载 fallback、Windows `curl.exe` 文件下载 fallback、`nsIZipReader` 本地 ZIP 读取、空响应重试与诊断信息。
 - 为修复“解析结果缺少 box 信息”，`boxNormalizer` 已扩展支持真实 MinerU 结果结构：`pdf_info[].para_blocks`、`pdf_info[].layout_dets`、`page_size`、`poly`、`lines[].spans[].content` 和 `interline_equation`。
 - Task 6 仍有两个计划细项未完全收口：boxes 为空时还未保存 failed manifest；重复解析确认目前使用系统 `confirm` 的 OK/Cancel，而不是计划中的自定义“使用已有结果 / 重新解析并覆盖”按钮。
-- Task 7-9 的 reader toolbar、overlay 渲染、多选复制尚未开始；Task 10 仅提前完成了部分真实解析错误处理和自动化验证。
+- Task 7 的 reader toolbar 按钮与 per-reader state 骨架已完成到手动检查点 C：按钮位于 PDF reader toolbar 左侧区域、上一页/下一页按钮右侧；左键单击可开闭 floating panel；hover、tooltip、五个菜单项均正常；点击菜单项只更新 state 骨架，尚不渲染 overlay。
+- Task 7 调试期间已放弃 `Zotero.Reader.registerEventListener("renderToolbar")` 注入路径。该路径在当前 Zotero Reader toolbar 生命周期下会出现单击不触发、需要双击、菜单定位/跨 docgroup 等问题。当前实现改为扫描当前主窗口 reader tabs，进入 reader iframe document，按 Zotero Reader 源码锚点 `#next` / `.toolbar .start` 注入按钮，并将 panel 与按钮放在同一 document 中。
+- Task 7 已修复的 UI bug：跨 docgroup append 报错、`HTMLElement is not defined`、右键才能打开、左键双击才能打开、hover 背景尺寸/圆角错误、菜单无法打开、菜单项 hover 闪动。最后一个闪动问题的根因是同步循环定时重建菜单项，修复为只在打开菜单或执行菜单命令时刷新菜单。
+- split view 验收口径已修正：Zotero Reader split view 共享同一条 toolbar，不会出现每个 pane 各一个 toolbar 按钮。后续 Task 8/9 应实现“一个 toolbar 按钮作用于当前 active/focused reader pane 的 overlay state”，并验证 split view 下 pane state 互不影响。
+- Task 8-9 的 overlay 渲染、多选复制尚未开始；Task 10 仅提前完成了部分真实解析错误处理和自动化验证。
 
 ---
 
@@ -721,7 +725,7 @@ git commit -m "feat(parse): add MinerU PDF context menu flow"
 - Modify: `addon/locale/zh-CN/mainWindow.ftl`
 - Modify: `addon/locale/en-US/mainWindow.ftl`
 
-- [ ] **Step 1: 建立 reader overlay state key**
+- [x] **Step 1: 建立 reader overlay state key**
 
 `readerOverlay.ts` 定义：
 
@@ -747,14 +751,30 @@ export function getReaderOverlayKey(readerInstanceID: string, attachmentKey: str
 }
 ```
 
-- [ ] **Step 2: 注册 reader toolbar 按钮**
+- [x] **Step 2: 注册 reader toolbar 按钮**
 
 `readerToolbar.ts` 提供：
 
 ```ts
 export function registerReaderToolbar(win: _ZoteroTypes.MainWindow): void;
-export function unregisterReaderToolbar(): void;
+export function unregisterReaderToolbar(win?: Window): void;
 ```
+
+执行补充（2026-05-03）：最终实现未继续使用 `renderToolbar`，而是注册主窗口级同步器：
+
+1. 从主窗口 `Zotero_Tabs._tabs` 枚举 reader tabs，并通过 `Zotero.Reader.getByTabID(tab.id)` 找到 PDF reader。
+2. 进入 `reader._iframeWindow.document`，使用 Zotero Reader 源码中的 toolbar 锚点：优先 `#next`，失败时回退 `.toolbar .start`。
+3. 将按钮插入上一页/下一页按钮右侧，也就是 `#next` 后面。
+4. 将 floating panel 挂在同一个 reader document 的 `documentElement`，避免跨 docgroup append 和跨窗口坐标换算问题。
+5. 用 `MutationObserver` + 低频 interval 处理 reader toolbar 重建，但同步过程中不重建已打开的菜单项，避免 hover 闪动。
+
+已验证的用户可见行为：
+
+- 按钮位置正确，位于上一页/下一页按钮右侧。
+- 左键单击一次即可打开/关闭菜单。
+- hover 背景大小和圆角正常。
+- tooltip 正常。
+- 菜单项 hover 不再闪动。
 
 按钮菜单包含：
 
@@ -766,15 +786,15 @@ export function unregisterReaderToolbar(): void;
 
 点击菜单项时只更新当前 reader pane 的 overlay state。
 
-- [ ] **Step 3: 生命周期清理**
+- [x] **Step 3: 生命周期清理**
 
 `hooks.ts`：
 
 - `onMainWindowLoad` 调用 `registerReaderToolbar(win)`。
-- `onMainWindowUnload` 调用 `unregisterReaderToolbar()` 和 `destroyAllReaderOverlays()`。
+- `onMainWindowUnload` 调用 `unregisterReaderToolbar(win)`；该函数清理当前窗口的 toolbar binding、panel、observer、interval 和对应 reader overlay state。
 - `onShutdown` 调用 `destroyAllReaderOverlays()`。
 
-- [ ] **Step 4: 构建验证**
+- [x] **Step 4: 构建验证**
 
 Run:
 
@@ -782,17 +802,30 @@ Run:
 .\node_modules\.bin\tsc.cmd --noEmit
 ```
 
-Expected: exit code 0。
+实际验证（2026-05-03）：
 
-- [ ] **Step 5: STOP: 手动测试检查点 C**
+- `.\node_modules\.bin\tsc.cmd --noEmit`：exit code 0。
+- `.\node_modules\.bin\tsc.cmd --noEmit --project test\tsconfig.json`：exit code 0。
+- `.\node_modules\.bin\zotero-plugin.cmd test`：184s 后超时，无可用输出。此前多次遇到 Zotero 测试 profile sqlite 锁/运行时卡住，暂不作为代码通过证据。
+
+- [x] **Step 5: STOP: 手动测试检查点 C**
 
 停止开发并请用户测试：
 
 - 打开 PDF reader tab，工具栏出现插件按钮。
 - 菜单显示五个入口。
-- 未解析 PDF 中菜单或 reader 内提示“当前 PDF 尚未解析”，并有“立即解析”按钮。
-- 在 Zotero split view 打开两个 PDF reader pane，两个 pane 的菜单模式切换互不影响。
+- 菜单可用，点击五个入口不报错。
+- 未解析 PDF 的 reader 内提示“当前 PDF 尚未解析”和“立即解析”按钮暂不属于 Task 7 已完成范围，后移到 Task 8/10 与 overlay 未解析状态一起实现。
+- 在 Zotero split view 中，reader 共享同一条 toolbar，因此不会出现两个按钮。后续验收改为：共享 toolbar 按钮应作用于当前 active/focused pane；两个 pane 的 overlay 模式、hover 和 selection state 互不影响。
 - 关闭一个 pane 或切换其中一个 pane 的 attachment，不影响另一个 pane 的菜单状态。
+
+手动测试记录（2026-05-03）：
+
+- 用户确认按钮左键单击可控制菜单开闭，位置正确。
+- 用户确认菜单五个入口正常显示。
+- 用户确认每个选项点击后不会报错，菜单仍可使用。
+- 用户确认菜单项 hover 不再闪动。
+- 用户确认 split view 后不会出现第二个按钮；据此修正后续计划口径为“共享 toolbar 按钮 + active/focused pane state”。
 
 用户确认后才能继续 Task 8。
 
@@ -819,6 +852,13 @@ git commit -m "feat(reader): add per-pane toolbar state"
 3. 每页创建 `div.mineru-copy-page-layer`。
 4. 每个 box 创建 `button.mineru-copy-box` 或 `div.mineru-copy-box`，使用 normalized bbox 映射到页面可视尺寸。
 5. mode 为 `off` 时销毁 root。
+
+执行注意：
+
+- split view 共享 toolbar，不能假设每个 pane 都有独立 toolbar 按钮。
+- toolbar 菜单命令必须先定位当前 active/focused reader pane，再更新该 pane 对应的 `ReaderOverlayState`。
+- 如果当前 Zotero API 无法直接暴露 focused pane，需要在 overlay 层通过最近一次 pointer/focus/selection 事件维护 active pane。
+- 未解析 PDF 的提示和“立即解析”按钮应在 overlay/root 层实现；Task 7 不再承担这项 UI。
 
 - [ ] **Step 2: 实现两种显示模式**
 
@@ -872,6 +912,7 @@ Expected: exit code 0。
 - 文本 box 复制 Markdown 正确。
 - 公式 box 的“带 $ 复制”和“不带 $ 复制”结果不同且正确。
 - 关闭插件能力后，Zotero reader 原生选择、标注、滚动和快捷键不被拦截。
+- split view 中通过共享 toolbar 切换模式时，只影响当前 active/focused pane。
 
 用户确认后才能继续 Task 9。
 
@@ -957,7 +998,7 @@ Expected: exit code 0。
 - 工具栏菜单 `复制已选 box (N)` 数量实时更新。
 - 多选复制按 MinerU JSON 原始顺序，也就是 `rawIndex` 升序合并。
 - `清空选择` 只影响当前 reader pane。
-- split view 两个 pane 的模式、hover、选择集合互不影响。
+- split view 共享一个 toolbar 按钮，但两个 pane 的模式、hover、选择集合互不影响。
 - 关闭其中一个 pane 后另一个 pane 的 overlay 正常工作。
 
 用户确认后才能继续 Task 10。
@@ -1039,7 +1080,7 @@ Expected: 两个命令都 exit code 0。
 - PDF tab 未解析时显示“立即解析”。
 - 三种 overlay 模式切换正确。
 - hover、单 box 复制、公式两种复制、多选复制正确。
-- Zotero split view 两个 reader pane 状态互不影响。
+- Zotero split view 共享 toolbar 按钮，但按钮作用于当前 active/focused pane，两个 pane 状态互不影响。
 
 用户确认后才能进入收尾。
 
@@ -1085,7 +1126,7 @@ Expected: 三个命令都 exit code 0。
 - 外部程序可读取 `content.md` 和 `boxes.normalized.json`。
 - Reader overlay 三种模式可用。
 - 单 box、多 box、公式复制可用。
-- Split view 下状态独立。
+- Split view 下共享 toolbar 按钮作用于当前 active/focused pane，pane 状态保持独立。
 - 关闭插件能力后不影响 Zotero reader 原生操作。
 
 ## 自审结果

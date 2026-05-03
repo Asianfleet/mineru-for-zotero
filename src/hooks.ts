@@ -1,6 +1,11 @@
 import { getString, initLocale } from "./utils/locale";
 import { parseSelectedAttachment, selectedHasPDFAttachment } from "./modules/parseManager";
 import { registerPrefsScripts } from "./modules/preferenceScript";
+import { destroyAllReaderOverlays } from "./modules/readerOverlay";
+import {
+  registerReaderToolbar,
+  unregisterReaderToolbar,
+} from "./modules/readerToolbar";
 import { createZToolkit } from "./utils/ztoolkit";
 
 async function onStartup() {
@@ -32,6 +37,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   );
 
   registerItemMenu(win);
+  registerReaderToolbar(win);
 }
 
 function registerPreferencePane(): void {
@@ -72,11 +78,14 @@ async function updateParseMenuItemState(menuItem: Element): Promise<void> {
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
+  unregisterReaderToolbar(win);
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
 }
 
 function onShutdown(): void {
+  unregisterReaderToolbar();
+  destroyAllReaderOverlays();
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
   // Remove addon object
