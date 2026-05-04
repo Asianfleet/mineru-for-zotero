@@ -1,5 +1,6 @@
 import { assert } from "chai";
 import {
+  createReaderToolbarCommandButton,
   createReaderToolbarMenuState,
   createReaderToolbarPanelStore,
   findReaderToolbarAnchor,
@@ -86,5 +87,34 @@ describe("readerToolbar", function () {
 
     assert.strictEqual(anchor?.parent, parent);
     assert.isUndefined(anchor?.after);
+  });
+
+  it("runs a menu command when the menu button is clicked", function () {
+    let clicked = false;
+    const doc = {
+      createElement(tagName: string) {
+        assert.equal(tagName, "button");
+        return {
+          style: {},
+          addEventListener(type: string, listener: EventListener) {
+            if (type === "click") {
+              this.click = listener;
+            }
+          },
+          click: undefined as EventListener | undefined,
+        } as unknown as HTMLButtonElement;
+      },
+    } as unknown as Document;
+
+    const button = createReaderToolbarCommandButton(doc, "显示全部 box", () => {
+      clicked = true;
+    }) as HTMLButtonElement & { click?: EventListener };
+
+    button.click?.({
+      preventDefault() {},
+      stopPropagation() {},
+    } as Event);
+
+    assert.isTrue(clicked);
   });
 });

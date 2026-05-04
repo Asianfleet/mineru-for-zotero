@@ -53,8 +53,15 @@ export interface ReaderToolbarRegistration {
   registeredWindows: Set<Window>;
 }
 
+interface ReaderToolbarDiagnosticState {
+  command: string;
+  mode: string | null;
+  selectedCount: number;
+}
+
 const panelStore = createReaderToolbarPanelStore();
 const buttonBindings = new Map<string, ReaderToolbarButtonBinding>();
+const diagnosticStore = new Map<string, ReaderToolbarDiagnosticState>();
 
 export function createReaderToolbarMenuState(): ReaderToolbarMenuState {
   let open = false;
@@ -393,46 +400,79 @@ function updateMenu(
   menu: HTMLDivElement,
   sync: () => void,
 ): void {
+  const state = getReaderOverlayStateForReader(reader);
+  const activeMode = state?.mode ?? "off";
   menu.replaceChildren();
   menu.append(
-    createMenuButton(doc, readerString("reader-show-all-boxes"), () => {
-      setReaderOverlayModeForReader(reader, "all");
-      updateMenu(reader, doc, menu, sync);
-      sync();
-    }),
-    createMenuButton(doc, readerString("reader-show-hover-box"), () => {
-      setReaderOverlayModeForReader(reader, "hover");
-      updateMenu(reader, doc, menu, sync);
-      sync();
-    }),
-    createMenuButton(doc, readerString("reader-disable-plugin"), () => {
-      setReaderOverlayModeForReader(reader, "off");
-      updateMenu(reader, doc, menu, sync);
-      sync();
-    }),
-    createMenuButton(
+    createReaderToolbarCommandButton(
+      doc,
+      readerString("reader-show-all-boxes"),
+      () => {
+        runReaderToolbarCommand(reader, "show-all-boxes", () => {
+          setReaderOverlayModeForReader(reader, "all");
+        });
+        updateMenu(reader, doc, menu, sync);
+        sync();
+      },
+      { active: activeMode === "all" },
+    ),
+    createReaderToolbarCommandButton(
+      doc,
+      readerString("reader-show-hover-box"),
+      () => {
+        runReaderToolbarCommand(reader, "show-hover-box", () => {
+          setReaderOverlayModeForReader(reader, "hover");
+        });
+        updateMenu(reader, doc, menu, sync);
+        sync();
+      },
+      { active: activeMode === "hover" },
+    ),
+    createReaderToolbarCommandButton(
+      doc,
+      readerString("reader-disable-plugin"),
+      () => {
+        runReaderToolbarCommand(reader, "disable-plugin", () => {
+          setReaderOverlayModeForReader(reader, "off");
+        });
+        updateMenu(reader, doc, menu, sync);
+        sync();
+      },
+      { active: activeMode === "off" },
+    ),
+    createReaderToolbarCommandButton(
       doc,
       readerString("reader-copy-selected-boxes", {
         count: getReaderSelectedBoxCount(reader),
       }),
       () => {
-        getReaderOverlayStateForReader(reader);
+        runReaderToolbarCommand(reader, "copy-selected-boxes", () => {
+          getReaderOverlayStateForReader(reader);
+        });
         updateMenu(reader, doc, menu, sync);
         sync();
       },
     ),
-    createMenuButton(doc, readerString("reader-clear-selection"), () => {
-      clearReaderOverlaySelectionForReader(reader);
-      updateMenu(reader, doc, menu, sync);
-      sync();
-    }),
+    createReaderToolbarCommandButton(
+      doc,
+      readerString("reader-clear-selection"),
+      () => {
+        runReaderToolbarCommand(reader, "clear-selection", () => {
+          clearReaderOverlaySelectionForReader(reader);
+        });
+        updateMenu(reader, doc, menu, sync);
+        sync();
+      },
+    ),
+    createDiagnosticRow(doc, reader),
   );
 }
 
-function createMenuButton(
+export function createReaderToolbarCommandButton(
   doc: Document,
   label: string,
   onCommand: () => void,
+  options?: { active?: boolean },
 ): HTMLButtonElement {
   const button = doc.createElement("button");
   button.type = "button";
@@ -443,13 +483,18 @@ function createMenuButton(
   button.style.padding = "6px 8px";
   button.style.border = "0";
   button.style.borderRadius = "4px";
-  button.style.background = "transparent";
+  button.style.background = options?.active
+    ? "var(--fill-quinary, rgba(0, 0, 0, 0.08))"
+    : "transparent";
+  button.style.fontWeight = options?.active ? "600" : "400";
   button.style.textAlign = "left";
   button.addEventListener("mouseenter", () => {
     button.style.backgroundColor = "var(--fill-quinary, rgba(0, 0, 0, 0.08))";
   });
   button.addEventListener("mouseleave", () => {
-    button.style.backgroundColor = "";
+    button.style.backgroundColor = options?.active
+      ? "var(--fill-quinary, rgba(0, 0, 0, 0.08))"
+      : "";
   });
   button.addEventListener("click", (event) => {
     event.preventDefault();
@@ -457,6 +502,105 @@ function createMenuButton(
     onCommand();
   });
   return button;
+}
+
+function runReaderToolbarCommand(
+  reader: _ZoteroTypes.ReaderInstance,
+  command: string,
+  action: () => void,
+): void {
+  const beforeState = getReaderOverlayStateForReader(reader);
+  emitReaderToolbarDiagnostic(reader, "MinerU reader toolbar command", {
+    command,
+    readerInstanceID: reader._instanceID,
+    attachmentKey: reader._item?.key ?? null,
+    beforeMode: beforeState?.mode ?? null,
+    beforeSelectedCount: beforeState?.selectedRawIndexes.size ?? 0,
+  });
+
+  action();
+
+  const afterState = getReaderOverlayStateForReader(reader);
+  diagnosticStore.set(reader._instanceID, {
+    command,
+    mode: afterState?.mode ?? null,
+    selectedCount: afterState?.selectedRawIndexes.size ?? 0,
+  });
+  emitReaderToolbarDiagnostic(reader, "MinerU reader toolbar state", {
+    command,
+    readerInstanceID: reader._instanceID,
+    attachmentKey: reader._item?.key ?? null,
+    afterMode: afterState?.mode ?? null,
+    afterSelectedCount: afterState?.selectedRawIndexes.size ?? 0,
+  });
+}
+
+function emitReaderToolbarDiagnostic(
+  reader: _ZoteroTypes.ReaderInstance,
+  message: string,
+  payload: Record<string, unknown>,
+): void {
+  const text = `[MinerU for Zotero] ${message} ${JSON.stringify(payload)}`;
+
+  try {
+    ztoolkit.log(message, payload);
+  } catch {
+    // Keep diagnostics best-effort; menu commands must not fail because logging fails.
+  }
+
+  try {
+    Zotero.debug(text);
+  } catch {
+    // Zotero.debug may be unavailable in isolated test/runtime contexts.
+  }
+
+  const consoles = new Set<Console>();
+  if (typeof console !== "undefined") {
+    consoles.add(console);
+  }
+  const readerConsole = reader._iframeWindow?.console;
+  if (readerConsole) {
+    consoles.add(readerConsole);
+  }
+
+  try {
+    const mainWindowConsole = Zotero.getMainWindow?.().console;
+    if (mainWindowConsole) {
+      consoles.add(mainWindowConsole);
+    }
+  } catch {
+    // The main window is not always available during teardown.
+  }
+
+  for (const targetConsole of consoles) {
+    targetConsole.info(text);
+  }
+}
+
+function createDiagnosticRow(
+  doc: Document,
+  reader: _ZoteroTypes.ReaderInstance,
+): HTMLDivElement {
+  const row = doc.createElement("div");
+  row.style.marginTop = "6px";
+  row.style.padding = "6px 8px 0";
+  row.style.borderTop = "1px solid var(--fill-quaternary, rgba(0, 0, 0, 0.08))";
+  row.style.fontSize = "11px";
+  row.style.color = "var(--text-secondary, #666)";
+  row.style.whiteSpace = "nowrap";
+  row.style.overflow = "hidden";
+  row.style.textOverflow = "ellipsis";
+
+  const state = diagnosticStore.get(reader._instanceID);
+  if (!state) {
+    row.textContent = "debug: no command yet";
+    return row;
+  }
+
+  row.textContent =
+    `debug: ${state.command}; mode=${state.mode ?? "null"}; ` +
+    `selected=${state.selectedCount}`;
+  return row;
 }
 
 function isOutsideToolbarMenu(
