@@ -42,6 +42,10 @@ parsing, formatting, storage, client boundaries, and lifecycle behavior when
 those areas change. Run `npm test` plus `npm run lint:check` before opening a
 pull request.
 
+After code changes, run the full scaffold test suite with `zotero-plugin test`.
+If the command stalls while Zotero is open, ask the user to close Zotero and
+then rerun the full suite.
+
 ## Project Notes
 
 - When debugging the MinerU parsing pipeline, do not infer API behavior from UI
@@ -64,6 +68,10 @@ pull request.
   downloading a ZIP locally, prefer ZIP readers available in the Zotero runtime,
   such as `nsIZipReader`; do not assume `DecompressionStream("deflate-raw")` is
   available in the target runtime.
+- `ztoolkit.log` may not appear in the console being inspected, depending on the
+  runtime environment and console settings. For reader-toolbar or iframe click
+  diagnostics, also emit to `Zotero.debug` and the relevant window
+  `console.info`, and keep a visible UI state when possible.
 
 ## Commit & Pull Request Guidelines
 
