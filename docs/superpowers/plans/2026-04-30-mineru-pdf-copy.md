@@ -8,7 +8,7 @@
 
 **Tech Stack:** Zotero 7 plugin template、TypeScript、zotero-plugin-toolkit、Zotero prefs、Zotero plugin data directory、MinerU 官方 API、Zotero reader DOM。
 
-## 当前进度（2026-05-03）
+## 当前进度（2026-05-04）
 
 - Task 1-5 已完成并已有对应提交；Task 6 的右键菜单解析主链路已跑通，用户重试后已提示“解析成功”。
 - 为打通 Task 6，已在 MinerU client 边界补齐 Zotero 运行时下的真实网络兼容：裸 XHR 上传 presigned URL、Zotero HTTP JSON 请求、XHR/Zotero HTTP 下载 fallback、Windows `curl.exe` 文件下载 fallback、`nsIZipReader` 本地 ZIP 读取、空响应重试与诊断信息。
@@ -19,7 +19,8 @@
 - Task 7 调试期间已放弃 `Zotero.Reader.registerEventListener("renderToolbar")` 注入路径。该路径在当前 Zotero Reader toolbar 生命周期下会出现单击不触发、需要双击、菜单定位/跨 docgroup 等问题。当前实现改为扫描当前主窗口 reader tabs，进入 reader iframe document，按 Zotero Reader 源码锚点 `#next` / `.toolbar .start` 注入按钮，并将 panel 与按钮放在同一 document 中。
 - Task 7 已修复的 UI bug：跨 docgroup append 报错、`HTMLElement is not defined`、右键才能打开、左键双击才能打开、hover 背景尺寸/圆角错误、菜单无法打开、菜单项 hover 闪动。最后一个闪动问题的根因是同步循环定时重建菜单项，修复为只在打开菜单或执行菜单命令时刷新菜单。
 - split view 验收口径已修正：Zotero Reader split view 共享同一条 toolbar，不会出现每个 pane 各一个 toolbar 按钮。后续 Task 8/9 应实现“一个 toolbar 按钮作用于当前 active/focused reader pane 的 overlay state”，并验证 split view 下 pane state 互不影响。
-- Task 8-9 的 overlay 渲染、多选复制尚未开始；Task 10 仅提前完成了部分真实解析错误处理和自动化验证。
+- 2026-05-04 提交 `6767a48053569428e0171d4b15bc41eba94fa396`（`feat(reader): 渲染 MinerU 框选覆盖层`）已把 Task 8 推进到可见 overlay：`readerOverlay` 现在会读取 `boxes.normalized.json`，按页创建 overlay root / page layer / box 元素，注入 overlay 样式，并在 reader viewport 滚动或尺寸变化时重定位；`readerToolbar` 的模式切换已改为通过 `applyReaderOverlayMode()` 驱动重渲染。
+- 目前仍未完成的是 hover 复制按钮、多选复制、active/focused pane 定位、未解析 PDF 提示与“立即解析”按钮；Task 10 仍只提前完成了部分真实解析错误处理和自动化验证。
 
 ---
 
@@ -845,7 +846,7 @@ git commit -m "feat(reader): add per-pane toolbar state"
 - Modify: `addon/content/zoteroPane.css`
 - Modify: `src/modules/readerToolbar.ts`
 
-- [ ] **Step 1: 渲染 overlay root**
+- [x] **Step 1: 渲染 overlay root**
 
 对每个 reader pane：
 
@@ -854,6 +855,13 @@ git commit -m "feat(reader): add per-pane toolbar state"
 3. 每页创建 `div.mineru-copy-page-layer`。
 4. 每个 box 创建 `button.mineru-copy-box` 或 `div.mineru-copy-box`，使用 normalized bbox 映射到页面可视尺寸。
 5. mode 为 `off` 时销毁 root。
+
+执行补充（2026-05-04）：提交 `6767a48053569428e0171d4b15bc41eba94fa396` 已实现这一步的主体链路：
+
+- `readerOverlay` 会读取当前 attachment 的 `boxes.normalized.json` 并构建 overlay root。
+- 按 page 分组创建 `div.mineru-copy-page-layer`，每个 box 创建 `div.mineru-copy-box`。
+- 引入 overlay stylesheet，并在 reader viewport 滚动/resize 时重新定位 page layer。
+- `readerToolbar` 的“显示全部 box / 仅显示鼠标所在 box / 关闭插件能力”切换会触发 `applyReaderOverlayMode()` 重新渲染。
 
 执行注意：
 
