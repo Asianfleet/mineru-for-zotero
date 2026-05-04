@@ -97,6 +97,52 @@ describe("storage", function () {
     assert.equal(manifest.mineruTaskID, "task-2");
     assert.deepEqual(await storage.readBoxes(attachment), [normalizedBoxes[1]]);
   });
+
+  it("refreshes stale normalized boxes from the raw MinerU result", async function () {
+    const storage = createStorage(rootDir);
+    const attachment = {
+      id: 1,
+      key: "STALE",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+
+    await writeResultOrFail(storage, {
+      attachment,
+      mineruTaskID: "task-1",
+      rawResult: {
+        pdf_info: [
+          {
+            page_idx: 0,
+            page_size: [1000, 2000],
+            para_blocks: [
+              { type: "text", bbox: [100, 100, 500, 200], text: "Body" },
+              {
+                type: "image",
+                bbox: [100, 300, 500, 600],
+                blocks: [
+                  {
+                    type: "image_caption",
+                    bbox: [100, 620, 500, 700],
+                    lines: [{ spans: [{ content: "Figure 1: caption" }] }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      markdown: "Body",
+      boxes: [normalizedBoxes[0]],
+    });
+
+    const boxes = await storage.readBoxes(attachment);
+
+    assert.isAbove(boxes.length, 1);
+    assert.isTrue(boxes.some((box) => box.markdown === "Figure 1: caption"));
+  });
 });
 
 async function writeResultOrFail(

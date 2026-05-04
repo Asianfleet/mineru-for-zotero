@@ -1,4 +1,5 @@
 import type { NormalizedBox, OverlayMode } from "./domain";
+import { formatBoxesForCopy, formatFormulaForCopy } from "./copyFormatter";
 import { getMinerUStorageRoot } from "./preferenceScript";
 import { createStorage } from "./storage";
 
@@ -12,7 +13,9 @@ export interface ReaderOverlayState {
   selectedRawIndexes: Set<number>;
   hoverRawIndex: number | null;
   root: HTMLElement | null;
+  rootsByWindow: Map<Window, HTMLElement>;
   cleanupPositioning: (() => void) | null;
+  cleanupPositioningByWindow: Map<Window, () => void>;
   renderRevision: number;
 }
 
@@ -71,6 +74,57 @@ const READER_OVERLAY_CSS = `
 .mineru-copy-box:hover {
   background: rgba(64, 156, 255, 0.18);
 }
+
+.mineru-copy-mode-hover .mineru-copy-box {
+  opacity: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.mineru-copy-mode-hover .mineru-copy-box:hover {
+  opacity: 1;
+  border-color: rgba(33, 99, 235, 0.9);
+  background: rgba(64, 156, 255, 0.18);
+}
+
+.mineru-copy-box-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translateY(-100%);
+  padding: 2px 4px;
+  border-radius: 3px 3px 0 0;
+  background: rgba(33, 99, 235, 0.95);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1.2;
+  pointer-events: none;
+}
+
+.mineru-copy-box-actions {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  display: flex;
+  gap: 4px;
+  padding-top: 3px;
+}
+
+.mineru-copy-button {
+  border: 1px solid rgba(33, 99, 235, 0.9);
+  border-radius: 4px;
+  background: #fff;
+  color: rgba(20, 64, 160, 1);
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 2px 5px;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.mineru-copy-button:hover {
+  background: rgba(226, 239, 255, 1);
+}
 `;
 
 export function getReaderOverlayKey(
@@ -88,6 +142,7 @@ export function getReaderOverlayState(
   const states = getOverlayStates();
   const existing = states.get(key);
   if (existing) {
+    ensureReaderOverlayStateMaps(existing);
     return existing;
   }
 
@@ -99,7 +154,9 @@ export function getReaderOverlayState(
     selectedRawIndexes: new Set<number>(),
     hoverRawIndex: null,
     root: null,
+    rootsByWindow: new Map<Window, HTMLElement>(),
     cleanupPositioning: null,
+    cleanupPositioningByWindow: new Map<Window, () => void>(),
     renderRevision: 0,
   };
   states.set(key, state);
@@ -154,13 +211,13 @@ export async function renderReaderOverlayForReader(
   const mode = state.mode;
 
   if (state.mode === "off") {
+    cleanupReaderOverlayRoot(state);
     return state;
   }
 
-  const win = getReaderOverlayWindow(reader);
-  const doc = win?.document ?? null;
+  const windows = getReaderOverlayWindows(reader);
   const attachment = getReaderAttachmentRef(reader);
-  if (!win || !doc?.documentElement || !attachment) {
+  if (windows.length === 0 || !attachment) {
     cleanupReaderOverlayRoot(state);
     state.root = null;
     return state;
@@ -185,17 +242,27 @@ export async function renderReaderOverlayForReader(
   }
 
   cleanupReaderOverlayRoot(state);
-  const root = buildReaderOverlayRoot(doc, boxes, mode);
-  ensureReaderOverlayStyles(doc);
-  positionPageLayers(doc, root);
-  doc.body?.append(root);
-  state.cleanupPositioning = createReaderOverlayPositioningController({
-    doc,
-    win,
-    root,
-    reposition: () => positionPageLayers(doc, root),
-  }).cleanup;
-  state.root = root;
+  for (const win of windows) {
+    const doc = win.document ?? null;
+    if (!doc?.documentElement) {
+      continue;
+    }
+
+    const root = buildReaderOverlayRoot(doc, boxes, mode);
+    ensureReaderOverlayStyles(doc);
+    positionPageLayers(doc, root);
+    doc.body?.append(root);
+    const cleanup = createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      reposition: () => positionPageLayers(doc, root),
+    }).cleanup;
+    state.rootsByWindow.set(win, root);
+    state.cleanupPositioningByWindow.set(win, cleanup);
+    state.root = root;
+    state.cleanupPositioning = cleanup;
+  }
   return state;
 }
 
@@ -220,6 +287,12 @@ export function setReaderOverlayRootForReader(
     return null;
   }
   state.root = root;
+  if (root) {
+    const win = root.ownerDocument?.defaultView ?? null;
+    if (win) {
+      ensureReaderOverlayStateMaps(state).rootsByWindow.set(win, root);
+    }
+  }
   return state;
 }
 
@@ -229,15 +302,65 @@ export function getReaderSelectedBoxCount(
   return getReaderOverlayStateForReader(reader)?.selectedRawIndexes.size ?? 0;
 }
 
+export function readerOverlayNeedsWindowSync(
+  reader: _ZoteroTypes.ReaderInstance,
+): boolean {
+  const state = getReaderOverlayStateForReader(reader);
+  if (!state || state.mode === "off") {
+    return false;
+  }
+
+  const windows = getReaderOverlayWindows(reader);
+  if (windows.length !== state.rootsByWindow.size) {
+    return true;
+  }
+
+  return windows.some((win) => !state.rootsByWindow.has(win));
+}
+
 export function getReaderOverlayWindow(
   reader: _ZoteroTypes.ReaderInstance,
 ): Window | null {
-  const view = (
-    reader._lastView ??
-    reader._primaryView ??
-    null
-  ) as { _iframeWindow?: Window | null } | null;
-  return view?._iframeWindow ?? reader._iframeWindow ?? null;
+  return getReaderOverlayWindows(reader).at(-1) ?? null;
+}
+
+export function getReaderOverlayWindows(
+  reader: _ZoteroTypes.ReaderInstance,
+): Window[] {
+  const windows = new Set<Window>();
+  for (const view of getReaderViews(reader)) {
+    const win = view?._iframeWindow ?? null;
+    if (win) {
+      windows.add(win);
+    }
+  }
+
+  if (reader._iframeWindow) {
+    windows.add(reader._iframeWindow);
+  }
+
+  return [...windows];
+}
+
+function getReaderViews(
+  reader: _ZoteroTypes.ReaderInstance,
+): Array<{ _iframeWindow?: Window | null } | null> {
+  const value = reader as _ZoteroTypes.ReaderInstance & {
+    _views?: Array<{ _iframeWindow?: Window | null }>;
+    _readerViews?: Array<{ _iframeWindow?: Window | null }>;
+    _secondaryView?: { _iframeWindow?: Window | null };
+  };
+  const view = (reader._lastView ?? reader._primaryView ?? null) as {
+    _iframeWindow?: Window | null;
+  } | null;
+
+  return [
+    ...(Array.isArray(value._views) ? value._views : []),
+    ...(Array.isArray(value._readerViews) ? value._readerViews : []),
+    reader._primaryView as { _iframeWindow?: Window | null } | null,
+    value._secondaryView ?? null,
+    view,
+  ];
 }
 
 export function destroyReaderOverlay(key: ReaderOverlayKey): void {
@@ -256,7 +379,9 @@ export function destroyReaderOverlaysForReader(
   destroyReaderOverlaysByReaderID(reader._instanceID);
 }
 
-export function destroyReaderOverlaysByReaderID(readerInstanceID: string): void {
+export function destroyReaderOverlaysByReaderID(
+  readerInstanceID: string,
+): void {
   const states = getOverlayStates();
   for (const [key, state] of getOverlayStates()) {
     if (state.readerInstanceID === readerInstanceID) {
@@ -298,7 +423,7 @@ export function buildReaderOverlayRoot(
     layer.dataset.pageNumber = String(page.page);
 
     for (const box of page.boxes) {
-      layer.append(createBoxElement(doc, box));
+      layer.append(createBoxElement(doc, box, mode));
     }
     root.append(layer);
   }
@@ -392,10 +517,33 @@ export function createReaderOverlayPositioningController(
 }
 
 function cleanupReaderOverlayRoot(state: ReaderOverlayState): void {
-  state.cleanupPositioning?.();
+  ensureReaderOverlayStateMaps(state);
+  const hadPositioningByWindow = state.cleanupPositioningByWindow.size > 0;
+  const hadRootsByWindow = state.rootsByWindow.size > 0;
+  for (const cleanup of state.cleanupPositioningByWindow.values()) {
+    cleanup();
+  }
+  state.cleanupPositioningByWindow.clear();
+  for (const root of state.rootsByWindow.values()) {
+    removeReaderOverlayRoot(root);
+  }
+  state.rootsByWindow.clear();
+  if (!hadPositioningByWindow) {
+    state.cleanupPositioning?.();
+  }
   state.cleanupPositioning = null;
-  removeReaderOverlayRoot(state.root);
+  if (!hadRootsByWindow) {
+    removeReaderOverlayRoot(state.root);
+  }
   state.root = null;
+}
+
+function ensureReaderOverlayStateMaps(
+  state: ReaderOverlayState,
+): ReaderOverlayState {
+  state.rootsByWindow ??= new Map<Window, HTMLElement>();
+  state.cleanupPositioningByWindow ??= new Map<Window, () => void>();
+  return state;
 }
 
 function isCurrentRenderState(
@@ -471,13 +619,71 @@ function getReaderAttachmentRef(
 function createBoxElement(
   doc: Document,
   box: NormalizedBox,
+  mode: Exclude<OverlayMode, "off">,
 ): HTMLDivElement {
   const element = doc.createElement("div");
   element.className = "mineru-copy-box";
   element.dataset.rawIndex = String(box.rawIndex);
   element.dataset.mineruBoxType = box.type;
   Object.assign(element.style, computeBoxStyle(box));
+  if (mode === "hover") {
+    element.append(createBoxLabel(doc, box), createBoxActions(doc, box));
+  }
   return element;
+}
+
+function createBoxLabel(doc: Document, box: NormalizedBox): HTMLSpanElement {
+  const label = doc.createElement("span");
+  label.className = "mineru-copy-box-label";
+  label.textContent = box.type;
+  return label;
+}
+
+function createBoxActions(doc: Document, box: NormalizedBox): HTMLDivElement {
+  const actions = doc.createElement("div");
+  actions.className = "mineru-copy-box-actions";
+  if (box.type === "formula" && box.formula) {
+    actions.append(
+      createCopyButton(doc, "带 $ 复制", () => {
+        copyText(formatFormulaForCopy(box.formula ?? "", "with-dollar"));
+      }),
+      createCopyButton(doc, "不带 $ 复制", () => {
+        copyText(formatFormulaForCopy(box.formula ?? "", "without-dollar"));
+      }),
+    );
+    return actions;
+  }
+
+  actions.append(
+    createCopyButton(doc, "复制", () => {
+      copyText(formatBoxesForCopy([box]));
+    }),
+  );
+  return actions;
+}
+
+function createCopyButton(
+  doc: Document,
+  label: string,
+  onCopy: () => void,
+): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = "mineru-copy-button";
+  button.textContent = label;
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onCopy();
+  });
+  return button;
+}
+
+function copyText(text: string): void {
+  if (!text) {
+    return;
+  }
+  new ztoolkit.Clipboard().addText(text, "text/unicode").copy();
 }
 
 function groupBoxesByPage(
@@ -518,10 +724,15 @@ export function positionPageLayers(doc: Document, root: HTMLDivElement): void {
   }
 }
 
-export function findPageElement(doc: Document, pageNumber: number): Element | null {
+export function findPageElement(
+  doc: Document,
+  pageNumber: number,
+): Element | null {
   const escapedPageNumber = String(pageNumber).replace(/"/g, '\\"');
   return (
-    doc.querySelector(`.pdfViewer .page[data-page-number="${escapedPageNumber}"]`) ??
+    doc.querySelector(
+      `.pdfViewer .page[data-page-number="${escapedPageNumber}"]`,
+    ) ??
     doc.querySelector(`.page[data-page-number="${escapedPageNumber}"]`) ??
     doc.querySelector(`[data-page-number="${escapedPageNumber}"]`) ??
     doc.querySelector(`[data-page="${escapedPageNumber}"]`) ??

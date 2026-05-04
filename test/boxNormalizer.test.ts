@@ -82,4 +82,92 @@ describe("boxNormalizer", function () {
       height: 0.05,
     });
   });
+
+  it("extracts nested image and table captions from para_blocks", function () {
+    const boxes = normalizeMinerUBoxes({
+      pdf_info: [
+        {
+          page_idx: 0,
+          page_size: [1000, 2000],
+          para_blocks: [
+            {
+              type: "image",
+              bbox: [100, 200, 500, 700],
+              blocks: [
+                {
+                  type: "image_body",
+                  bbox: [100, 200, 500, 600],
+                  lines: [{ spans: [{ content: "image body" }] }],
+                },
+                {
+                  type: "image_caption",
+                  bbox: [100, 620, 500, 700],
+                  lines: [{ spans: [{ content: "Figure 1: caption" }] }],
+                },
+              ],
+            },
+            {
+              type: "table",
+              bbox: [100, 900, 500, 1200],
+              blocks: [
+                {
+                  type: "table_caption",
+                  bbox: [120, 860, 480, 900],
+                  lines: [{ spans: [{ content: "Table 1: caption" }] }],
+                },
+                {
+                  type: "table_body",
+                  bbox: [100, 900, 500, 1200],
+                  html: "<table><tr><td>A</td></tr></table>",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    assert.deepInclude(
+      boxes.map((box) => ({
+        type: box.type,
+        markdown: box.markdown,
+      })),
+      { type: "text", markdown: "Figure 1: caption" },
+    );
+    assert.deepInclude(
+      boxes.map((box) => ({
+        type: box.type,
+        markdown: box.markdown,
+      })),
+      { type: "text", markdown: "Table 1: caption" },
+    );
+  });
+
+  it("keeps footnotes from discarded blocks", function () {
+    const boxes = normalizeMinerUBoxes({
+      pdf_info: [
+        {
+          page_idx: 0,
+          page_size: [1000, 2000],
+          discarded_blocks: [
+            {
+              type: "page_footnote",
+              bbox: [100, 1800, 500, 1900],
+              lines: [{ spans: [{ content: "* footnote" }] }],
+            },
+          ],
+        },
+      ],
+    });
+
+    assert.equal(boxes.length, 1);
+    assert.equal(boxes[0].type, "text");
+    assert.equal(boxes[0].markdown, "* footnote");
+    assert.deepEqual(boxes[0].bbox, {
+      x: 0.1,
+      y: 0.9,
+      width: 0.4,
+      height: 0.05,
+    });
+  });
 });

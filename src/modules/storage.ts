@@ -1,4 +1,5 @@
 import type { AttachmentRef, NormalizedBox, ParseManifest } from "./domain";
+import { normalizeMinerUBoxes } from "./boxNormalizer";
 
 type AttachmentKeyRef = Pick<AttachmentRef, "libraryID" | "key">;
 
@@ -47,13 +48,12 @@ export function createStorage(rootDir: string): StorageAdapter {
     },
 
     async readBoxes(ref) {
-      const boxes = await readJson(
-        joinPath(getAttachmentDir(fsRoot, ref), BOXES_FILE),
-      );
+      const dir = getAttachmentDir(fsRoot, ref);
+      const boxes = await readJson(joinPath(dir, BOXES_FILE));
       if (!Array.isArray(boxes)) {
         throw new Error("boxes.normalized.json is not an array");
       }
-      return boxes as NormalizedBox[];
+      return refreshStaleBoxes(dir, boxes as NormalizedBox[]);
     },
 
     async writeResult(input) {
@@ -110,7 +110,9 @@ export function createStorage(rootDir: string): StorageAdapter {
       let count = 0;
       for (const child of children) {
         try {
-          const manifest = await readManifestFile(joinPath(attachmentsDir, child));
+          const manifest = await readManifestFile(
+            joinPath(attachmentsDir, child),
+          );
           if (manifest.status === "ready") {
             count += 1;
           }
@@ -142,6 +144,26 @@ async function validateReadyDir(dir: string): Promise<void> {
   if (!Array.isArray(boxes)) {
     throw new Error("boxes.normalized.json is not an array");
   }
+}
+
+async function refreshStaleBoxes(
+  dir: string,
+  boxes: NormalizedBox[],
+): Promise<NormalizedBox[]> {
+  let rawResult: unknown;
+  try {
+    rawResult = await readJson(joinPath(dir, RAW_RESULT_FILE));
+  } catch {
+    return boxes;
+  }
+
+  const refreshed = normalizeMinerUBoxes(rawResult);
+  if (refreshed.length <= boxes.length) {
+    return boxes;
+  }
+
+  await writeJson(joinPath(dir, BOXES_FILE), refreshed);
+  return refreshed;
 }
 
 async function removeBackupDir(path: string): Promise<void> {
@@ -332,29 +354,35 @@ function getDirectoryServicePath(key: string | undefined): string | null {
     return null;
   }
 
-  const services = (globalThis as typeof globalThis & {
-    Services?: {
-      dirsvc?: {
-        get?: (key: string, iface: unknown) => { path?: string };
+  const services = (
+    globalThis as typeof globalThis & {
+      Services?: {
+        dirsvc?: {
+          get?: (key: string, iface: unknown) => { path?: string };
+        };
       };
-    };
-    Ci?: {
-      nsIFile?: unknown;
-    };
-    Components?: {
-      interfaces?: {
+      Ci?: {
         nsIFile?: unknown;
       };
-    };
-  }).Services;
+      Components?: {
+        interfaces?: {
+          nsIFile?: unknown;
+        };
+      };
+    }
+  ).Services;
   const nsIFile =
-    (globalThis as typeof globalThis & {
-      Ci?: { nsIFile?: unknown };
-      Components?: { interfaces?: { nsIFile?: unknown } };
-    }).Ci?.nsIFile ??
-    (globalThis as typeof globalThis & {
-      Components?: { interfaces?: { nsIFile?: unknown } };
-    }).Components?.interfaces?.nsIFile;
+    (
+      globalThis as typeof globalThis & {
+        Ci?: { nsIFile?: unknown };
+        Components?: { interfaces?: { nsIFile?: unknown } };
+      }
+    ).Ci?.nsIFile ??
+    (
+      globalThis as typeof globalThis & {
+        Components?: { interfaces?: { nsIFile?: unknown } };
+      }
+    ).Components?.interfaces?.nsIFile;
 
   const dirServicePath = services?.dirsvc?.get?.(key, nsIFile)?.path;
   if (dirServicePath) {
