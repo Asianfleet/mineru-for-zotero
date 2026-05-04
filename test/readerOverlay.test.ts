@@ -2,6 +2,7 @@ import { assert } from "chai";
 import {
   applyReaderOverlayMode,
   buildReaderOverlayRoot,
+  getReaderOverlayNoticeText,
   getReaderOverlayWindows,
   getReaderSelectedBoxCount,
   setReaderOverlayModeForReader,
@@ -56,21 +57,65 @@ describe("readerOverlay", function () {
 
     const root = buildReaderOverlayRoot(
       doc as unknown as Document,
-      [normalizedBoxes[0], normalizedBoxes[2]],
+      [
+        createBox(0, "text", "第一段"),
+        createBox(1, "title", "标题"),
+        createBox(2, "image_caption", "图片标题"),
+        createBox(3, "page_header", "页眉"),
+        createBox(4, "page_number", "1"),
+        createBox(5, "interline_equation", "E=mc^2", "E=mc^2"),
+      ],
       "hover",
     );
 
-    assert.equal(
+    assert.deepEqual(
       findElementsByClass(root, "mineru-copy-box-label").map(
         (element) => element.textContent,
-      )[0],
-      "text",
+      ),
+      ["文本", "标题", "图片标题", "页眉", "页码", "公式"],
     );
     assert.deepEqual(
       findElementsByClass(root, "mineru-copy-button").map(
         (element) => element.textContent,
       ),
-      ["复制", "带 $ 复制", "不带 $ 复制"],
+      ["复制", "复制", "复制", "复制", "复制", "带 $ 复制", "不带 $ 复制"],
+    );
+  });
+
+  it("renders labels and copy buttons in all mode", function () {
+    const doc = createDocumentStub();
+
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      [
+        createBox(0, "text", "第一段"),
+        createBox(1, "title", "标题"),
+        createBox(2, "image_caption", "图片标题"),
+        createBox(3, "page_header", "页眉"),
+        createBox(4, "page_number", "1"),
+        createBox(5, "interline_equation", "E=mc^2", "E=mc^2"),
+      ],
+      "all",
+    );
+
+    assert.deepEqual(
+      findElementsByClass(root, "mineru-copy-box-label").map(
+        (element) => element.textContent,
+      ),
+      ["文本", "标题", "图片标题", "页眉", "页码", "公式"],
+    );
+    assert.deepEqual(
+      findElementsByClass(root, "mineru-copy-button").map(
+        (element) => element.textContent,
+      ),
+      ["复制", "复制", "复制", "复制", "复制", "带 $ 复制", "不带 $ 复制"],
+    );
+  });
+
+  it("provides a local fallback for the missing-result prompt", function () {
+    assert.equal(
+      getReaderOverlayNoticeText("reader-overlay-missing-result"),
+      "当前 PDF 还没有可用的 MinerU 解析结果，请先解析后再开启 box",
     );
   });
 
@@ -152,6 +197,22 @@ function createView(name: string): { _iframeWindow: Window } {
       addEventListener() {},
       removeEventListener() {},
     } as unknown as Window,
+  };
+}
+
+function createBox(
+  rawIndex: number,
+  type: string,
+  markdown: string,
+  formula: string | null = null,
+): import("../src/modules/domain").NormalizedBox {
+  return {
+    rawIndex,
+    page: 1,
+    type,
+    bbox: { x: 0.1, y: 0.2 + rawIndex * 0.05, width: 0.3, height: 0.05 },
+    markdown,
+    formula,
   };
 }
 

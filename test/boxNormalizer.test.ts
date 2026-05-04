@@ -51,7 +51,7 @@ describe("boxNormalizer", function () {
     assert.equal(boxes.length, 2);
     assert.equal(boxes[0].page, 1);
     assert.equal(boxes[0].markdown, "第一段");
-    assert.equal(boxes[1].type, "formula");
+    assert.equal(boxes[1].type, "interline_equation");
     assert.equal(boxes[1].formula, "E=mc^2");
   });
 
@@ -132,14 +132,14 @@ describe("boxNormalizer", function () {
         type: box.type,
         markdown: box.markdown,
       })),
-      { type: "text", markdown: "Figure 1: caption" },
+      { type: "image_caption", markdown: "Figure 1: caption" },
     );
     assert.deepInclude(
       boxes.map((box) => ({
         type: box.type,
         markdown: box.markdown,
       })),
-      { type: "text", markdown: "Table 1: caption" },
+      { type: "table_caption", markdown: "Table 1: caption" },
     );
   });
 
@@ -161,7 +161,7 @@ describe("boxNormalizer", function () {
     });
 
     assert.equal(boxes.length, 1);
-    assert.equal(boxes[0].type, "text");
+    assert.equal(boxes[0].type, "page_footnote");
     assert.equal(boxes[0].markdown, "* footnote");
     assert.deepEqual(boxes[0].bbox, {
       x: 0.1,
@@ -169,5 +169,52 @@ describe("boxNormalizer", function () {
       width: 0.4,
       height: 0.05,
     });
+  });
+
+  it("preserves detailed MinerU types for box labels", function () {
+    const boxes = normalizeMinerUBoxes({
+      pdf_info: [
+        {
+          page_idx: 0,
+          page_size: [1000, 2000],
+          para_blocks: [
+            {
+              type: "title",
+              bbox: [100, 100, 500, 180],
+              markdown: "Title",
+            },
+            {
+              type: "image_caption",
+              bbox: [100, 220, 500, 280],
+              lines: [{ spans: [{ content: "Figure 1: caption" }] }],
+            },
+            {
+              type: "page_header",
+              bbox: [100, 20, 500, 60],
+              lines: [{ spans: [{ content: "Header" }] }],
+            },
+            {
+              type: "page_number",
+              bbox: [900, 1900, 960, 1980],
+              lines: [{ spans: [{ content: "1" }] }],
+            },
+            {
+              type: "interline_equation",
+              bbox: [100, 300, 500, 360],
+              lines: [{ spans: [{ content: "E=mc^2" }] }],
+            },
+          ],
+        },
+      ],
+    });
+
+    assert.deepEqual(boxes.map((box) => box.type), [
+      "title",
+      "image_caption",
+      "page_header",
+      "page_number",
+      "interline_equation",
+    ]);
+    assert.equal(boxes[4].formula, "E=mc^2");
   });
 });

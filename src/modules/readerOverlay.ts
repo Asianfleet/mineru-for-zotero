@@ -1,7 +1,9 @@
 import type { NormalizedBox, OverlayMode } from "./domain";
+import type { FluentMessageId } from "../../typings/i10n";
 import { formatBoxesForCopy, formatFormulaForCopy } from "./copyFormatter";
 import { getMinerUStorageRoot } from "./preferenceScript";
 import { createStorage } from "./storage";
+import { getString } from "../utils/locale";
 
 export type ReaderOverlayKey = `${string}:${string}`;
 
@@ -232,6 +234,8 @@ export async function renderReaderOverlayForReader(
       attachmentKey: attachment.key,
       error: error instanceof Error ? error.message : String(error),
     });
+    showReaderOverlayNotice("reader-overlay-missing-result");
+    state.mode = "off";
     cleanupReaderOverlayRoot(state);
     state.root = null;
     return state;
@@ -423,7 +427,7 @@ export function buildReaderOverlayRoot(
     layer.dataset.pageNumber = String(page.page);
 
     for (const box of page.boxes) {
-      layer.append(createBoxElement(doc, box, mode));
+      layer.append(createBoxElement(doc, box));
     }
     root.append(layer);
   }
@@ -619,30 +623,27 @@ function getReaderAttachmentRef(
 function createBoxElement(
   doc: Document,
   box: NormalizedBox,
-  mode: Exclude<OverlayMode, "off">,
 ): HTMLDivElement {
   const element = doc.createElement("div");
   element.className = "mineru-copy-box";
   element.dataset.rawIndex = String(box.rawIndex);
   element.dataset.mineruBoxType = box.type;
   Object.assign(element.style, computeBoxStyle(box));
-  if (mode === "hover") {
-    element.append(createBoxLabel(doc, box), createBoxActions(doc, box));
-  }
+  element.append(createBoxLabel(doc, box), createBoxActions(doc, box));
   return element;
 }
 
 function createBoxLabel(doc: Document, box: NormalizedBox): HTMLSpanElement {
   const label = doc.createElement("span");
   label.className = "mineru-copy-box-label";
-  label.textContent = box.type;
+  label.textContent = formatBoxTypeLabel(box.type);
   return label;
 }
 
 function createBoxActions(doc: Document, box: NormalizedBox): HTMLDivElement {
   const actions = doc.createElement("div");
   actions.className = "mineru-copy-box-actions";
-  if (box.type === "formula" && box.formula) {
+  if (isFormulaBox(box) && box.formula) {
     actions.append(
       createCopyButton(doc, "带 $ 复制", () => {
         copyText(formatFormulaForCopy(box.formula ?? "", "with-dollar"));
@@ -660,6 +661,76 @@ function createBoxActions(doc: Document, box: NormalizedBox): HTMLDivElement {
     }),
   );
   return actions;
+}
+
+function isFormulaBox(box: NormalizedBox): boolean {
+  return [
+    "formula",
+    "interline_equation",
+    "inline_equation",
+    "equation",
+  ].includes(box.type);
+}
+
+function formatBoxTypeLabel(type: string): string {
+  const normalized = type.trim().toLowerCase();
+  const labels: Record<string, string> = {
+    text: "文本",
+    title: "标题",
+    list: "列表",
+    table: "表格",
+    figure: "图片",
+    image: "图片",
+    image_body: "图片",
+    image_caption: "图片标题",
+    table_caption: "表格标题",
+    page_header: "页眉",
+    header: "页眉",
+    page_footer: "页脚",
+    footer: "页脚",
+    page_footnote: "脚注",
+    footnote: "脚注",
+    page_number: "页码",
+    formula: "公式",
+    interline_equation: "公式",
+    inline_equation: "公式",
+    equation: "公式",
+    unknown: "未知",
+  };
+  return labels[normalized] ?? normalized;
+}
+
+function showReaderOverlayNotice(id: FluentMessageId): void {
+  const text = getReaderOverlayNoticeText(id);
+  try {
+    new ztoolkit.ProgressWindow(addon.data.config.addonName, {
+      closeTime: 4000,
+    })
+      .createLine({
+        text,
+        type: "default",
+        progress: 100,
+      })
+      .show();
+  } catch {
+    // 提示窗口不能影响 reader 交互。
+  }
+}
+
+export function getReaderOverlayNoticeText(id: FluentMessageId): string {
+  try {
+    const value = getString(id);
+    if (value && value !== id) {
+      return value;
+    }
+  } catch {
+    // Fall through to the built-in fallback text.
+  }
+
+  if (id === "reader-overlay-missing-result") {
+    return "当前 PDF 还没有可用的 MinerU 解析结果，请先解析后再开启 box";
+  }
+  return id;
 }
 
 function createCopyButton(

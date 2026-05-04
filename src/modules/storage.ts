@@ -158,7 +158,11 @@ async function refreshStaleBoxes(
   }
 
   const refreshed = normalizeMinerUBoxes(rawResult);
-  if (refreshed.length <= boxes.length) {
+  if (refreshed.length === 0) {
+    return boxes;
+  }
+
+  if (JSON.stringify(boxes) === JSON.stringify(refreshed)) {
     return boxes;
   }
 

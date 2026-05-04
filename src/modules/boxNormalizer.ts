@@ -60,7 +60,7 @@ export function normalizeMinerUBoxes(result: unknown): NormalizedBox[] {
           height: clamp01((y2 - y1) / height),
         },
         markdown,
-        formula: type === "formula" ? getBlockFormula(block, markdown) : null,
+        formula: isFormulaType(type) ? getBlockFormula(block, markdown) : null,
       });
     }
   }
@@ -185,35 +185,17 @@ function getLinesText(block: RawBlock): string | null {
 }
 
 function normalizeType(type: unknown): MinerUBoxType {
-  const value = String(type ?? "unknown").toLowerCase();
-  if (["text", "title", "list", "table", "figure", "formula"].includes(value)) {
-    return value as MinerUBoxType;
-  }
-  if (["image", "image_body"].includes(value)) {
-    return "figure";
-  }
-  if (
-    [
-      "image_caption",
-      "table_caption",
-      "page_footnote",
-      "footnote",
-      "footer",
-      "ref_text",
-    ].includes(value)
-  ) {
-    return "text";
-  }
-  if (["interline_equation", "inline_equation", "equation"].includes(value)) {
-    return "formula";
-  }
-  if (value.includes("table")) {
-    return "table";
-  }
-  if (value.includes("list")) {
-    return "list";
-  }
-  return "unknown";
+  const value = String(type ?? "").trim().toLowerCase();
+  return value || "unknown";
+}
+
+function isFormulaType(type: string): boolean {
+  return [
+    "formula",
+    "interline_equation",
+    "inline_equation",
+    "equation",
+  ].includes(type);
 }
 
 function positiveOrOne(value: number): number {

@@ -14,3 +14,4 @@ reader-show-hover-box = Show only hovered box
 reader-disable-plugin = Disable plugin features
 reader-copy-selected-boxes = Copy selected boxes ({ $count })
 reader-clear-selection = Clear selection
+reader-overlay-missing-result = This PDF does not have a MinerU parse result yet. Parse it before enabling boxes.
