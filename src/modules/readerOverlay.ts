@@ -89,6 +89,19 @@ const READER_OVERLAY_CSS = `
   background: rgba(64, 156, 255, 0.18);
 }
 
+.mineru-copy-box-label,
+.mineru-copy-box-actions {
+  display: none;
+}
+
+.mineru-copy-box:hover .mineru-copy-box-label {
+  display: block;
+}
+
+.mineru-copy-box:hover .mineru-copy-box-actions {
+  display: flex;
+}
+
 .mineru-copy-box-label {
   position: absolute;
   left: 0;
@@ -255,7 +268,7 @@ export async function renderReaderOverlayForReader(
     const root = buildReaderOverlayRoot(doc, boxes, mode);
     ensureReaderOverlayStyles(doc);
     positionPageLayers(doc, root);
-    doc.body?.append(root);
+    getReaderOverlayMountContainer(doc)?.append(root);
     const cleanup = createReaderOverlayPositioningController({
       doc,
       win,
@@ -453,6 +466,7 @@ export function createReaderOverlayPositioningController(
   let scheduledHandle: number | null = null;
   let intervalHandle: number | null = null;
   let cleaned = false;
+  const scrollContainer = getPrimaryScrollContainer(options.doc);
 
   const schedule = () => {
     if (cleaned || scheduledHandle !== null) {
@@ -482,6 +496,10 @@ export function createReaderOverlayPositioningController(
 
   options.win.addEventListener("scroll", schedule, true);
   options.win.addEventListener("resize", schedule);
+  options.win.addEventListener("wheel", onWheel, {
+    capture: true,
+    passive: false,
+  });
   for (const container of scrollContainers) {
     container.addEventListener("scroll", schedule, true);
   }
@@ -498,6 +516,7 @@ export function createReaderOverlayPositioningController(
       cleaned = true;
       options.win.removeEventListener("scroll", schedule, true);
       options.win.removeEventListener("resize", schedule);
+      options.win.removeEventListener("wheel", onWheel, true);
       for (const container of scrollContainers) {
         container.removeEventListener("scroll", schedule, true);
       }
@@ -518,6 +537,20 @@ export function createReaderOverlayPositioningController(
       scheduledHandle = null;
     },
   };
+
+  function onWheel(event: WheelEvent): void {
+    if (cleaned || !scrollContainer) {
+      return;
+    }
+
+    const target = event.target as Node | null;
+    if (!target || !options.root.contains(target)) {
+      return;
+    }
+
+    event.preventDefault();
+    scrollElementBy(scrollContainer, event.deltaX, event.deltaY, event.deltaMode);
+  }
 }
 
 function cleanupReaderOverlayRoot(state: ReaderOverlayState): void {
@@ -579,6 +612,16 @@ function getReaderScrollContainers(doc: Document): Element[] {
     }
   }
   return [...containers];
+}
+
+function getPrimaryScrollContainer(doc: Document): Element | null {
+  return (
+    getReaderScrollContainers(doc)[0] ??
+    doc.scrollingElement ??
+    doc.documentElement ??
+    doc.body ??
+    null
+  );
 }
 
 export function ensureReaderOverlayStyles(doc: Document): void {
@@ -805,10 +848,40 @@ export function findPageElement(
       `.pdfViewer .page[data-page-number="${escapedPageNumber}"]`,
     ) ??
     doc.querySelector(`.page[data-page-number="${escapedPageNumber}"]`) ??
-    doc.querySelector(`[data-page-number="${escapedPageNumber}"]`) ??
-    doc.querySelector(`[data-page="${escapedPageNumber}"]`) ??
+    doc.querySelector(`.pdfViewer .page[data-page="${escapedPageNumber}"]`) ??
+    doc.querySelector(`.page[data-page="${escapedPageNumber}"]`) ??
     null
   );
+}
+
+function getReaderOverlayMountContainer(doc: Document): Element | null {
+  return getReaderScrollContainers(doc)[0] ?? doc.body ?? doc.documentElement;
+}
+
+function scrollElementBy(
+  element: Element,
+  deltaX: number,
+  deltaY: number,
+  deltaMode: number,
+): void {
+  const factor = deltaMode === 1 ? 16 : deltaMode === 2 ? 320 : 1;
+  const target = element as HTMLElement & {
+    scrollBy?: (options: ScrollToOptions) => void;
+  };
+  const left = deltaX * factor;
+  const top = deltaY * factor;
+
+  if (typeof target.scrollBy === "function") {
+    target.scrollBy({ left, top, behavior: "auto" });
+    return;
+  }
+
+  if (typeof target.scrollLeft === "number") {
+    target.scrollLeft += left;
+  }
+  if (typeof target.scrollTop === "number") {
+    target.scrollTop += top;
+  }
 }
 
 function createPageRect(

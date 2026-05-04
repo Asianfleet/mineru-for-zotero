@@ -34,6 +34,19 @@
   background: rgba(64, 156, 255, 0.18);
 }
 
+.mineru-copy-box-label,
+.mineru-copy-box-actions {
+  display: none;
+}
+
+.mineru-copy-box:hover .mineru-copy-box-label {
+  display: block;
+}
+
+.mineru-copy-box:hover .mineru-copy-box-actions {
+  display: flex;
+}
+
 .mineru-copy-box-label {
   position: absolute;
   left: 0;

@@ -2,9 +2,12 @@ import { assert } from "chai";
 import {
   applyReaderOverlayMode,
   buildReaderOverlayRoot,
+  createReaderOverlayPositioningController,
+  ensureReaderOverlayStyles,
   getReaderOverlayNoticeText,
   getReaderOverlayWindows,
   getReaderSelectedBoxCount,
+  findPageElement,
   setReaderOverlayModeForReader,
   setReaderOverlayRootForReader,
 } from "../src/modules/readerOverlay";
@@ -112,11 +115,126 @@ describe("readerOverlay", function () {
     );
   });
 
+  it("hides controls until a box is hovered", function () {
+    const doc = createDocumentStub();
+
+    ensureReaderOverlayStyles(doc as unknown as Document);
+
+    const style = doc.headChildren[0];
+    assert.include(
+      style.textContent,
+      ".mineru-copy-box-label,\n.mineru-copy-box-actions",
+    );
+    assert.include(
+      style.textContent,
+      ".mineru-copy-box:hover .mineru-copy-box-label",
+    );
+    assert.include(
+      style.textContent,
+      ".mineru-copy-box:hover .mineru-copy-box-actions",
+    );
+  });
+
   it("provides a local fallback for the missing-result prompt", function () {
     assert.equal(
       getReaderOverlayNoticeText("reader-overlay-missing-result"),
       "当前 PDF 还没有可用的 MinerU 解析结果，请先解析后再开启 box",
     );
+  });
+
+  it("prefers page elements over bare page attributes", function () {
+    const page = { id: "page" } as unknown as Element;
+    const bare = { id: "bare" } as unknown as Element;
+    const doc = {
+      querySelector(selector: string) {
+        if (selector === '.pdfViewer .page[data-page-number="2"]') {
+          return null;
+        }
+        if (selector === '.page[data-page-number="2"]') {
+          return page;
+        }
+        if (selector === '.pdfViewer .page[data-page="2"]') {
+          return null;
+        }
+        if (selector === '.page[data-page="2"]') {
+          return null;
+        }
+        if (selector === '[data-page-number="2"]') {
+          return bare;
+        }
+        return null;
+      },
+    };
+
+    assert.strictEqual(findPageElement(doc as unknown as Document, 2), page);
+  });
+
+  it("forwards wheel events over overlay boxes to the reader scroll container", function () {
+    let wheelListener: ((event: WheelEvent) => void) | null = null;
+    const target = {} as Node;
+    const scrollCalls: ScrollToOptions[] = [];
+    const root = {
+      contains(node: Node) {
+        return node === target;
+      },
+    } as unknown as HTMLDivElement;
+    const scrollContainer = {
+      addEventListener() {},
+      removeEventListener() {},
+      scrollBy(options: ScrollToOptions) {
+        scrollCalls.push(options);
+      },
+    } as unknown as Element;
+    const doc = {
+      querySelector(selector: string) {
+        return selector === "#viewerContainer" ? scrollContainer : null;
+      },
+      documentElement: null,
+      body: null,
+    } as unknown as Document;
+    const win = {
+      addEventListener(type: string, listener: EventListener) {
+        if (type === "wheel") {
+          wheelListener = listener as (event: WheelEvent) => void;
+        }
+      },
+      removeEventListener() {},
+      requestAnimationFrame() {
+        return 1;
+      },
+      cancelAnimationFrame() {},
+      setTimeout() {
+        return 1;
+      },
+      clearTimeout() {},
+      setInterval() {
+        return 1;
+      },
+      clearInterval() {},
+    } as unknown as Window;
+
+    createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      reposition() {},
+    });
+
+    let prevented = false;
+    wheelListener?.({
+      target,
+      deltaX: 4,
+      deltaY: 120,
+      deltaMode: 0,
+      preventDefault() {
+        prevented = true;
+      },
+    } as unknown as WheelEvent);
+
+    assert.isTrue(prevented);
+    assert.deepEqual(scrollCalls, [
+      { left: 4, top: 120, behavior: "auto" },
+    ]);
   });
 
   it("returns every reader pane window for split views", function () {
@@ -216,7 +334,10 @@ function createBox(
   };
 }
 
-function createDocumentStub(): Document {
+function createDocumentStub(): Document & {
+  headChildren: FakeElement[];
+  bodyChildren: FakeElement[];
+} {
   const rootChildren: FakeElement[] = [];
   const bodyChildren: FakeElement[] = [];
 
@@ -248,7 +369,13 @@ function createDocumentStub(): Document {
     },
   };
 
-  return doc as unknown as Document;
+  return Object.assign(doc, {
+    headChildren: rootChildren,
+    bodyChildren,
+  }) as unknown as Document & {
+    headChildren: FakeElement[];
+    bodyChildren: FakeElement[];
+  };
 }
 
 interface FakeElement {
