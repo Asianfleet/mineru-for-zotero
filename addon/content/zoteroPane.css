@@ -1,3 +1,23 @@
-.makeItRed {
-  background-color: tomato;
+.mineru-copy-overlay-root {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  pointer-events: none;
+}
+
+.mineru-copy-page-layer {
+  position: fixed;
+  pointer-events: none;
+}
+
+.mineru-copy-box {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid rgba(33, 99, 235, 0.9);
+  background: transparent;
+  pointer-events: auto;
+}
+
+.mineru-copy-box:hover {
+  background: rgba(64, 156, 255, 0.18);
 }

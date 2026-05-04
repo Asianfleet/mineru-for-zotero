@@ -1,10 +1,10 @@
 import type { FluentMessageId } from "../../typings/i10n";
 import {
+  applyReaderOverlayMode,
   clearReaderOverlaySelectionForReader,
   destroyReaderOverlaysByReaderID,
   getReaderOverlayStateForReader,
   getReaderSelectedBoxCount,
-  setReaderOverlayModeForReader,
 } from "./readerOverlay";
 import { getString } from "../utils/locale";
 
@@ -409,7 +409,7 @@ function updateMenu(
       readerString("reader-show-all-boxes"),
       () => {
         runReaderToolbarCommand(reader, "show-all-boxes", () => {
-          setReaderOverlayModeForReader(reader, "all");
+          void applyReaderOverlayMode(reader, "all");
         });
         updateMenu(reader, doc, menu, sync);
         sync();
@@ -421,7 +421,7 @@ function updateMenu(
       readerString("reader-show-hover-box"),
       () => {
         runReaderToolbarCommand(reader, "show-hover-box", () => {
-          setReaderOverlayModeForReader(reader, "hover");
+          void applyReaderOverlayMode(reader, "hover");
         });
         updateMenu(reader, doc, menu, sync);
         sync();
@@ -433,7 +433,7 @@ function updateMenu(
       readerString("reader-disable-plugin"),
       () => {
         runReaderToolbarCommand(reader, "disable-plugin", () => {
-          setReaderOverlayModeForReader(reader, "off");
+          void applyReaderOverlayMode(reader, "off");
         });
         updateMenu(reader, doc, menu, sync);
         sync();
