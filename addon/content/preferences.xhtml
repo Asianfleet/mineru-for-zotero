@@ -1,37 +1,22 @@
 <linkset>
   <html:link rel="localization" href="__addonRef__-preferences.ftl" />
 </linkset>
-<groupbox
-  onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })"
->
-  <label><html:h2 data-l10n-id="pref-title"></html:h2></label>
+<groupbox onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })">
   <vbox>
-    <html:label
-      for="zotero-prefpane-__addonRef__-api-key"
-      data-l10n-id="pref-api-key"
-    ></html:label>
-    <html:input
-      type="password"
-      id="zotero-prefpane-__addonRef__-api-key"
-      preference="apiKey"
-    ></html:input>
+    <html:h3 for="zotero-prefpane-__addonRef__-api-key" data-l10n-id="pref-api-key"></html:h3>
+    <html:input type="password" id="zotero-prefpane-__addonRef__-api-key" preference="apiKey"></html:input>
     <html:div data-l10n-id="pref-api-key-help"></html:div>
   </vbox>
   <vbox>
     <html:h3 data-l10n-id="pref-data-folder-title"></html:h3>
     <hbox>
-      <html:button
-        id="__addonRef__-open-data-folder"
-        data-l10n-id="pref-open-data-folder"
-      ></html:button>
+      <html:button id="__addonRef__-open-data-folder" data-l10n-id="pref-open-data-folder"></html:button>
     </hbox>
     <html:div id="__addonRef__-data-folder-path"></html:div>
     <html:div id="__addonRef__-parsed-count"></html:div>
   </vbox>
 </groupbox>
 <vbox>
-  <html:label
-    data-l10n-id="pref-help"
-    data-l10n-args='{"time": "__buildTime__","name": "__addonName__","version":"__buildVersion__"}'
-  ></html:label>
+  <html:label data-l10n-id="pref-help"
+    data-l10n-args='{"time": "__buildTime__","name": "__addonName__","version":"__buildVersion__"}'></html:label>
 </vbox>
