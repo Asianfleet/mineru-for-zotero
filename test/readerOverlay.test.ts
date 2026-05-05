@@ -8,6 +8,7 @@ import {
   getReaderOverlayWindows,
   getReaderSelectedBoxCount,
   findPageElement,
+  removeReaderOverlayRoot,
   setReaderOverlayModeForReader,
   setReaderOverlayRootForReader,
 } from "../src/modules/readerOverlay";
@@ -345,6 +346,174 @@ describe("readerOverlay", function () {
     assert.equal(root.style.display, "");
     assert.equal(dispatched.length, 1);
     assert.equal(dispatched[0].deltaY, 120);
+  });
+
+  it("uses the reader window WheelEvent constructor when the plugin global lacks one", function () {
+    const originalWheelEvent = globalThis.WheelEvent;
+    Object.defineProperty(globalThis, "WheelEvent", {
+      configurable: true,
+      value: undefined,
+    });
+
+    try {
+      let wheelListener: ((event: WheelEvent) => void) | null = null;
+      const target = {} as Node;
+      const dispatched: WheelEvent[] = [];
+      const underlying = {
+        dispatchEvent(event: Event) {
+          dispatched.push(event as WheelEvent);
+          return true;
+        },
+      } as unknown as Element;
+      const root = {
+        style: { display: "" },
+        contains(node: Node) {
+          return node === target;
+        },
+      } as unknown as HTMLDivElement;
+      const scrollContainer = {
+        addEventListener() {},
+        removeEventListener() {},
+        scrollBy() {
+          assert.fail("Expected wheel to be forwarded before scroll fallback");
+        },
+      } as unknown as Element;
+      const doc = {
+        defaultView: {
+          WheelEvent: class FakeWheelEvent {
+            deltaY: number;
+
+            constructor(_type: string, init: WheelEventInit) {
+              this.deltaY = init.deltaY ?? 0;
+            }
+          },
+        },
+        querySelector(selector: string) {
+          return selector === "#viewerContainer" ? scrollContainer : null;
+        },
+        elementFromPoint() {
+          return underlying;
+        },
+        documentElement: null,
+        body: null,
+      } as unknown as Document;
+      const win = {
+        addEventListener(type: string, listener: EventListener) {
+          if (type === "wheel") {
+            wheelListener = listener as (event: WheelEvent) => void;
+          }
+        },
+        removeEventListener() {},
+        requestAnimationFrame() {
+          return 1;
+        },
+        cancelAnimationFrame() {},
+        setTimeout() {
+          return 1;
+        },
+        clearTimeout() {},
+        setInterval() {
+          return 1;
+        },
+        clearInterval() {},
+      } as unknown as Window;
+
+      createReaderOverlayPositioningController({
+        doc,
+        win,
+        root,
+        reposition() {},
+      });
+
+      assert.doesNotThrow(() => {
+        wheelListener?.({
+          target,
+          clientX: 10,
+          clientY: 20,
+          screenX: 30,
+          screenY: 40,
+          deltaX: 4,
+          deltaY: 120,
+          deltaZ: 0,
+          deltaMode: 0,
+          ctrlKey: false,
+          shiftKey: false,
+          altKey: false,
+          metaKey: false,
+          preventDefault() {},
+          stopPropagation() {},
+          stopImmediatePropagation() {},
+        } as unknown as WheelEvent);
+      });
+
+      assert.equal(dispatched.length, 1);
+      assert.equal(dispatched[0].deltaY, 120);
+    } finally {
+      Object.defineProperty(globalThis, "WheelEvent", {
+        configurable: true,
+        value: originalWheelEvent,
+      });
+    }
+  });
+
+  it("does not throw when a split pane window dies before cleanup", function () {
+    let intervalCleared = false;
+    let animationCancelled = false;
+    const root = {
+      contains() {
+        return false;
+      },
+    } as unknown as HTMLDivElement;
+    const doc = {
+      querySelector() {
+        return null;
+      },
+      documentElement: null,
+      body: null,
+    } as unknown as Document;
+    const win = {
+      addEventListener() {},
+      removeEventListener() {
+        throw new TypeError("can't access dead object");
+      },
+      requestAnimationFrame() {
+        return 7;
+      },
+      cancelAnimationFrame() {
+        animationCancelled = true;
+      },
+      setTimeout() {
+        return 1;
+      },
+      clearTimeout() {},
+      setInterval() {
+        return 11;
+      },
+      clearInterval() {
+        intervalCleared = true;
+      },
+    } as unknown as Window;
+
+    const controller = createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      reposition() {},
+    });
+
+    assert.doesNotThrow(() => controller.cleanup());
+    assert.isTrue(intervalCleared);
+    assert.isTrue(animationCancelled);
+  });
+
+  it("does not throw when a split pane root dies before removal", function () {
+    const root = {
+      remove() {
+        throw new TypeError("can't access dead object");
+      },
+    } as unknown as HTMLElement;
+
+    assert.doesNotThrow(() => removeReaderOverlayRoot(root));
   });
 
   it("returns every reader pane window for split views", function () {

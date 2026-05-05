@@ -450,7 +450,7 @@ export function buildReaderOverlayRoot(
 }
 
 export function removeReaderOverlayRoot(root: Element | null): void {
-  root?.remove();
+  safeReaderOverlayCleanup(() => root?.remove());
 }
 
 export function createFallbackPageRect(doc: Document): PageRect {
@@ -515,14 +515,23 @@ export function createReaderOverlayPositioningController(
         return;
       }
       cleaned = true;
-      options.win.removeEventListener("scroll", schedule, true);
-      options.win.removeEventListener("resize", schedule);
-      options.win.removeEventListener("wheel", onWheel, true);
+      safeReaderOverlayCleanup(() =>
+        options.win.removeEventListener("scroll", schedule, true),
+      );
+      safeReaderOverlayCleanup(() =>
+        options.win.removeEventListener("resize", schedule),
+      );
+      safeReaderOverlayCleanup(() =>
+        options.win.removeEventListener("wheel", onWheel, true),
+      );
       for (const container of scrollContainers) {
-        container.removeEventListener("scroll", schedule, true);
+        safeReaderOverlayCleanup(() =>
+          container.removeEventListener("scroll", schedule, true),
+        );
       }
       if (intervalHandle !== null) {
-        options.win.clearInterval(intervalHandle);
+        const handle = intervalHandle;
+        safeReaderOverlayCleanup(() => options.win.clearInterval(handle));
         intervalHandle = null;
       }
 
@@ -530,10 +539,13 @@ export function createReaderOverlayPositioningController(
         return;
       }
 
+      const handle = scheduledHandle;
       if (options.win.cancelAnimationFrame) {
-        options.win.cancelAnimationFrame(scheduledHandle);
+        safeReaderOverlayCleanup(() =>
+          options.win.cancelAnimationFrame(handle),
+        );
       } else {
-        options.win.clearTimeout(scheduledHandle);
+        safeReaderOverlayCleanup(() => options.win.clearTimeout(handle));
       }
       scheduledHandle = null;
     },
@@ -885,7 +897,12 @@ function forwardWheelToUnderlyingElement(
     return false;
   }
 
-  const forwarded = new WheelEvent("wheel", {
+  const WheelEventConstructor = getWheelEventConstructor(doc);
+  if (!WheelEventConstructor) {
+    return false;
+  }
+
+  const forwarded = new WheelEventConstructor("wheel", {
     bubbles: true,
     cancelable: true,
     deltaX: event.deltaX,
@@ -903,6 +920,21 @@ function forwardWheelToUnderlyingElement(
   });
   target.dispatchEvent(forwarded);
   return true;
+}
+
+function getWheelEventConstructor(
+  doc: Document,
+): typeof WheelEvent | null {
+  const readerWheelEvent = doc.defaultView?.WheelEvent;
+  if (readerWheelEvent) {
+    return readerWheelEvent;
+  }
+
+  if (typeof WheelEvent !== "undefined") {
+    return WheelEvent;
+  }
+
+  return null;
 }
 
 function scrollElementBy(
@@ -976,4 +1008,21 @@ function logReaderOverlayDiagnostic(
   } catch {
     // 测试或 teardown 阶段可能没有 Zotero.debug。
   }
+}
+
+function safeReaderOverlayCleanup(cleanup: () => void): void {
+  try {
+    cleanup();
+  } catch (error) {
+    if (!isDeadObjectError(error)) {
+      throw error;
+    }
+  }
+}
+
+function isDeadObjectError(error: unknown): boolean {
+  return (
+    error instanceof TypeError &&
+    String(error.message).includes("can't access dead object")
+  );
 }
