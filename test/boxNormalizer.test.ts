@@ -55,6 +55,111 @@ describe("boxNormalizer", function () {
     assert.equal(boxes[1].formula, "E=mc^2");
   });
 
+  it("merges visual text lines into paragraph copy text", function () {
+    const boxes = normalizeMinerUBoxes({
+      pdf_info: [
+        {
+          page_idx: 0,
+          page_size: [1000, 2000],
+          para_blocks: [
+            {
+              type: "text",
+              bbox: [100, 400, 900, 500],
+              lines: [
+                {
+                  spans: [
+                    {
+                      content:
+                        "We trained on the standard WMT 2014 English-German dataset consisting of about 4.5 million",
+                    },
+                  ],
+                },
+                {
+                  spans: [
+                    {
+                      content:
+                        "sentence pairs. Sentences were encoded using byte-pair encoding [3], which has a shared source-",
+                    },
+                  ],
+                },
+                {
+                  spans: [
+                    {
+                      content: "target vocabulary of about 37000 tokens.",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    assert.equal(
+      boxes[0].markdown,
+      "We trained on the standard WMT 2014 English-German dataset consisting of about 4.5 million sentence pairs. Sentences were encoded using byte-pair encoding [3], which has a shared sourcetarget vocabulary of about 37000 tokens.",
+    );
+  });
+
+  it("formats inline equations when composing text spans", function () {
+    const boxes = normalizeMinerUBoxes({
+      pdf_info: [
+        {
+          page_idx: 0,
+          page_size: [1000, 2000],
+          para_blocks: [
+            {
+              type: "text",
+              bbox: [100, 400, 900, 500],
+              lines: [
+                {
+                  spans: [
+                    {
+                      type: "text",
+                      content: "Where the projections are parameter matrices",
+                    },
+                    {
+                      type: "inline_equation",
+                      content:
+                        "W _ { i } ^ { Q } \\in \\mathbb { R } ^ { d _ { \\mathrm { m o d e l } } \\times d _ { k } }",
+                    },
+                    {
+                      type: "text",
+                      content: ", W K ∈ Rdmodel×dk , W V ∈ Rdmodel×dv",
+                    },
+                  ],
+                },
+                {
+                  spans: [
+                    {
+                      type: "text",
+                      content: "and",
+                    },
+                    {
+                      type: "inline_equation",
+                      content:
+                        "W ^ { O } \\in \\mathbb R ^ { h d _ { v } \\times d _ { \\mathrm { m o d e l } } }",
+                    },
+                    {
+                      type: "text",
+                      content: ".",
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    assert.equal(
+      boxes[0].markdown,
+      "Where the projections are parameter matrices $W _ { i } ^ { Q } \\in \\mathbb { R } ^ { d _ { \\mathrm { m o d e l } } \\times d _ { k } }$ , W K ∈ Rdmodel×dk , W V ∈ Rdmodel×dv and $W ^ { O } \\in \\mathbb R ^ { h d _ { v } \\times d _ { \\mathrm { m o d e l } } }$ .",
+    );
+  });
+
   it("normalizes MinerU layout_dets", function () {
     const boxes = normalizeMinerUBoxes({
       pdf_info: [
@@ -208,13 +313,16 @@ describe("boxNormalizer", function () {
       ],
     });
 
-    assert.deepEqual(boxes.map((box) => box.type), [
-      "title",
-      "image_caption",
-      "page_header",
-      "page_number",
-      "interline_equation",
-    ]);
+    assert.deepEqual(
+      boxes.map((box) => box.type),
+      [
+        "title",
+        "image_caption",
+        "page_header",
+        "page_number",
+        "interline_equation",
+      ],
+    );
     assert.equal(boxes[4].formula, "E=mc^2");
   });
 });

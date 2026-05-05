@@ -27,7 +27,13 @@ interface RawBlock {
   latex?: string;
   formula?: string;
   blocks?: RawBlock[];
-  lines?: Array<{ spans?: Array<{ content?: string; text?: string }> }>;
+  lines?: Array<{ spans?: RawSpan[] }>;
+}
+
+interface RawSpan {
+  type?: string;
+  content?: string;
+  text?: string;
 }
 
 export function normalizeMinerUBoxes(result: unknown): NormalizedBox[] {
@@ -162,30 +168,104 @@ function getBlockMarkdown(block: RawBlock): string {
 }
 
 function getBlockFormula(block: RawBlock, markdown: string): string | null {
-  const value = block.formula ?? block.latex ?? getLinesText(block) ?? markdown;
+  const value =
+    block.formula ?? block.latex ?? getLinesText(block, "visual") ?? markdown;
   const formula = String(value ?? "").trim();
   return formula ? formula : null;
 }
 
-function getLinesText(block: RawBlock): string | null {
+function getLinesText(
+  block: RawBlock,
+  mode: "paragraph" | "visual" = "paragraph",
+): string | null {
   if (!Array.isArray(block.lines)) {
     return null;
   }
 
-  const text = block.lines
-    .map((line) =>
-      (Array.isArray(line.spans) ? line.spans : [])
-        .map((span) => span.content ?? span.text ?? "")
-        .join(""),
-    )
-    .filter(Boolean)
-    .join("\n");
+  const lineTexts = block.lines
+    .map((line) => getLineText(line.spans, mode))
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const text =
+    mode === "visual" ? lineTexts.join("\n") : joinParagraphLines(lineTexts);
 
   return text || null;
 }
 
+function getLineText(
+  spans: RawSpan[] | undefined,
+  mode: "paragraph" | "visual",
+): string {
+  const values = Array.isArray(spans) ? spans : [];
+  if (mode === "visual") {
+    return values.map((span) => span.content ?? span.text ?? "").join("");
+  }
+
+  return values.reduce((text, span) => {
+    const value = formatParagraphSpan(span);
+    if (!value) {
+      return text;
+    }
+    if (!text) {
+      return value;
+    }
+    return shouldSeparateSpans(text, value, span)
+      ? `${text} ${value}`
+      : text + value;
+  }, "");
+}
+
+function formatParagraphSpan(span: RawSpan): string {
+  const value = String(span.content ?? span.text ?? "").trim();
+  if (!value) {
+    return "";
+  }
+  return isInlineEquationType(span.type) ? `$${value}$` : value;
+}
+
+function shouldSeparateSpans(
+  text: string,
+  value: string,
+  span: RawSpan,
+): boolean {
+  return isInlineEquationType(span.type) || text.endsWith("$");
+}
+
+function isInlineEquationType(type: unknown): boolean {
+  return ["inline_equation", "equation_inline"].includes(
+    String(type ?? "")
+      .trim()
+      .toLowerCase(),
+  );
+}
+
+function joinParagraphLines(lines: string[]): string {
+  return lines.reduce((text, line) => {
+    if (!text) {
+      return line;
+    }
+
+    if (isSoftHyphenBreak(text, line)) {
+      return `${text.slice(0, -1)}${line}`;
+    }
+
+    return `${text} ${line}`;
+  }, "");
+}
+
+function isSoftHyphenBreak(text: string, nextLine: string): boolean {
+  if (!text.endsWith("-") || !/^[a-z]/.test(nextLine)) {
+    return false;
+  }
+
+  const previousToken = text.slice(0, -1).split(/\s+/).pop() ?? "";
+  return !previousToken.includes("-");
+}
+
 function normalizeType(type: unknown): MinerUBoxType {
-  const value = String(type ?? "").trim().toLowerCase();
+  const value = String(type ?? "")
+    .trim()
+    .toLowerCase();
   return value || "unknown";
 }
 
