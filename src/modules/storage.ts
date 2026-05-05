@@ -15,6 +15,13 @@ export interface StorageAdapter {
     markdown: string;
     boxes: NormalizedBox[];
   }): Promise<void>;
+  writeFailedResult(input: {
+    attachment: AttachmentRef;
+    mineruTaskID: string;
+    rawResult: unknown;
+    markdown: string;
+    error: string;
+  }): Promise<void>;
   countReadyResults(): Promise<number>;
   openDataFolder(): Promise<void>;
 }
@@ -49,6 +56,10 @@ export function createStorage(rootDir: string): StorageAdapter {
 
     async readBoxes(ref) {
       const dir = getAttachmentDir(fsRoot, ref);
+      const manifest = await readManifestFile(dir);
+      if (manifest.status !== "ready") {
+        throw new Error(`MinerU result is not ready: ${manifest.status}`);
+      }
       const boxes = await readJson(joinPath(dir, BOXES_FILE));
       if (!Array.isArray(boxes)) {
         throw new Error("boxes.normalized.json is not an array");
@@ -57,10 +68,6 @@ export function createStorage(rootDir: string): StorageAdapter {
     },
 
     async writeResult(input) {
-      const targetDir = getAttachmentDir(fsRoot, input.attachment);
-      const stamp = makeStamp();
-      const tempDir = `${targetDir}.tmp-${stamp}`;
-      const backupDir = `${targetDir}.bak-${stamp}`;
       const manifest: ParseManifest = {
         attachmentID: input.attachment.id,
         attachmentKey: input.attachment.key,
@@ -73,31 +80,35 @@ export function createStorage(rootDir: string): StorageAdapter {
         status: "ready",
       };
 
-      await removePath(tempDir);
-      await makeDir(tempDir);
-      await writeJson(joinPath(tempDir, MANIFEST_FILE), manifest);
-      await writeJson(joinPath(tempDir, RAW_RESULT_FILE), input.rawResult);
-      await writeText(joinPath(tempDir, CONTENT_FILE), input.markdown);
-      await writeJson(joinPath(tempDir, BOXES_FILE), input.boxes);
+      await writeAttachmentResultDir(fsRoot, input.attachment, {
+        manifest,
+        rawResult: input.rawResult,
+        markdown: input.markdown,
+        boxes: input.boxes,
+        validate: validateReadyDir,
+      });
+    },
 
-      await validateReadyDir(tempDir);
+    async writeFailedResult(input) {
+      const manifest: ParseManifest = {
+        attachmentID: input.attachment.id,
+        attachmentKey: input.attachment.key,
+        libraryID: input.attachment.libraryID,
+        fileName: input.attachment.fileName,
+        pdfMtime: input.attachment.mtime,
+        parsedAt: new Date().toISOString(),
+        mineruTaskID: input.mineruTaskID,
+        resultVersion: 1,
+        status: "failed",
+        error: input.error,
+      };
 
-      const targetExists = await exists(targetDir);
-      if (targetExists) {
-        await removePath(backupDir);
-        await movePath(targetDir, backupDir);
-      }
-
-      try {
-        await movePath(tempDir, targetDir);
-      } catch (error) {
-        if (targetExists && (await exists(backupDir))) {
-          await movePath(backupDir, targetDir);
-        }
-        throw error;
-      }
-
-      await removeBackupDir(backupDir);
+      await writeAttachmentResultDir(fsRoot, input.attachment, {
+        manifest,
+        rawResult: input.rawResult,
+        markdown: input.markdown,
+        boxes: [],
+      });
     },
 
     async countReadyResults() {
@@ -109,6 +120,9 @@ export function createStorage(rootDir: string): StorageAdapter {
       const children = await readDir(attachmentsDir);
       let count = 0;
       for (const child of children) {
+        if (isTransientResultDir(child)) {
+          continue;
+        }
         try {
           const manifest = await readManifestFile(
             joinPath(attachmentsDir, child),
@@ -128,6 +142,58 @@ export function createStorage(rootDir: string): StorageAdapter {
       await openFolder(fsRoot);
     },
   };
+}
+
+async function writeAttachmentResultDir(
+  root: string,
+  attachment: AttachmentRef,
+  input: {
+    manifest: ParseManifest;
+    rawResult: unknown;
+    markdown: string;
+    boxes: NormalizedBox[];
+    validate?: (dir: string) => Promise<void>;
+  },
+): Promise<void> {
+  const targetDir = getAttachmentDir(root, attachment);
+  const stamp = makeStamp();
+  const tempDir = `${targetDir}.tmp-${stamp}`;
+  const backupDir = `${targetDir}.bak-${stamp}`;
+
+  try {
+    await removePath(tempDir);
+    await makeDir(tempDir);
+    await writeJson(joinPath(tempDir, MANIFEST_FILE), input.manifest);
+    await writeJson(joinPath(tempDir, RAW_RESULT_FILE), input.rawResult);
+    await writeText(joinPath(tempDir, CONTENT_FILE), input.markdown);
+    await writeJson(joinPath(tempDir, BOXES_FILE), input.boxes);
+    await input.validate?.(tempDir);
+  } catch (error) {
+    await removePath(tempDir);
+    throw error;
+  }
+
+  const targetExists = await exists(targetDir);
+  if (targetExists) {
+    await removePath(backupDir);
+    await movePath(targetDir, backupDir);
+  }
+
+  try {
+    await movePath(tempDir, targetDir);
+  } catch (error) {
+    if (targetExists && (await exists(backupDir))) {
+      await movePath(backupDir, targetDir);
+    }
+    await removePath(tempDir);
+    throw error;
+  }
+
+  await removeBackupDir(backupDir);
+}
+
+function isTransientResultDir(name: string): boolean {
+  return name.includes(".tmp-") || name.includes(".bak-");
 }
 
 function getAttachmentDir(root: string, ref: AttachmentKeyRef): string {

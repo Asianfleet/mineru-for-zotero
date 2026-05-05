@@ -1,6 +1,7 @@
 import { assert } from "chai";
 import {
   createMinerUClient,
+  MinerUFileAccessError,
   MinerURequestError,
   MinerUTaskError,
 } from "../src/modules/mineruClient";
@@ -60,13 +61,20 @@ describe("mineruClient", function () {
       body: ArrayBuffer | ArrayBufferView | null;
       headers: Record<string, string>;
     }> = [];
-    (Zotero.HTTP as typeof Zotero.HTTP & {
-      request: typeof Zotero.HTTP.request;
-    }).request = async (method, url, options) => {
+    (
+      Zotero.HTTP as typeof Zotero.HTTP & {
+        request: typeof Zotero.HTTP.request;
+      }
+    ).request = async (method, url, options) => {
       if (method === "PUT") {
         throw new Error("PUT upload should bypass Zotero.HTTP.request");
       }
-      calls.push({ method, url, body: options?.body, headers: options?.headers });
+      calls.push({
+        method,
+        url,
+        body: options?.body,
+        headers: options?.headers,
+      });
       return xhrResponse(
         method === "POST"
           ? {
@@ -118,7 +126,9 @@ describe("mineruClient", function () {
       const client = createMinerUClient({
         apiKey: "secret-token",
         readBinary: async () =>
-          new DataView(new Uint8Array([1, 2, 3]).buffer) as unknown as Uint8Array,
+          new DataView(
+            new Uint8Array([1, 2, 3]).buffer,
+          ) as unknown as Uint8Array,
       });
 
       const result = await client.submitPdf("C:/tmp/a.pdf");
@@ -127,13 +137,16 @@ describe("mineruClient", function () {
       assert.equal(uploadCalls[0].method, "PUT");
       assert.equal(uploadCalls[0].url, "https://upload.example/a");
       assert.deepEqual(uploadCalls[0].headers, {});
-      assert.deepEqual(Array.from(new Uint8Array(uploadCalls[0].body as ArrayBuffer)), [
-        1, 2, 3,
-      ]);
+      assert.deepEqual(
+        Array.from(new Uint8Array(uploadCalls[0].body as ArrayBuffer)),
+        [1, 2, 3],
+      );
     } finally {
-      (Zotero.HTTP as typeof Zotero.HTTP & {
-        request: typeof Zotero.HTTP.request;
-      }).request = originalRequest;
+      (
+        Zotero.HTTP as typeof Zotero.HTTP & {
+          request: typeof Zotero.HTTP.request;
+        }
+      ).request = originalRequest;
       globalThis.XMLHttpRequest = originalXMLHttpRequest;
     }
   });
@@ -203,6 +216,32 @@ describe("mineruClient", function () {
     }
   });
 
+  it("wraps PDF read failures as file access errors", async function () {
+    const client = createMinerUClient({
+      apiKey: "secret-token",
+      readBinary: async () => {
+        throw new Error("EACCES: permission denied");
+      },
+      fetch: async () =>
+        jsonResponse({
+          code: 0,
+          data: {
+            batch_id: "batch-1",
+            file_urls: ["https://upload.example/a"],
+          },
+        }),
+    });
+
+    try {
+      await client.submitPdf("C:/tmp/a.pdf");
+      assert.fail("Expected submitPdf to throw");
+    } catch (error) {
+      assert.instanceOf(error, MinerUFileAccessError);
+      assert.include((error as Error).message, "C:/tmp/a.pdf");
+      assert.include((error as Error).message, "EACCES");
+    }
+  });
+
   it("polls batch results and reports terminal failure", async function () {
     const client = createMinerUClient({
       apiKey: "secret-token",
@@ -240,10 +279,12 @@ describe("mineruClient", function () {
             },
           });
         }
-        return new Response(createStoredZipBytes({
-          "full.md": "# Title",
-          "layout.json": JSON.stringify({ pages: [{ pageNo: 1 }] }),
-        }));
+        return new Response(
+          createStoredZipBytes({
+            "full.md": "# Title",
+            "layout.json": JSON.stringify({ pages: [{ pageNo: 1 }] }),
+          }),
+        );
       },
     });
 
@@ -309,9 +350,11 @@ describe("mineruClient", function () {
       url: string;
       headers: Record<string, string>;
     }> = [];
-    (Zotero.HTTP as typeof Zotero.HTTP & {
-      request: typeof Zotero.HTTP.request;
-    }).request = async (method, url) => {
+    (
+      Zotero.HTTP as typeof Zotero.HTTP & {
+        request: typeof Zotero.HTTP.request;
+      }
+    ).request = async (method, url) => {
       if (String(url).includes("/extract-results/")) {
         return xhrResponse({
           code: 0,
@@ -325,7 +368,9 @@ describe("mineruClient", function () {
           },
         });
       }
-      throw new Error("Signed result download should bypass Zotero.HTTP.request");
+      throw new Error(
+        "Signed result download should bypass Zotero.HTTP.request",
+      );
     };
     globalThis.XMLHttpRequest = class {
       status = 0;
@@ -371,12 +416,18 @@ describe("mineruClient", function () {
       assert.equal(result.markdown, "# Title");
       assert.deepEqual(result.rawResult, { pages: [{ pageNo: 1 }] });
       assert.deepEqual(downloadCalls, [
-        { method: "GET", url: "https://download.example/full.zip", headers: {} },
+        {
+          method: "GET",
+          url: "https://download.example/full.zip",
+          headers: {},
+        },
       ]);
     } finally {
-      (Zotero.HTTP as typeof Zotero.HTTP & {
-        request: typeof Zotero.HTTP.request;
-      }).request = originalRequest;
+      (
+        Zotero.HTTP as typeof Zotero.HTTP & {
+          request: typeof Zotero.HTTP.request;
+        }
+      ).request = originalRequest;
       globalThis.XMLHttpRequest = originalXMLHttpRequest;
     }
   });
@@ -384,9 +435,11 @@ describe("mineruClient", function () {
   it("falls back to Zotero HTTP when direct XHR download fails", async function () {
     const originalRequest = Zotero.HTTP.request;
     const originalXMLHttpRequest = globalThis.XMLHttpRequest;
-    (Zotero.HTTP as typeof Zotero.HTTP & {
-      request: typeof Zotero.HTTP.request;
-    }).request = async (method, url) => {
+    (
+      Zotero.HTTP as typeof Zotero.HTTP & {
+        request: typeof Zotero.HTTP.request;
+      }
+    ).request = async (method, url) => {
       if (String(url).includes("/extract-results/")) {
         return xhrResponse({
           code: 0,
@@ -424,9 +477,11 @@ describe("mineruClient", function () {
       assert.equal(result.markdown, "# Title");
       assert.deepEqual(result.rawResult, { pages: [{ pageNo: 1 }] });
     } finally {
-      (Zotero.HTTP as typeof Zotero.HTTP & {
-        request: typeof Zotero.HTTP.request;
-      }).request = originalRequest;
+      (
+        Zotero.HTTP as typeof Zotero.HTTP & {
+          request: typeof Zotero.HTTP.request;
+        }
+      ).request = originalRequest;
       globalThis.XMLHttpRequest = originalXMLHttpRequest;
     }
   });
@@ -563,10 +618,12 @@ describe("mineruClient", function () {
         if (downloadCalls === 1) {
           return new Response(new ArrayBuffer(0));
         }
-        return new Response(createStoredZipBytes({
-          "full.md": "# Title",
-          "layout.json": JSON.stringify({ pages: [{ pageNo: 1 }] }),
-        }));
+        return new Response(
+          createStoredZipBytes({
+            "full.md": "# Title",
+            "layout.json": JSON.stringify({ pages: [{ pageNo: 1 }] }),
+          }),
+        );
       },
       downloadFileBytes: async () => new Uint8Array(),
     });
@@ -654,7 +711,9 @@ function createStoredZipBytes(files: Record<string, string>): Uint8Array {
 }
 
 function concatBytes(parts: Uint8Array[]): Uint8Array {
-  const result = new Uint8Array(parts.reduce((sum, part) => sum + part.length, 0));
+  const result = new Uint8Array(
+    parts.reduce((sum, part) => sum + part.length, 0),
+  );
   let offset = 0;
   for (const part of parts) {
     result.set(part, offset);

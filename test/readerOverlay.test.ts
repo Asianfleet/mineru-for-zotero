@@ -9,11 +9,14 @@ import {
   getReaderOverlayWindows,
   getReaderSelectedBoxCount,
   findPageElement,
+  positionPageLayers,
   removeReaderOverlayRoot,
   setReaderOverlayModeForReader,
   setReaderOverlayRootForReader,
 } from "../src/modules/readerOverlay";
 import * as readerOverlay from "../src/modules/readerOverlay";
+import { getMinerUStorageRoot } from "../src/modules/preferenceScript";
+import { createStorage } from "../src/modules/storage";
 import { normalizedBoxes } from "./domainFixtures";
 
 describe("readerOverlay", function () {
@@ -213,6 +216,33 @@ describe("readerOverlay", function () {
     );
   });
 
+  it("turns overlay mode off when boxes cannot be read", async function () {
+    await createStorage(getMinerUStorageRoot()).writeFailedResult({
+      attachment: {
+        id: 1,
+        key: "MISSINGBOX",
+        libraryID: 1,
+        fileName: "a.pdf",
+        filePath: "a.pdf",
+        mtime: 1,
+      },
+      mineruTaskID: "task-empty",
+      rawResult: { content_list: [] },
+      markdown: "",
+      error: "empty boxes",
+    });
+    const reader = createReader({
+      instanceID: "reader-missing-boxes",
+      attachmentKey: "MISSINGBOX",
+      views: [createView("primary")],
+    });
+
+    const state = await applyReaderOverlayMode(reader, "all");
+
+    assert.equal(state?.mode, "off");
+    assert.isNull(state?.root);
+  });
+
   it("prefers page elements over bare page attributes", function () {
     const page = { id: "page" } as unknown as Element;
     const bare = { id: "bare" } as unknown as Element;
@@ -238,6 +268,43 @@ describe("readerOverlay", function () {
     };
 
     assert.strictEqual(findPageElement(doc as unknown as Document, 2), page);
+  });
+
+  it("hides only page layers whose PDF page cannot be mapped", function () {
+    const doc = createDocumentStub();
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      [
+        createBox(0, "text", "missing page"),
+        { ...createBox(1, "text", "mapped page"), page: 2 },
+      ],
+      "all",
+    );
+    const mappedPage = {
+      getBoundingClientRect() {
+        return { left: 10, top: 20, width: 300, height: 400 };
+      },
+    };
+    doc.querySelector = (selector: string) =>
+      selector === '.page[data-page-number="2"]'
+        ? (mappedPage as unknown as Element)
+        : null;
+
+    positionPageLayers(doc as unknown as Document, root);
+
+    const layers = findElementsByClass(
+      root as unknown as FakeElement,
+      "mineru-copy-page-layer",
+    );
+    assert.lengthOf(layers, 2);
+    assert.isTrue(layers[0].hidden);
+    assert.isFalse(layers[1].hidden);
+    assert.include(layers[1].style, {
+      left: "10px",
+      top: "20px",
+      width: "300px",
+      height: "400px",
+    });
   });
 
   it("forwards wheel events over overlay boxes to the reader scroll container", function () {
@@ -716,7 +783,7 @@ describe("readerOverlay", function () {
   it("selects the rawIndex range from the last clicked box on shift click", function () {
     const doc = createDocumentStub();
     const selectionAnchor = { rawIndex: null as number | null };
-    let root: FakeElement;
+    const rootRef: { current: FakeElement | null } = { current: null };
     const state = {
       selectedRawIndexes: new Set<number>(),
       getSelectionAnchorRawIndex: () => selectionAnchor.rawIndex,
@@ -724,7 +791,11 @@ describe("readerOverlay", function () {
         selectionAnchor.rawIndex = rawIndex;
       },
       onSelectionChange: () => {
-        for (const box of findElementsByClass(root, "mineru-copy-box")) {
+        const currentRoot = rootRef.current;
+        if (!currentRoot) {
+          return;
+        }
+        for (const box of findElementsByClass(currentRoot, "mineru-copy-box")) {
           const selected = state.selectedRawIndexes.has(
             Number(box.dataset.rawIndex),
           );
@@ -739,7 +810,7 @@ describe("readerOverlay", function () {
       },
     };
 
-    root = (
+    const root = (
       buildReaderOverlayRoot as (
         doc: Document,
         boxes: typeof normalizedBoxes,
@@ -752,6 +823,7 @@ describe("readerOverlay", function () {
         },
       ) => FakeElement
     )(doc as unknown as Document, normalizedBoxes, "all", state);
+    rootRef.current = root;
 
     const boxes = findElementsByClass(root, "mineru-copy-box");
     boxes[0].dispatch("click", createClickEvent({ ctrlKey: true }));

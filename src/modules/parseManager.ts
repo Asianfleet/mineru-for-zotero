@@ -1,8 +1,14 @@
 import type { AttachmentRef } from "./domain";
 import type { FluentMessageId } from "../../typings/i10n";
 import { normalizeMinerUBoxes } from "./boxNormalizer";
-import { createMinerUClient } from "./mineruClient";
-import { createStorage } from "./storage";
+import {
+  createMinerUClient,
+  MinerUFileAccessError,
+  MinerURequestError,
+  MinerUTaskError,
+  type MinerUClient,
+} from "./mineruClient";
+import { createStorage, type StorageAdapter } from "./storage";
 import { getString } from "../utils/locale";
 import { getApiKey } from "../utils/prefs";
 import { getMinerUStorageRoot } from "./preferenceScript";
@@ -10,9 +16,33 @@ import { getMinerUStorageRoot } from "./preferenceScript";
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_COUNT = 120;
 
-export async function parseSelectedAttachment(
-  options?: { force?: boolean },
-): Promise<void> {
+export type ReparseChoice = "use-existing" | "reparse";
+
+export interface ParseManagerDependencies {
+  getApiKey: () => string;
+  storage?: StorageAdapter;
+  createStorage?: () => StorageAdapter;
+  client?: MinerUClient;
+  createClient?: (apiKey: string) => MinerUClient;
+  showMessage: (id: FluentMessageId, args?: Record<string, string>) => void;
+  confirmReparse: () => Promise<ReparseChoice>;
+  isFileReadable: (filePath: string) => Promise<boolean>;
+  delay: (ms: number) => Promise<void>;
+  log: (...args: unknown[]) => void;
+}
+
+interface ParseManager {
+  parseAttachment(
+    attachment: Zotero.Item,
+    options?: { force?: boolean },
+  ): Promise<void>;
+}
+
+type ParsePhase = "submit" | "poll" | "download" | "write";
+
+export async function parseSelectedAttachment(options?: {
+  force?: boolean;
+}): Promise<void> {
   const attachment = await getSelectedPDFAttachment();
   if (!attachment) {
     showMessage("parse-error-not-pdf");
@@ -26,48 +56,88 @@ export async function parseAttachment(
   attachment: Zotero.Item,
   options?: { force?: boolean },
 ): Promise<void> {
+  await createParseManager(createDefaultDependencies()).parseAttachment(
+    attachment,
+    options,
+  );
+}
+
+export function createParseManager(
+  dependencies: ParseManagerDependencies,
+): ParseManager {
+  return {
+    async parseAttachment(attachment, options) {
+      await parseAttachmentWithDependencies(attachment, options, dependencies);
+    },
+  };
+}
+
+async function parseAttachmentWithDependencies(
+  attachment: Zotero.Item,
+  options: { force?: boolean } | undefined,
+  dependencies: ParseManagerDependencies,
+): Promise<void> {
   if (!attachment.isPDFAttachment()) {
-    showMessage("parse-error-not-pdf");
+    dependencies.showMessage("parse-error-not-pdf");
     return;
   }
 
-  const filePath = await attachment.getFilePathAsync();
+  const filePath = await getAttachmentFilePath(attachment, dependencies);
   if (!filePath) {
-    ztoolkit.log("MinerU PDF file access failed", attachment.id);
-    showMessage("parse-error-file-access");
+    logFileAccessFailure(attachment, "<missing>", dependencies);
+    dependencies.showMessage("parse-error-file-access");
     return;
   }
 
-  const apiKey = getApiKey().trim();
+  if (!(await dependencies.isFileReadable(filePath))) {
+    logFileAccessFailure(attachment, filePath, dependencies);
+    dependencies.showMessage("parse-error-file-access");
+    return;
+  }
+
+  const apiKey = dependencies.getApiKey().trim();
   if (!apiKey) {
-    showMessage("parse-error-missing-api-key");
+    dependencies.showMessage("parse-error-missing-api-key");
     return;
   }
 
   const attachmentRef = await toAttachmentRef(attachment, filePath);
-  const storage = createStorage(getMinerUStorageRoot());
+  const storage = getStorage(dependencies);
   const hasReady = await storage.hasReadyResult(attachmentRef);
   if (hasReady && options?.force !== true) {
-    const shouldReparse = await confirmReparse();
-    if (!shouldReparse) {
-      showMessage("parse-use-existing-result");
+    const choice = await dependencies.confirmReparse();
+    if (choice === "use-existing") {
+      dependencies.showMessage("parse-use-existing-result");
       return;
     }
   }
 
-  const client = createMinerUClient({ apiKey });
+  const client = getClient(apiKey, dependencies);
+  let phase: ParsePhase = "submit";
   try {
-    showMessage("parse-started");
+    dependencies.showMessage("parse-started");
+    phase = "submit";
     const { taskID } = await client.submitPdf(filePath);
-    await waitForTask(client, taskID);
+    phase = "poll";
+    await waitForTask(client, taskID, dependencies.delay);
+    phase = "download";
     const result = await client.downloadResult(taskID);
     const boxes = normalizeMinerUBoxes(result.rawResult);
 
     if (boxes.length === 0) {
-      showMessage("parse-error-empty-boxes");
+      phase = "write";
+      await storage.writeFailedResult({
+        attachment: attachmentRef,
+        mineruTaskID: taskID,
+        rawResult: result.rawResult,
+        markdown: result.markdown,
+        error: getSafeMessageText("parse-error-empty-boxes"),
+      });
+      dependencies.showMessage("parse-error-empty-boxes");
       return;
     }
 
+    phase = "write";
     await storage.writeResult({
       attachment: attachmentRef,
       mineruTaskID: taskID,
@@ -75,12 +145,17 @@ export async function parseAttachment(
       markdown: result.markdown,
       boxes,
     });
-    showMessage("parse-finished");
+    dependencies.showMessage("parse-finished");
   } catch (error) {
-    ztoolkit.log("MinerU parse failed", attachment.id, error);
-    showMessage("parse-error-generic", {
-      message: error instanceof Error ? error.message : String(error),
-    });
+    if (error instanceof MinerUFileAccessError) {
+      logFileAccessFailure(attachment, filePath, dependencies, error);
+      dependencies.showMessage("parse-error-file-access");
+      return;
+    }
+
+    dependencies.log("MinerU parse failed", attachment.id, error);
+    const failure = getParseFailureMessage(error, phase, hasReady);
+    dependencies.showMessage(failure.id, failure.args);
   }
 }
 
@@ -100,7 +175,9 @@ async function getSelectedPDFAttachment(): Promise<Zotero.Item | null> {
   return null;
 }
 
-async function resolvePDFAttachment(item: Zotero.Item): Promise<Zotero.Item | null> {
+async function resolvePDFAttachment(
+  item: Zotero.Item,
+): Promise<Zotero.Item | null> {
   if (item.isAttachment()) {
     return item.isPDFAttachment() ? item : null;
   }
@@ -128,8 +205,9 @@ async function toAttachmentRef(
 }
 
 async function waitForTask(
-  client: ReturnType<typeof createMinerUClient>,
+  client: MinerUClient,
   taskID: string,
+  delay: (ms: number) => Promise<void>,
 ): Promise<void> {
   for (let count = 0; count < MAX_POLL_COUNT; count += 1) {
     const result = await client.pollTask(taskID);
@@ -137,21 +215,41 @@ async function waitForTask(
       return;
     }
     if (result.status === "failed") {
-      throw new Error(result.error || "MinerU task failed");
+      throw new MinerUTaskError(result.error || "MinerU task failed");
     }
-    await Zotero.Promise.delay(POLL_INTERVAL_MS);
+    await delay(POLL_INTERVAL_MS);
   }
-  throw new Error("MinerU task timed out");
+  throw new MinerUTaskError("MinerU task timed out");
 }
 
-async function confirmReparse(): Promise<boolean> {
+async function confirmReparse(): Promise<ReparseChoice> {
   const win = Zotero.getMainWindow();
-  const result = win.confirm(getString("parse-confirm-reparse"));
-  return result;
+  const prompt = getPromptService(win);
+  if (prompt) {
+    const flags =
+      prompt.BUTTON_TITLE_IS_STRING * prompt.BUTTON_POS_0 +
+      prompt.BUTTON_TITLE_IS_STRING * prompt.BUTTON_POS_1;
+    const button = prompt.confirmEx(
+      win,
+      getString("parse-confirm-title"),
+      getString("parse-confirm-reparse"),
+      flags,
+      getString("parse-confirm-use-existing"),
+      getString("parse-confirm-overwrite"),
+      null,
+      null,
+      {},
+    );
+    return button === 1 ? "reparse" : "use-existing";
+  }
+
+  return win.confirm(getString("parse-confirm-reparse"))
+    ? "reparse"
+    : "use-existing";
 }
 
 function showMessage(id: FluentMessageId, args?: Record<string, string>): void {
-  const text = args ? getString(id, { args }) : getString(id);
+  const text = getMessageText(id, args);
   new ztoolkit.ProgressWindow(addon.data.config.addonName, {
     closeTime: 4000,
   })
@@ -163,6 +261,164 @@ function showMessage(id: FluentMessageId, args?: Record<string, string>): void {
     .show();
 }
 
+function createDefaultDependencies(): ParseManagerDependencies {
+  return {
+    getApiKey,
+    createStorage: () => createStorage(getMinerUStorageRoot()),
+    createClient: (apiKey) => createMinerUClient({ apiKey }),
+    showMessage,
+    confirmReparse,
+    isFileReadable,
+    delay: (ms) => Zotero.Promise.delay(ms),
+    log: (...args) => ztoolkit.log(...args),
+  };
+}
+
+function getStorage(dependencies: ParseManagerDependencies): StorageAdapter {
+  if (dependencies.storage) {
+    return dependencies.storage;
+  }
+  if (dependencies.createStorage) {
+    return dependencies.createStorage();
+  }
+  throw new Error("Parse manager storage dependency is missing");
+}
+
+function getClient(
+  apiKey: string,
+  dependencies: ParseManagerDependencies,
+): MinerUClient {
+  if (dependencies.client) {
+    return dependencies.client;
+  }
+  if (dependencies.createClient) {
+    return dependencies.createClient(apiKey);
+  }
+  throw new Error("Parse manager client dependency is missing");
+}
+
+async function getAttachmentFilePath(
+  attachment: Zotero.Item,
+  dependencies: ParseManagerDependencies,
+): Promise<string | null> {
+  try {
+    return (await attachment.getFilePathAsync()) || null;
+  } catch (error) {
+    logFileAccessFailure(attachment, "<unavailable>", dependencies, error);
+    return null;
+  }
+}
+
+function logFileAccessFailure(
+  attachment: Zotero.Item,
+  filePath: string,
+  dependencies: ParseManagerDependencies,
+  error?: unknown,
+): void {
+  dependencies.log("MinerU PDF file access failed", {
+    attachmentID: attachment.id,
+    filePath,
+    error: error instanceof Error ? error.message : error,
+  });
+}
+
+async function isFileReadable(filePath: string): Promise<boolean> {
+  try {
+    if (typeof IOUtils !== "undefined") {
+      return IOUtils.exists(toNativePath(filePath));
+    }
+    if (typeof OS !== "undefined") {
+      return Boolean(await OS.File.exists(toNativePath(filePath)));
+    }
+  } catch {
+    return false;
+  }
+  return true;
+}
+
+function getParseFailureMessage(
+  error: unknown,
+  phase: ParsePhase,
+  hasReadyResult: boolean,
+): { id: FluentMessageId; args?: Record<string, string> } {
+  const message = error instanceof Error ? error.message : String(error);
+  if (
+    error instanceof MinerURequestError &&
+    ["submit", "upload"].includes(error.stage)
+  ) {
+    return { id: "parse-error-upload", args: { message } };
+  }
+  if (phase === "download") {
+    return { id: "parse-error-download", args: { message } };
+  }
+  if (phase === "poll" || error instanceof MinerUTaskError) {
+    return { id: "parse-error-mineru", args: { message } };
+  }
+  if (phase === "write" && hasReadyResult) {
+    return { id: "parse-error-overwrite", args: { message } };
+  }
+  return { id: "parse-error-generic", args: { message } };
+}
+
+function getMessageText(
+  id: FluentMessageId,
+  args?: Record<string, string>,
+): string {
+  return args ? getString(id, { args }) : getString(id);
+}
+
+function getSafeMessageText(
+  id: FluentMessageId,
+  args?: Record<string, string>,
+): string {
+  try {
+    return getMessageText(id, args);
+  } catch {
+    return id;
+  }
+}
+
+function getPromptService(win: Window): {
+  BUTTON_TITLE_IS_STRING: number;
+  BUTTON_POS_0: number;
+  BUTTON_POS_1: number;
+  confirmEx: (
+    parent: Window,
+    title: string,
+    text: string,
+    buttonFlags: number,
+    button0Title: string,
+    button1Title: string,
+    button2Title: string | null,
+    checkMsg: string | null,
+    checkState: object,
+  ) => number;
+} | null {
+  const runtime = globalThis as typeof globalThis & {
+    Services?: { prompt?: unknown };
+  };
+  const winWithServices = win as Window & {
+    Services?: { prompt?: unknown };
+  };
+  const prompt = runtime.Services?.prompt ?? winWithServices.Services?.prompt;
+  if (
+    !prompt ||
+    typeof (prompt as { confirmEx?: unknown }).confirmEx !== "function"
+  ) {
+    return null;
+  }
+  return prompt as ReturnType<typeof getPromptService>;
+}
+
 function basename(path: string): string {
-  return path.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) || "file.pdf";
+  return (
+    path.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) || "file.pdf"
+  );
+}
+
+function toNativePath(path: string): string {
+  if (/^[a-z]:\//i.test(path)) {
+    return path.replace(/\//g, "\\");
+  }
+  return path;
 }

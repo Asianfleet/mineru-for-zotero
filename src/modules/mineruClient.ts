@@ -29,7 +29,9 @@ interface MinerUClientOptions {
   readBinary?: (filePath: string) => Promise<Uint8Array>;
   uploadBinary?: (url: string, body: Uint8Array) => Promise<Response>;
   downloadBinary?: (url: string) => Promise<Response>;
-  downloadFileBytes?: (url: string) => Promise<Uint8Array | Map<string, string>>;
+  downloadFileBytes?: (
+    url: string,
+  ) => Promise<Uint8Array | Map<string, string>>;
   downloadRetryDelayMs?: number;
   maxDownloadAttempts?: number;
 }
@@ -73,6 +75,20 @@ export class MinerURequestError extends Error {
   }
 }
 
+export class MinerUFileAccessError extends Error {
+  constructor(
+    public readonly filePath: string,
+    detail?: string,
+  ) {
+    super(
+      detail
+        ? `Cannot read PDF file ${filePath}: ${detail}`
+        : `Cannot read PDF file ${filePath}`,
+    );
+    this.name = "MinerUFileAccessError";
+  }
+}
+
 export class MinerUTaskError extends Error {
   constructor(message: string, options?: { cause?: unknown }) {
     super(message);
@@ -88,13 +104,18 @@ export function createMinerUClient(options: MinerUClientOptions): MinerUClient {
   const request = options.fetch ?? createDefaultRequest();
   const readBinary = options.readBinary ?? readFileBytes;
   const uploadBinary =
-    options.uploadBinary ?? (options.fetch ? fetchUploadBinary(request) : xhrUploadBinary);
+    options.uploadBinary ??
+    (options.fetch ? fetchUploadBinary(request) : xhrUploadBinary);
   const downloadBinary =
     options.downloadBinary ??
     (options.fetch
       ? fetchDownloadBinary(request)
-      : fallbackDownloadBinary(xhrDownloadBinary, fetchDownloadBinary(request)));
-  const downloadFileBytes = options.downloadFileBytes ?? zoteroDownloadFileBytes;
+      : fallbackDownloadBinary(
+          xhrDownloadBinary,
+          fetchDownloadBinary(request),
+        ));
+  const downloadFileBytes =
+    options.downloadFileBytes ?? zoteroDownloadFileBytes;
   const maxDownloadAttempts = options.maxDownloadAttempts ?? 4;
   const downloadRetryDelayMs = options.downloadRetryDelayMs ?? 2000;
 
@@ -125,16 +146,26 @@ export function createMinerUClient(options: MinerUClientOptions): MinerUClient {
         throw new MinerUTaskError("MinerU submit response missing upload data");
       }
 
-      const bytes = normalizeBinary(await readBinary(filePath));
-      await requestOk(() => uploadBinary(uploadURL, bytes), uploadURL, "upload", {
-        method: "PUT",
-      });
+      const bytes = normalizeBinary(await readPdfBytes(readBinary, filePath));
+      await requestOk(
+        () => uploadBinary(uploadURL, bytes),
+        uploadURL,
+        "upload",
+        {
+          method: "PUT",
+        },
+      );
 
       return { taskID };
     },
 
     async pollTask(taskID) {
-      const response = await fetchBatchResult(request, baseURL, options.apiKey, taskID);
+      const response = await fetchBatchResult(
+        request,
+        baseURL,
+        options.apiKey,
+        taskID,
+      );
       const result = firstExtractResult(response);
       const state = String(result?.state ?? "").toLowerCase();
 
@@ -151,12 +182,22 @@ export function createMinerUClient(options: MinerUClientOptions): MinerUClient {
     },
 
     async downloadResult(taskID) {
-      let response = await fetchBatchResult(request, baseURL, options.apiKey, taskID);
+      let response = await fetchBatchResult(
+        request,
+        baseURL,
+        options.apiKey,
+        taskID,
+      );
       const result = firstExtractResult(response);
       if (result?.full_zip_url) {
         const zip = await retryDownloadZip(
           async () => {
-            response = await fetchBatchResult(request, baseURL, options.apiKey, taskID);
+            response = await fetchBatchResult(
+              request,
+              baseURL,
+              options.apiKey,
+              taskID,
+            );
             return { response, result: firstExtractResult(response) };
           },
           { response, result },
@@ -192,6 +233,17 @@ export function createMinerUClient(options: MinerUClientOptions): MinerUClient {
   };
 }
 
+async function readPdfBytes(
+  readBinary: (filePath: string) => Promise<Uint8Array>,
+  filePath: string,
+): Promise<Uint8Array> {
+  try {
+    return await readBinary(filePath);
+  } catch (error) {
+    throw new MinerUFileAccessError(filePath, errorMessage(error));
+  }
+}
+
 async function readZipOrFallback(
   zipBuffer: ArrayBuffer,
   rawResult: ExtractResultsBatchResponse,
@@ -214,10 +266,14 @@ async function readZipOrFallback(
           diagnostics.push(`file ${safeURL(zipURL)} zip reader`);
           return fileResult;
         }
-        diagnostics.push(`file ${safeURL(zipURL)} ${fileResult.byteLength} bytes`);
+        diagnostics.push(
+          `file ${safeURL(zipURL)} ${fileResult.byteLength} bytes`,
+        );
         return await readZip(toStandaloneArrayBuffer(fileResult));
       } catch (fileError) {
-        diagnostics.push(`file ${safeURL(zipURL)} failed: ${errorMessage(fileError)}`);
+        diagnostics.push(
+          `file ${safeURL(zipURL)} failed: ${errorMessage(fileError)}`,
+        );
       }
     }
     if (!markdownURL) {
@@ -236,11 +292,17 @@ async function readZipOrFallback(
   }
 }
 
-function withDownloadDiagnostics(error: unknown, diagnostics: string[]): MinerUTaskError {
+function withDownloadDiagnostics(
+  error: unknown,
+  diagnostics: string[],
+): MinerUTaskError {
   const message = error instanceof Error ? error.message : String(error);
-  return new MinerUTaskError(`${message}; attempts: ${diagnostics.join("; ")}`, {
-    cause: error,
-  });
+  return new MinerUTaskError(
+    `${message}; attempts: ${diagnostics.join("; ")}`,
+    {
+      cause: error,
+    },
+  );
 }
 
 async function retryDownloadZip(
@@ -297,8 +359,7 @@ async function retryDownloadZip(
 
 function isRetryableDownloadError(error: unknown): boolean {
   return (
-    error instanceof MinerUTaskError &&
-    error.message.includes("empty response")
+    error instanceof MinerUTaskError && error.message.includes("empty response")
   );
 }
 
@@ -372,22 +433,28 @@ async function requestOk(
 }
 
 function createDefaultRequest(): FetchLike {
-  const zotero = (globalThis as typeof globalThis & {
-    Zotero?: typeof Zotero;
-  }).Zotero;
+  const zotero = (
+    globalThis as typeof globalThis & {
+      Zotero?: typeof Zotero;
+    }
+  ).Zotero;
   if (typeof zotero?.HTTP?.request === "function") {
     return zoteroHttpFetch;
   }
 
-  const fallbackFetch = (globalThis as typeof globalThis & {
-    fetch?: typeof fetch;
-  }).fetch;
+  const fallbackFetch = (
+    globalThis as typeof globalThis & {
+      fetch?: typeof fetch;
+    }
+  ).fetch;
   if (fallbackFetch) {
     return fallbackFetch.bind(globalThis);
   }
 
   return async () => {
-    throw new MinerUTaskError("No HTTP client is available for MinerU requests");
+    throw new MinerUTaskError(
+      "No HTTP client is available for MinerU requests",
+    );
   };
 }
 
@@ -397,7 +464,8 @@ function fetchUploadBinary(request: FetchLike) {
 }
 
 function fetchDownloadBinary(request: FetchLike) {
-  return async (url: string): Promise<Response> => request(url, { method: "GET" });
+  return async (url: string): Promise<Response> =>
+    request(url, { method: "GET" });
 }
 
 function fallbackDownloadBinary(
@@ -435,7 +503,9 @@ function xhrDownloadBinary(url: string): Promise<Response> {
   });
 }
 
-async function zoteroDownloadFileBytes(url: string): Promise<Uint8Array | Map<string, string>> {
+async function zoteroDownloadFileBytes(
+  url: string,
+): Promise<Uint8Array | Map<string, string>> {
   const path = await createTemporaryPath("mineru-result.zip");
   try {
     const curlResult = await downloadWithCurl(url, path);
@@ -464,21 +534,24 @@ async function downloadWithCurl(
   if (processResult.used) {
     return processResult;
   }
-  const process = (globalThis as typeof globalThis & {
-    ChromeUtils?: {
-      importESModule?: (uri: string) => {
-        Subprocess?: {
-          call: (options: {
-            command: string;
-            arguments: string[];
-            stdout?: string;
-            stderr?: string;
-          }) => Promise<{ exitCode: number; stderr?: string }>;
+  const process = (
+    globalThis as typeof globalThis & {
+      ChromeUtils?: {
+        importESModule?: (uri: string) => {
+          Subprocess?: {
+            call: (options: {
+              command: string;
+              arguments: string[];
+              stdout?: string;
+              stderr?: string;
+            }) => Promise<{ exitCode: number; stderr?: string }>;
+          };
         };
       };
-    };
-  }).ChromeUtils?.importESModule?.("chrome://zotero/content/Subprocess.sys.mjs")
-    ?.Subprocess;
+    }
+  ).ChromeUtils?.importESModule?.(
+    "chrome://zotero/content/Subprocess.sys.mjs",
+  )?.Subprocess;
   if (!process) {
     return { used: false, reason: `no subprocess; ${processResult.reason}` };
   }
@@ -488,7 +561,9 @@ async function downloadWithCurl(
     stderr: "pipe",
   });
   if (result.exitCode !== 0) {
-    throw new Error(`curl.exe download failed: ${result.stderr || result.exitCode}`);
+    throw new Error(
+      `curl.exe download failed: ${result.stderr || result.exitCode}`,
+    );
   }
   return { used: true };
 }
@@ -633,7 +708,10 @@ function normalizeResponseStatus(status: number, response: unknown): number {
   return response == null ? 500 : 200;
 }
 
-function getRequestMethod(input: RequestInfo | URL, init?: RequestInit): string {
+function getRequestMethod(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): string {
   if (init?.method) {
     return init.method;
   }
@@ -815,7 +893,9 @@ async function readFileBytes(filePath: string): Promise<Uint8Array> {
 }
 
 function basename(path: string): string {
-  return path.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) || "file.pdf";
+  return (
+    path.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) || "file.pdf"
+  );
 }
 
 function normalizeBaseURL(url: string): string {
@@ -830,9 +910,10 @@ function toNativePath(path: string): string {
 }
 
 async function createTemporaryPath(fileName: string): Promise<string> {
-  const baseDir = typeof PathUtils !== "undefined"
-    ? PathUtils.tempDir
-    : OS.Constants.Path.tmpDir;
+  const baseDir =
+    typeof PathUtils !== "undefined"
+      ? PathUtils.tempDir
+      : OS.Constants.Path.tmpDir;
   const name = `${Date.now()}-${Math.random().toString(16).slice(2)}-${fileName}`;
   return typeof PathUtils !== "undefined"
     ? PathUtils.join(baseDir, name)
@@ -921,7 +1002,9 @@ async function readZip(buffer: ArrayBuffer): Promise<Map<string, string>> {
     const extraLength = readUint16(bytes, offset + 30);
     const commentLength = readUint16(bytes, offset + 32);
     const localOffset = readUint32(bytes, offset + 42);
-    const name = decoder.decode(bytes.slice(offset + 46, offset + 46 + nameLength));
+    const name = decoder.decode(
+      bytes.slice(offset + 46, offset + 46 + nameLength),
+    );
     const content = await readZipEntry(
       bytes,
       localOffset,
@@ -965,16 +1048,20 @@ async function inflateRaw(
   compressed: Uint8Array,
   expectedSize: number,
 ): Promise<Uint8Array> {
-  const streamCtor = (globalThis as typeof globalThis & {
-    DecompressionStream?: new (format: string) => DecompressionStream;
-  }).DecompressionStream;
+  const streamCtor = (
+    globalThis as typeof globalThis & {
+      DecompressionStream?: new (format: string) => DecompressionStream;
+    }
+  ).DecompressionStream;
   if (!streamCtor) {
-    throw new MinerUTaskError("Cannot decompress MinerU result zip in this runtime");
+    throw new MinerUTaskError(
+      "Cannot decompress MinerU result zip in this runtime",
+    );
   }
 
-  const stream = new Blob([compressed]).stream().pipeThrough(
-    new streamCtor("deflate-raw"),
-  );
+  const stream = new Blob([compressed])
+    .stream()
+    .pipeThrough(new streamCtor("deflate-raw"));
   const buffer = await new Response(stream).arrayBuffer();
   const result = new Uint8Array(buffer);
   if (expectedSize > 0 && result.length !== expectedSize) {
@@ -1020,11 +1107,9 @@ function hasPageBoxData(value: unknown): boolean {
       para_blocks?: unknown;
       layout_dets?: unknown;
     };
-    return [
-      rawPage.blocks,
-      rawPage.para_blocks,
-      rawPage.layout_dets,
-    ].some((blocks) => Array.isArray(blocks) && blocks.some(hasBlockGeometry));
+    return [rawPage.blocks, rawPage.para_blocks, rawPage.layout_dets].some(
+      (blocks) => Array.isArray(blocks) && blocks.some(hasBlockGeometry),
+    );
   });
 }
 
