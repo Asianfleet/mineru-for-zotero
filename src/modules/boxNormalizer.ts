@@ -113,7 +113,29 @@ function flattenBlock(block: RawBlock): RawBlock[] {
   if (!Array.isArray(block.blocks) || block.blocks.length === 0) {
     return [block];
   }
-  return [block, ...block.blocks.flatMap(flattenBlock)];
+  const children = block.blocks.flatMap(flattenBlock);
+  if (shouldDropStructuralParentBlock(block, children)) {
+    return children;
+  }
+  return [block, ...children];
+}
+
+function shouldDropStructuralParentBlock(
+  block: RawBlock,
+  children: RawBlock[],
+): boolean {
+  const type = normalizeType(
+    block.type ?? block.block_type ?? block.category_type,
+  );
+  return (
+    type === "list" &&
+    children.some((child) => {
+      const childType = normalizeType(
+        child.type ?? child.block_type ?? child.category_type,
+      );
+      return isReferenceType(childType);
+    })
+  );
 }
 
 function getBlockBbox(
@@ -266,7 +288,17 @@ function normalizeType(type: unknown): MinerUBoxType {
   const value = String(type ?? "")
     .trim()
     .toLowerCase();
+  if (["table_body"].includes(value)) {
+    return "table";
+  }
+  if (["ref_text"].includes(value)) {
+    return "reference";
+  }
   return value || "unknown";
+}
+
+function isReferenceType(type: string): boolean {
+  return ["reference", "citation", "bibliography"].includes(type);
 }
 
 function isFormulaType(type: string): boolean {

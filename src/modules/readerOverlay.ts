@@ -114,6 +114,8 @@ const READER_OVERLAY_CSS = `
   color: #fff;
   font-size: 10px;
   line-height: 1.2;
+  white-space: nowrap;
+  writing-mode: horizontal-tb;
   pointer-events: none;
 }
 
@@ -440,7 +442,7 @@ export function buildReaderOverlayRoot(
     layer.className = "mineru-copy-page-layer";
     layer.dataset.pageNumber = String(page.page);
 
-    for (const box of page.boxes) {
+    for (const box of getRenderablePageBoxes(page.boxes)) {
       layer.append(createBoxElement(doc, box));
     }
     root.append(layer);
@@ -569,7 +571,12 @@ export function createReaderOverlayPositioningController(
       return;
     }
 
-    scrollElementBy(scrollContainer, event.deltaX, event.deltaY, event.deltaMode);
+    scrollElementBy(
+      scrollContainer,
+      event.deltaX,
+      event.deltaY,
+      event.deltaMode,
+    );
   }
 }
 
@@ -683,10 +690,7 @@ function getReaderAttachmentRef(
   return { libraryID, key };
 }
 
-function createBoxElement(
-  doc: Document,
-  box: NormalizedBox,
-): HTMLDivElement {
+function createBoxElement(doc: Document, box: NormalizedBox): HTMLDivElement {
   const element = doc.createElement("div");
   element.className = "mineru-copy-box";
   element.dataset.rawIndex = String(box.rawIndex);
@@ -735,13 +739,52 @@ function isFormulaBox(box: NormalizedBox): boolean {
   ].includes(box.type);
 }
 
+function getRenderablePageBoxes(boxes: NormalizedBox[]): NormalizedBox[] {
+  return boxes.filter((box) => !isStructuralReferenceContainerBox(box, boxes));
+}
+
+function isStructuralReferenceContainerBox(
+  box: NormalizedBox,
+  boxes: NormalizedBox[],
+): boolean {
+  return (
+    normalizeBoxType(box.type) === "list" &&
+    boxes.some(
+      (candidate) =>
+        candidate !== box &&
+        isReferenceBoxType(candidate.type) &&
+        containsBox(box, candidate),
+    )
+  );
+}
+
+function containsBox(container: NormalizedBox, child: NormalizedBox): boolean {
+  if (container.page !== child.page) {
+    return false;
+  }
+
+  const epsilon = 0.0001;
+  const containerRight = container.bbox.x + container.bbox.width;
+  const containerBottom = container.bbox.y + container.bbox.height;
+  const childRight = child.bbox.x + child.bbox.width;
+  const childBottom = child.bbox.y + child.bbox.height;
+
+  return (
+    child.bbox.x + epsilon >= container.bbox.x &&
+    child.bbox.y + epsilon >= container.bbox.y &&
+    childRight <= containerRight + epsilon &&
+    childBottom <= containerBottom + epsilon
+  );
+}
+
 function formatBoxTypeLabel(type: string): string {
-  const normalized = type.trim().toLowerCase();
+  const normalized = normalizeBoxType(type);
   const labels: Record<string, string> = {
     text: "文本",
     title: "标题",
     list: "列表",
     table: "表格",
+    table_body: "表格",
     figure: "图片",
     image: "图片",
     image_body: "图片",
@@ -754,6 +797,10 @@ function formatBoxTypeLabel(type: string): string {
     page_footnote: "脚注",
     footnote: "脚注",
     page_number: "页码",
+    ref_text: "引用",
+    reference: "引用",
+    citation: "引用",
+    bibliography: "引用",
     formula: "公式",
     interline_equation: "公式",
     inline_equation: "公式",
@@ -761,6 +808,16 @@ function formatBoxTypeLabel(type: string): string {
     unknown: "未知",
   };
   return labels[normalized] ?? normalized;
+}
+
+function isReferenceBoxType(type: string): boolean {
+  return ["ref_text", "reference", "citation", "bibliography"].includes(
+    normalizeBoxType(type),
+  );
+}
+
+function normalizeBoxType(type: string): string {
+  return type.trim().toLowerCase();
 }
 
 function showReaderOverlayNotice(id: FluentMessageId): void {
@@ -922,9 +979,7 @@ function forwardWheelToUnderlyingElement(
   return true;
 }
 
-function getWheelEventConstructor(
-  doc: Document,
-): typeof WheelEvent | null {
+function getWheelEventConstructor(doc: Document): typeof WheelEvent | null {
   const readerWheelEvent = doc.defaultView?.WheelEvent;
   if (readerWheelEvent) {
     return readerWheelEvent;

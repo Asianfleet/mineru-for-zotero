@@ -248,6 +248,67 @@ describe("boxNormalizer", function () {
     );
   });
 
+  it("normalizes table body blocks as table boxes", function () {
+    const boxes = normalizeMinerUBoxes({
+      pdf_info: [
+        {
+          page_idx: 0,
+          page_size: [1000, 2000],
+          para_blocks: [
+            {
+              type: "table_body",
+              bbox: [100, 900, 500, 1200],
+              html: "<table><tr><td>A</td></tr></table>",
+            },
+          ],
+        },
+      ],
+    });
+
+    assert.equal(boxes.length, 1);
+    assert.equal(boxes[0].type, "table");
+  });
+
+  it("drops list container boxes when reference child boxes are available", function () {
+    const boxes = normalizeMinerUBoxes({
+      pdf_info: [
+        {
+          page_idx: 0,
+          page_size: [1000, 2000],
+          para_blocks: [
+            {
+              type: "list",
+              bbox: [100, 400, 900, 900],
+              blocks: [
+                {
+                  type: "ref_text",
+                  bbox: [120, 420, 880, 500],
+                  lines: [{ spans: [{ content: "[1] First paper." }] }],
+                },
+                {
+                  type: "ref_text",
+                  bbox: [120, 520, 880, 620],
+                  lines: [{ spans: [{ content: "[2] Second paper." }] }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    assert.deepEqual(
+      boxes.map((box) => ({
+        type: box.type,
+        markdown: box.markdown,
+      })),
+      [
+        { type: "reference", markdown: "[1] First paper." },
+        { type: "reference", markdown: "[2] Second paper." },
+      ],
+    );
+  });
+
   it("keeps footnotes from discarded blocks", function () {
     const boxes = normalizeMinerUBoxes({
       pdf_info: [

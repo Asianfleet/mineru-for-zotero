@@ -68,6 +68,8 @@ describe("readerOverlay", function () {
         createBox(3, "page_header", "页眉"),
         createBox(4, "page_number", "1"),
         createBox(5, "interline_equation", "E=mc^2", "E=mc^2"),
+        createBox(6, "table_body", "<table></table>"),
+        createBox(7, "reference", "[1] Paper"),
       ],
       "hover",
     );
@@ -76,13 +78,23 @@ describe("readerOverlay", function () {
       findElementsByClass(root, "mineru-copy-box-label").map(
         (element) => element.textContent,
       ),
-      ["文本", "标题", "图片标题", "页眉", "页码", "公式"],
+      ["文本", "标题", "图片标题", "页眉", "页码", "公式", "表格", "引用"],
     );
     assert.deepEqual(
       findElementsByClass(root, "mineru-copy-button").map(
         (element) => element.textContent,
       ),
-      ["复制", "复制", "复制", "复制", "复制", "带 $ 复制", "不带 $ 复制"],
+      [
+        "复制",
+        "复制",
+        "复制",
+        "复制",
+        "复制",
+        "带 $ 复制",
+        "不带 $ 复制",
+        "复制",
+        "复制",
+      ],
     );
   });
 
@@ -116,6 +128,42 @@ describe("readerOverlay", function () {
     );
   });
 
+  it("does not render list container boxes that cover reference boxes", function () {
+    const doc = createDocumentStub();
+
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      [
+        {
+          ...createBox(0, "list", ""),
+          bbox: { x: 0.1, y: 0.2, width: 0.8, height: 0.24 },
+        },
+        {
+          ...createBox(1, "ref_text", "[1] First paper."),
+          bbox: { x: 0.12, y: 0.22, width: 0.76, height: 0.04 },
+        },
+        {
+          ...createBox(2, "ref_text", "[2] Second paper."),
+          bbox: { x: 0.12, y: 0.28, width: 0.76, height: 0.04 },
+        },
+      ],
+      "hover",
+    );
+
+    assert.deepEqual(
+      findElementsByClass(root, "mineru-copy-box").map(
+        (element) => element.dataset.rawIndex,
+      ),
+      ["1", "2"],
+    );
+    assert.deepEqual(
+      findElementsByClass(root, "mineru-copy-box-label").map(
+        (element) => element.textContent,
+      ),
+      ["引用", "引用"],
+    );
+  });
+
   it("hides controls until a box is hovered", function () {
     const doc = createDocumentStub();
 
@@ -145,6 +193,14 @@ describe("readerOverlay", function () {
     assert.notMatch(
       style.textContent,
       /\.mineru-copy-box-actions\s*\{\s*position:[^}]*display:/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-box-label\s*\{[^}]*white-space:\s*nowrap/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-box-label\s*\{[^}]*writing-mode:\s*horizontal-tb/s,
     );
   });
 
@@ -247,9 +303,7 @@ describe("readerOverlay", function () {
     } as unknown as WheelEvent);
 
     assert.isTrue(prevented);
-    assert.deepEqual(scrollCalls, [
-      { left: 4, top: 120, behavior: "auto" },
-    ]);
+    assert.deepEqual(scrollCalls, [{ left: 4, top: 120, behavior: "auto" }]);
   });
 
   it("redispatches wheel events over overlay boxes to the underlying PDF element", function () {
