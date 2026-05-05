@@ -117,4 +117,27 @@ describe("readerToolbar", function () {
 
     assert.isTrue(clicked);
   });
+
+  it("does not style active menu commands as selected debug state", function () {
+    const doc = {
+      createElement(tagName: string) {
+        assert.equal(tagName, "button");
+        return {
+          style: { backgroundColor: "" },
+          addEventListener() {},
+        } as unknown as HTMLButtonElement;
+      },
+    } as unknown as Document;
+
+    const button = createReaderToolbarCommandButton(
+      doc,
+      "关闭插件能力",
+      () => {},
+      { active: true },
+    );
+
+    assert.equal(button.style.background, "transparent");
+    assert.equal(button.style.fontWeight, "400");
+    assert.equal(button.style.backgroundColor, "");
+  });
 });

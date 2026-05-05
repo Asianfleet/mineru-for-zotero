@@ -404,8 +404,6 @@ function updateMenu(
   menu: HTMLDivElement,
   sync: () => void,
 ): void {
-  const state = getReaderOverlayStateForReader(reader);
-  const activeMode = state?.mode ?? "off";
   menu.replaceChildren();
   menu.append(
     createReaderToolbarCommandButton(
@@ -418,7 +416,6 @@ function updateMenu(
         updateMenu(reader, doc, menu, sync);
         sync();
       },
-      { active: activeMode === "all" },
     ),
     createReaderToolbarCommandButton(
       doc,
@@ -430,7 +427,6 @@ function updateMenu(
         updateMenu(reader, doc, menu, sync);
         sync();
       },
-      { active: activeMode === "hover" },
     ),
     createReaderToolbarCommandButton(
       doc,
@@ -442,7 +438,6 @@ function updateMenu(
         updateMenu(reader, doc, menu, sync);
         sync();
       },
-      { active: activeMode === "off" },
     ),
     createReaderToolbarCommandButton(
       doc,
@@ -476,7 +471,7 @@ export function createReaderToolbarCommandButton(
   doc: Document,
   label: string,
   onCommand: () => void,
-  options?: { active?: boolean },
+  _options?: { active?: boolean },
 ): HTMLButtonElement {
   const button = doc.createElement("button");
   button.type = "button";
@@ -487,18 +482,14 @@ export function createReaderToolbarCommandButton(
   button.style.padding = "6px 8px";
   button.style.border = "0";
   button.style.borderRadius = "4px";
-  button.style.background = options?.active
-    ? "var(--fill-quinary, rgba(0, 0, 0, 0.08))"
-    : "transparent";
-  button.style.fontWeight = options?.active ? "600" : "400";
+  button.style.background = "transparent";
+  button.style.fontWeight = "400";
   button.style.textAlign = "left";
   button.addEventListener("mouseenter", () => {
     button.style.backgroundColor = "var(--fill-quinary, rgba(0, 0, 0, 0.08))";
   });
   button.addEventListener("mouseleave", () => {
-    button.style.backgroundColor = options?.active
-      ? "var(--fill-quinary, rgba(0, 0, 0, 0.08))"
-      : "";
+    button.style.backgroundColor = "";
   });
   button.addEventListener("click", (event) => {
     event.preventDefault();
