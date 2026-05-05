@@ -75,6 +75,7 @@ const READER_OVERLAY_CSS = `
 
 .mineru-copy-box:hover {
   background: rgba(64, 156, 255, 0.18);
+  z-index: 10;
 }
 
 .mineru-copy-mode-hover .mineru-copy-box {
@@ -118,8 +119,9 @@ const READER_OVERLAY_CSS = `
 
 .mineru-copy-box-actions {
   position: absolute;
-  left: 0;
+  left: 50%;
   top: 100%;
+  transform: translateX(-50%);
   gap: 4px;
   padding-top: 3px;
 }

@@ -133,6 +133,14 @@ describe("readerOverlay", function () {
       style.textContent,
       ".mineru-copy-box:hover .mineru-copy-box-actions",
     );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-box:hover\s*\{[^}]*z-index:\s*10/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-box-actions\s*\{[^}]*left:\s*50%[^}]*transform:\s*translateX\(-50%\)/s,
+    );
     assert.notMatch(
       style.textContent,
       /\.mineru-copy-box-actions\s*\{\s*position:[^}]*display:/s,
