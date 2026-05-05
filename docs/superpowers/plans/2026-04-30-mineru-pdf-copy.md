@@ -8,18 +8,20 @@
 
 **Tech Stack:** Zotero 7 plugin template、TypeScript、zotero-plugin-toolkit、Zotero prefs、Zotero plugin data directory、MinerU 官方 API、Zotero reader DOM。
 
-## 当前进度（2026-05-03）
+## 当前进度（2026-05-05）
 
-- Task 1-5 已完成并已有对应提交；Task 6 的右键菜单解析主链路已跑通，用户重试后已提示“解析成功”。
+- Task 1-7 已完成并已有对应提交；Task 6 的右键菜单解析主链路已跑通，用户重试后已提示“解析成功”。
 - 为打通 Task 6，已在 MinerU client 边界补齐 Zotero 运行时下的真实网络兼容：裸 XHR 上传 presigned URL、Zotero HTTP JSON 请求、XHR/Zotero HTTP 下载 fallback、Windows `curl.exe` 文件下载 fallback、`nsIZipReader` 本地 ZIP 读取、空响应重试与诊断信息。
 - 为修复“解析结果缺少 box 信息”，`boxNormalizer` 已扩展支持真实 MinerU 结果结构：`pdf_info[].para_blocks`、`pdf_info[].layout_dets`、`page_size`、`poly`、`lines[].spans[].content` 和 `interline_equation`。
 - 2026-05-03 再次复现“解析结果缺少 box 信息”后确认新的根因在 `mineruClient`：MinerU full zip 可能同时包含 `content_list.json` 与 `middle.json` 等多个 JSON，旧逻辑会取第一个非 `full.md` 的 JSON，若先读到不含 box geometry 的 JSON，就会让 normalizer 得到 0 个 box。已改为优先选择包含 `pages`/`pdf_info` 且 block 带 `bbox`/`poly` 的 JSON，并补充回归测试。
+- Task 8 已推进到 overlay 渲染、hover 和单 box 复制的手动反馈修复阶段：`all` 模式显示所有 box 边框，仅 hovered box 显示类型标签和复制按钮；`hover` 模式默认隐藏 box，只在 hover 命中时显示浅蓝填充、标签与复制按钮。
+- reader overlay 已支持 split view / new pane 同步现有模式；`off` 会清理 overlay DOM；缺少解析结果时会弹出用户提示并回退到 `off`，恢复此前的未解析提示行为。
+- `boxNormalizer` 已保留 MinerU 细分类型，支持 `image_caption`、`page_header`、`page_number`、`footnote` 等类型；reader label 显示中文名称，不再压缩成 `figure`、`text`、`unknown`。
+- 已修复存量 `boxes.normalized.json` 迁移问题：即使 box 数量不变，只要从 `mineru-result.json` 重新归一化后的结果不同，也会刷新 normalized boxes；空 raw result 不覆盖旧 boxes。
+- 已修复 overlay 交互问题：page selector 收紧为 `.page[...]` 避免左上角异常小 box；CSS cascade 修正复制按钮默认隐藏；wheel 事件转发给底层 PDF 元素；hover box 提升层级；复制按钮改为位于 box 下方水平居中。
 - Task 6 仍有两个计划细项未完全收口：boxes 为空时还未保存 failed manifest；重复解析确认目前使用系统 `confirm` 的 OK/Cancel，而不是计划中的自定义“使用已有结果 / 重新解析并覆盖”按钮。
-- Task 7 的 reader toolbar 按钮与 per-reader state 骨架已完成到手动检查点 C：按钮位于 PDF reader toolbar 左侧区域、上一页/下一页按钮右侧；左键单击可开闭 floating panel；hover、tooltip、五个菜单项均正常；点击菜单项只更新 state 骨架，尚不渲染 overlay。
-- Task 7 调试期间已放弃 `Zotero.Reader.registerEventListener("renderToolbar")` 注入路径。该路径在当前 Zotero Reader toolbar 生命周期下会出现单击不触发、需要双击、菜单定位/跨 docgroup 等问题。当前实现改为扫描当前主窗口 reader tabs，进入 reader iframe document，按 Zotero Reader 源码锚点 `#next` / `.toolbar .start` 注入按钮，并将 panel 与按钮放在同一 document 中。
-- Task 7 已修复的 UI bug：跨 docgroup append 报错、`HTMLElement is not defined`、右键才能打开、左键双击才能打开、hover 背景尺寸/圆角错误、菜单无法打开、菜单项 hover 闪动。最后一个闪动问题的根因是同步循环定时重建菜单项，修复为只在打开菜单或执行菜单命令时刷新菜单。
-- split view 验收口径已修正：Zotero Reader split view 共享同一条 toolbar，不会出现每个 pane 各一个 toolbar 按钮。后续 Task 8/9 应实现“一个 toolbar 按钮作用于当前 active/focused reader pane 的 overlay state”，并验证 split view 下 pane state 互不影响。
-- Task 8-9 的 overlay 渲染、多选复制尚未开始；Task 10 仅提前完成了部分真实解析错误处理和自动化验证。
+- Task 9 的多选复制尚未开始；Task 10 仅提前完成了部分真实解析错误处理、存量数据迁移和自动化验证。
+- 最近自动化验证：`.\node_modules\.bin\zotero-plugin.cmd test --no-watch --exit-on-finish` 通过 48 个测试；`.\node_modules\.bin\tsc.cmd --noEmit` 通过。
 
 ---
 
@@ -868,14 +870,14 @@ git commit -m "feat(reader): add per-pane toolbar state"
 
 - 所有 box 有边框，内部透明。
 - hover box 填充浅蓝色。
-- 不显示复制按钮。
+- 仅 hovered box 显示类型标签和复制按钮，未 hover 的 box 不显示这些控件，避免拥挤。
 
 `mode === "hover"`：
 
 - 默认不显示 box。
 - hover 命中时显示蓝色边框和浅蓝填充。
-- 左上角显示类型标签。
-- box 下方显示复制按钮。
+- 左上角显示 MinerU 细分类型标签。
+- box 下方水平居中显示复制按钮。
 - formula box 显示两个按钮：“带 $ 复制”和“不带 $ 复制”。
 
 - [ ] **Step 3: 实现复制**
