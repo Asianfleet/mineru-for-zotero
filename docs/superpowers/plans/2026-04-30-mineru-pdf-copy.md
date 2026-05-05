@@ -1171,7 +1171,7 @@ git commit -m "feat(mineru): complete parse flow and error handling"
 
 ## 收尾验证
 
-- [ ] **Step 1: 检查无关 diff**
+- [x] **Step 1: 检查无关 diff**
 
 Run:
 
@@ -1182,7 +1182,13 @@ git diff --stat
 
 Expected: 只包含本计划相关文件；没有 `packageManager` 或格式化全仓引起的无关 diff。
 
-- [ ] **Step 2: 运行最终验证**
+实际验证（2026-05-05，收尾验证前后）：
+
+- `git status --short`：无输出，工作区干净。
+- `git diff --stat`：无输出，没有无关 diff。
+- 当前分支：`mineru4zotero`。
+
+- [x] **Step 2: 运行最终验证**
 
 Run:
 
@@ -1193,6 +1199,12 @@ Run:
 ```
 
 Expected: 三个命令都 exit code 0。
+
+实际验证（2026-05-05，收尾验证）：
+
+- `.\node_modules\.bin\zotero-plugin.cmd test`：76 passed，exit code 0。
+- `.\node_modules\.bin\tsc.cmd --noEmit`：exit code 0。
+- `.\node_modules\.bin\zotero-plugin.cmd build`：exit code 0。
 
 - [ ] **Step 3: 最终手动验收清单**
 
