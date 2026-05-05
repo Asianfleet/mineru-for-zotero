@@ -11,6 +11,7 @@ interface RawPage {
   blocks?: RawBlock[];
   para_blocks?: RawBlock[];
   layout_dets?: RawBlock[];
+  discarded_blocks?: RawBlock[];
 }
 
 interface RawBlock {
@@ -25,7 +26,14 @@ interface RawBlock {
   html?: string;
   latex?: string;
   formula?: string;
-  lines?: Array<{ spans?: Array<{ content?: string; text?: string }> }>;
+  blocks?: RawBlock[];
+  lines?: Array<{ spans?: RawSpan[] }>;
+}
+
+interface RawSpan {
+  type?: string;
+  content?: string;
+  text?: string;
 }
 
 export function normalizeMinerUBoxes(result: unknown): NormalizedBox[] {
@@ -43,7 +51,9 @@ export function normalizeMinerUBoxes(result: unknown): NormalizedBox[] {
       }
 
       const [x1, y1, x2, y2] = bbox;
-      const type = normalizeType(block.type ?? block.block_type ?? block.category_type);
+      const type = normalizeType(
+        block.type ?? block.block_type ?? block.category_type,
+      );
       const markdown = getBlockMarkdown(block);
       boxes.push({
         rawIndex: boxes.length,
@@ -56,7 +66,7 @@ export function normalizeMinerUBoxes(result: unknown): NormalizedBox[] {
           height: clamp01((y2 - y1) / height),
         },
         markdown,
-        formula: type === "formula" ? getBlockFormula(block, markdown) : null,
+        formula: isFormulaType(type) ? getBlockFormula(block, markdown) : null,
       });
     }
   }
@@ -70,8 +80,12 @@ function extractPages(result: unknown): RawPage[] {
 }
 
 function getPageSize(page: RawPage): [number, number] {
-  const width = Number(page.width ?? page.page_width ?? page.page_size?.[0] ?? 1);
-  const height = Number(page.height ?? page.page_height ?? page.page_size?.[1] ?? 1);
+  const width = Number(
+    page.width ?? page.page_width ?? page.page_size?.[0] ?? 1,
+  );
+  const height = Number(
+    page.height ?? page.page_height ?? page.page_size?.[1] ?? 1,
+  );
   return [positiveOrOne(width), positiveOrOne(height)];
 }
 
@@ -86,14 +100,47 @@ function getPageNumber(page: RawPage): number {
 }
 
 function getPageBlocks(page: RawPage): RawBlock[] {
-  return [
+  const blocks = [
     ...(Array.isArray(page.blocks) ? page.blocks : []),
     ...(Array.isArray(page.para_blocks) ? page.para_blocks : []),
     ...(Array.isArray(page.layout_dets) ? page.layout_dets : []),
+    ...(Array.isArray(page.discarded_blocks) ? page.discarded_blocks : []),
   ];
+  return blocks.flatMap(flattenBlock);
 }
 
-function getBlockBbox(block: RawBlock): [number, number, number, number] | null {
+function flattenBlock(block: RawBlock): RawBlock[] {
+  if (!Array.isArray(block.blocks) || block.blocks.length === 0) {
+    return [block];
+  }
+  const children = block.blocks.flatMap(flattenBlock);
+  if (shouldDropStructuralParentBlock(block, children)) {
+    return children;
+  }
+  return [block, ...children];
+}
+
+function shouldDropStructuralParentBlock(
+  block: RawBlock,
+  children: RawBlock[],
+): boolean {
+  const type = normalizeType(
+    block.type ?? block.block_type ?? block.category_type,
+  );
+  return (
+    type === "list" &&
+    children.some((child) => {
+      const childType = normalizeType(
+        child.type ?? child.block_type ?? child.category_type,
+      );
+      return isReferenceType(childType);
+    })
+  );
+}
+
+function getBlockBbox(
+  block: RawBlock,
+): [number, number, number, number] | null {
   if (Array.isArray(block.bbox) && block.bbox.length >= 4) {
     const [x1, y1, x2, y2] = block.bbox.map(Number);
     return normalizeBbox(x1, y1, x2, y2);
@@ -102,7 +149,12 @@ function getBlockBbox(block: RawBlock): [number, number, number, number] | null 
   if (Array.isArray(block.poly) && block.poly.length >= 4) {
     const xs = block.poly.filter((_, index) => index % 2 === 0).map(Number);
     const ys = block.poly.filter((_, index) => index % 2 === 1).map(Number);
-    return normalizeBbox(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys));
+    return normalizeBbox(
+      Math.min(...xs),
+      Math.min(...ys),
+      Math.max(...xs),
+      Math.max(...ys),
+    );
   }
 
   return null;
@@ -117,7 +169,12 @@ function normalizeBbox(
   if (![x1, y1, x2, y2].every(Number.isFinite)) {
     return null;
   }
-  return [Math.min(x1, x2), Math.min(y1, y2), Math.max(x1, x2), Math.max(y1, y2)];
+  return [
+    Math.min(x1, x2),
+    Math.min(y1, y2),
+    Math.max(x1, x2),
+    Math.max(y1, y2),
+  ];
 }
 
 function getBlockMarkdown(block: RawBlock): string {
@@ -133,46 +190,124 @@ function getBlockMarkdown(block: RawBlock): string {
 }
 
 function getBlockFormula(block: RawBlock, markdown: string): string | null {
-  const value = block.formula ?? block.latex ?? getLinesText(block) ?? markdown;
+  const value =
+    block.formula ?? block.latex ?? getLinesText(block, "visual") ?? markdown;
   const formula = String(value ?? "").trim();
   return formula ? formula : null;
 }
 
-function getLinesText(block: RawBlock): string | null {
+function getLinesText(
+  block: RawBlock,
+  mode: "paragraph" | "visual" = "paragraph",
+): string | null {
   if (!Array.isArray(block.lines)) {
     return null;
   }
 
-  const text = block.lines
-    .map((line) =>
-      (Array.isArray(line.spans) ? line.spans : [])
-        .map((span) => span.content ?? span.text ?? "")
-        .join(""),
-    )
-    .filter(Boolean)
-    .join("\n");
+  const lineTexts = block.lines
+    .map((line) => getLineText(line.spans, mode))
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const text =
+    mode === "visual" ? lineTexts.join("\n") : joinParagraphLines(lineTexts);
 
   return text || null;
 }
 
+function getLineText(
+  spans: RawSpan[] | undefined,
+  mode: "paragraph" | "visual",
+): string {
+  const values = Array.isArray(spans) ? spans : [];
+  if (mode === "visual") {
+    return values.map((span) => span.content ?? span.text ?? "").join("");
+  }
+
+  return values.reduce((text, span) => {
+    const value = formatParagraphSpan(span);
+    if (!value) {
+      return text;
+    }
+    if (!text) {
+      return value;
+    }
+    return shouldSeparateSpans(text, value, span)
+      ? `${text} ${value}`
+      : text + value;
+  }, "");
+}
+
+function formatParagraphSpan(span: RawSpan): string {
+  const value = String(span.content ?? span.text ?? "").trim();
+  if (!value) {
+    return "";
+  }
+  return isInlineEquationType(span.type) ? `$${value}$` : value;
+}
+
+function shouldSeparateSpans(
+  text: string,
+  value: string,
+  span: RawSpan,
+): boolean {
+  return isInlineEquationType(span.type) || text.endsWith("$");
+}
+
+function isInlineEquationType(type: unknown): boolean {
+  return ["inline_equation", "equation_inline"].includes(
+    String(type ?? "")
+      .trim()
+      .toLowerCase(),
+  );
+}
+
+function joinParagraphLines(lines: string[]): string {
+  return lines.reduce((text, line) => {
+    if (!text) {
+      return line;
+    }
+
+    if (isSoftHyphenBreak(text, line)) {
+      return `${text.slice(0, -1)}${line}`;
+    }
+
+    return `${text} ${line}`;
+  }, "");
+}
+
+function isSoftHyphenBreak(text: string, nextLine: string): boolean {
+  if (!text.endsWith("-") || !/^[a-z]/.test(nextLine)) {
+    return false;
+  }
+
+  const previousToken = text.slice(0, -1).split(/\s+/).pop() ?? "";
+  return !previousToken.includes("-");
+}
+
 function normalizeType(type: unknown): MinerUBoxType {
-  const value = String(type ?? "unknown").toLowerCase();
-  if (["text", "title", "list", "table", "figure", "formula"].includes(value)) {
-    return value as MinerUBoxType;
-  }
-  if (["interline_equation", "inline_equation", "equation"].includes(value)) {
-    return "formula";
-  }
-  if (["image", "image_body"].includes(value)) {
-    return "figure";
-  }
-  if (value.includes("table")) {
+  const value = String(type ?? "")
+    .trim()
+    .toLowerCase();
+  if (["table_body"].includes(value)) {
     return "table";
   }
-  if (value.includes("list")) {
-    return "list";
+  if (["ref_text"].includes(value)) {
+    return "reference";
   }
-  return "unknown";
+  return value || "unknown";
+}
+
+function isReferenceType(type: string): boolean {
+  return ["reference", "citation", "bibliography"].includes(type);
+}
+
+function isFormulaType(type: string): boolean {
+  return [
+    "formula",
+    "interline_equation",
+    "inline_equation",
+    "equation",
+  ].includes(type);
 }
 
 function positiveOrOne(value: number): number {

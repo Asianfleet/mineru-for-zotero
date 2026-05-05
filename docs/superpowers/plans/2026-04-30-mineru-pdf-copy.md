@@ -8,19 +8,23 @@
 
 **Tech Stack:** Zotero 7 plugin template、TypeScript、zotero-plugin-toolkit、Zotero prefs、Zotero plugin data directory、MinerU 官方 API、Zotero reader DOM。
 
-## 当前进度（2026-05-04）
+## 当前进度（2026-05-05）
 
-- Task 1-5 已完成并已有对应提交；Task 6 的右键菜单解析主链路已跑通，用户重试后已提示“解析成功”。
+- Task 1-7 已完成并已有对应提交；Task 6 的右键菜单解析主链路已跑通，用户重试后已提示“解析成功”。
 - 为打通 Task 6，已在 MinerU client 边界补齐 Zotero 运行时下的真实网络兼容：裸 XHR 上传 presigned URL、Zotero HTTP JSON 请求、XHR/Zotero HTTP 下载 fallback、Windows `curl.exe` 文件下载 fallback、`nsIZipReader` 本地 ZIP 读取、空响应重试与诊断信息。
 - 为修复“解析结果缺少 box 信息”，`boxNormalizer` 已扩展支持真实 MinerU 结果结构：`pdf_info[].para_blocks`、`pdf_info[].layout_dets`、`page_size`、`poly`、`lines[].spans[].content` 和 `interline_equation`。
 - 2026-05-03 再次复现“解析结果缺少 box 信息”后确认新的根因在 `mineruClient`：MinerU full zip 可能同时包含 `content_list.json` 与 `middle.json` 等多个 JSON，旧逻辑会取第一个非 `full.md` 的 JSON，若先读到不含 box geometry 的 JSON，就会让 normalizer 得到 0 个 box。已改为优先选择包含 `pages`/`pdf_info` 且 block 带 `bbox`/`poly` 的 JSON，并补充回归测试。
+- Task 8 的 STOP 手动测试检查点 D 已由用户确认全部通过，可以继续 Task 9。
+- Task 8 已完成 overlay 渲染、hover 和单 box 复制：`all` 模式显示所有 box 边框，仅 hovered box 显示类型标签和复制按钮；`hover` 模式默认隐藏 box，只在 hover 命中时显示浅蓝填充、标签与复制按钮。
+- reader overlay 已支持 split view / new pane 同步现有模式；`off` 会清理 overlay DOM；缺少解析结果时会弹出用户提示并回退到 `off`，恢复此前的未解析提示行为。
+- `boxNormalizer` 已保留 MinerU 细分类型，支持 `image_caption`、`page_header`、`page_number`、`footnote` 等类型；reader label 显示中文名称，不再压缩成 `figure`、`text`、`unknown`。
+- 已修复存量 `boxes.normalized.json` 迁移问题：即使 box 数量不变，只要从 `mineru-result.json` 重新归一化后的结果不同，也会刷新 normalized boxes；空 raw result 不覆盖旧 boxes。
+- 已修复 overlay 交互问题：page selector 收紧为 `.page[...]` 避免左上角异常小 box；CSS cascade 修正复制按钮默认隐藏；wheel 事件转发给底层 PDF 元素；hover box 提升层级；复制按钮改为位于 box 下方水平居中。
+- 已修复 split pane 关闭后的 overlay 清理问题：对 Zotero/Firefox dead object 做安全清理，移除 listener、timer、RAF 与 root DOM 时吞掉已销毁 pane 的 dead object TypeError；wheel 事件构造改用目标 document window，避免 `WheelEvent is not defined`。
+- 已对齐 MinerU 应用中的 box 标签与引用框：`table_body` 显示为“表格”，`ref_text` 归一化为 `reference` 并显示为“引用”；参考文献父级 `list` 大框在 normalizer 与 overlay 渲染层过滤，避免盖住单条参考文献；窄框标签强制横排显示。
 - Task 6 仍有两个计划细项未完全收口：boxes 为空时还未保存 failed manifest；重复解析确认目前使用系统 `confirm` 的 OK/Cancel，而不是计划中的自定义“使用已有结果 / 重新解析并覆盖”按钮。
-- Task 7 的 reader toolbar 按钮与 per-reader state 骨架已完成到手动检查点 C：按钮位于 PDF reader toolbar 左侧区域、上一页/下一页按钮右侧；左键单击可开闭 floating panel；hover、tooltip、五个菜单项均正常；点击菜单项只更新 state 骨架，尚不渲染 overlay。
-- Task 7 调试期间已放弃 `Zotero.Reader.registerEventListener("renderToolbar")` 注入路径。该路径在当前 Zotero Reader toolbar 生命周期下会出现单击不触发、需要双击、菜单定位/跨 docgroup 等问题。当前实现改为扫描当前主窗口 reader tabs，进入 reader iframe document，按 Zotero Reader 源码锚点 `#next` / `.toolbar .start` 注入按钮，并将 panel 与按钮放在同一 document 中。
-- Task 7 已修复的 UI bug：跨 docgroup append 报错、`HTMLElement is not defined`、右键才能打开、左键双击才能打开、hover 背景尺寸/圆角错误、菜单无法打开、菜单项 hover 闪动。最后一个闪动问题的根因是同步循环定时重建菜单项，修复为只在打开菜单或执行菜单命令时刷新菜单。
-- split view 验收口径已修正：Zotero Reader split view 共享同一条 toolbar，不会出现每个 pane 各一个 toolbar 按钮。后续 Task 8/9 应实现“一个 toolbar 按钮作用于当前 active/focused reader pane 的 overlay state”，并验证 split view 下 pane state 互不影响。
-- 2026-05-04 提交 `6767a48053569428e0171d4b15bc41eba94fa396`（`feat(reader): 渲染 MinerU 框选覆盖层`）已把 Task 8 推进到可见 overlay：`readerOverlay` 现在会读取 `boxes.normalized.json`，按页创建 overlay root / page layer / box 元素，注入 overlay 样式，并在 reader viewport 滚动或尺寸变化时重定位；`readerToolbar` 的模式切换已改为通过 `applyReaderOverlayMode()` 驱动重渲染。
-- 目前仍未完成的是 hover 复制按钮、多选复制、active/focused pane 定位、未解析 PDF 提示与“立即解析”按钮；Task 10 仍只提前完成了部分真实解析错误处理和自动化验证。
+- Task 9 的多选复制尚未开始；Task 10 仅提前完成了部分真实解析错误处理、存量数据迁移和自动化验证。
+- 最近自动化验证：`.\node_modules\.bin\zotero-plugin.cmd test --no-watch --exit-on-finish` 通过 56 个测试；`.\node_modules\.bin\tsc.cmd --noEmit` 通过；针对 Task 8 修改文件的 Prettier check 通过。
 
 ---
 
@@ -711,7 +715,7 @@ Expected: exit code 0。
 
 用户确认后才能继续 Task 7。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/modules/parseManager.ts src/hooks.ts addon/locale/zh-CN/mainWindow.ftl addon/locale/en-US/mainWindow.ftl
@@ -832,7 +836,7 @@ Run:
 
 用户确认后才能继续 Task 8。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/modules/readerOverlay.ts src/modules/readerToolbar.ts src/addon.ts src/hooks.ts addon/locale/zh-CN/mainWindow.ftl addon/locale/en-US/mainWindow.ftl
@@ -870,23 +874,23 @@ git commit -m "feat(reader): add per-pane toolbar state"
 - 如果当前 Zotero API 无法直接暴露 focused pane，需要在 overlay 层通过最近一次 pointer/focus/selection 事件维护 active pane。
 - 未解析 PDF 的提示和“立即解析”按钮应在 overlay/root 层实现；Task 7 不再承担这项 UI。
 
-- [ ] **Step 2: 实现两种显示模式**
+- [x] **Step 2: 实现两种显示模式**
 
 `mode === "all"`：
 
 - 所有 box 有边框，内部透明。
 - hover box 填充浅蓝色。
-- 不显示复制按钮。
+- 仅 hovered box 显示类型标签和复制按钮，未 hover 的 box 不显示这些控件，避免拥挤。
 
 `mode === "hover"`：
 
 - 默认不显示 box。
 - hover 命中时显示蓝色边框和浅蓝填充。
-- 左上角显示类型标签。
-- box 下方显示复制按钮。
+- 左上角显示 MinerU 细分类型标签。
+- box 下方水平居中显示复制按钮。
 - formula box 显示两个按钮：“带 $ 复制”和“不带 $ 复制”。
 
-- [ ] **Step 3: 实现复制**
+- [x] **Step 3: 实现复制**
 
 复制使用已有 `ztoolkit.Clipboard()`：
 
@@ -901,7 +905,7 @@ formula box：
 - “带 $ 复制”调用 `formatFormulaForCopy(box.formula, "with-dollar")`。
 - “不带 $ 复制”调用 `formatFormulaForCopy(box.formula, "without-dollar")`。
 
-- [ ] **Step 4: 构建验证**
+- [x] **Step 4: 构建验证**
 
 Run:
 
@@ -911,7 +915,18 @@ Run:
 
 Expected: exit code 0。
 
-- [ ] **Step 5: STOP: 手动测试检查点 D**
+实际验证（2026-05-05，初始 Task 8 实现）：
+
+- `.\node_modules\.bin\zotero-plugin.cmd test --no-watch --exit-on-finish`：48 passed。
+- `.\node_modules\.bin\tsc.cmd --noEmit`：exit code 0。
+
+补充验证（2026-05-05，split cleanup 与 MinerU 标签/引用框修复后）：
+
+- `.\node_modules\.bin\zotero-plugin.cmd test --no-watch --exit-on-finish`：56 passed。
+- `.\node_modules\.bin\tsc.cmd --noEmit`：exit code 0。
+- `.\node_modules\.bin\prettier.cmd --check src\modules\boxNormalizer.ts src\modules\readerOverlay.ts test\boxNormalizer.test.ts test\readerOverlay.test.ts`：exit code 0。
+
+- [x] **Step 5: STOP: 手动测试检查点 D**
 
 停止开发并请用户测试：
 
@@ -926,11 +941,26 @@ Expected: exit code 0。
 
 用户确认后才能继续 Task 9。
 
-- [ ] **Step 6: Commit**
+手动测试记录与修复（2026-05-05）：
+
+- 用户报告 Zotero split view 中关闭 split pane 后控制台连续出现 `TypeError: can't access dead object`；已在 overlay 清理路径中兼容 pane/window 已销毁场景，安全清理 listener、timer、RAF 和 root DOM。
+- 用户再次测试后报告关闭 split pane 时出现 `ReferenceError: WheelEvent is not defined`；已改为优先使用目标 reader document 的 `defaultView.WheelEvent` 构造转发事件。
+- 用户报告 box 标签与 MinerU 应用不对齐：`table_body` 应显示“表格”、参考文献条目应显示“引用”、页码标签应横排；已修复标签映射与标签 CSS。
+- 用户报告参考文献条目 hover 时会被父级 `list` 大框覆盖；已在 normalizer 与 overlay 渲染层过滤包含参考文献子框的父级 `list` 大框，保护新解析数据和旧 `boxes.normalized.json`。
+- 用户确认 Task 8 检查点已经全部通过。
+
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/modules/readerOverlay.ts addon/content/zoteroPane.css src/modules/readerToolbar.ts
 git commit -m "feat(reader): render and copy MinerU boxes"
+```
+
+后续补充提交：
+
+```powershell
+git commit -m "fix(reader): 兼容 split pane 关闭后的 overlay 清理"
+git commit -m "fix(reader): 对齐 MinerU box 标签与引用框"
 ```
 
 ## Task 9: 多选、工具栏复制与 split view 销毁

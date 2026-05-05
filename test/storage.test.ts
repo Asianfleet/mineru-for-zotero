@@ -97,6 +97,111 @@ describe("storage", function () {
     assert.equal(manifest.mineruTaskID, "task-2");
     assert.deepEqual(await storage.readBoxes(attachment), [normalizedBoxes[1]]);
   });
+
+  it("refreshes stale normalized boxes from the raw MinerU result", async function () {
+    const storage = createStorage(rootDir);
+    const attachment = {
+      id: 1,
+      key: "STALE",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+
+    await writeResultOrFail(storage, {
+      attachment,
+      mineruTaskID: "task-1",
+      rawResult: {
+        pdf_info: [
+          {
+            page_idx: 0,
+            page_size: [1000, 2000],
+            para_blocks: [
+              { type: "text", bbox: [100, 100, 500, 200], text: "Body" },
+              {
+                type: "image",
+                bbox: [100, 300, 500, 600],
+                blocks: [
+                  {
+                    type: "image_caption",
+                    bbox: [100, 620, 500, 700],
+                    lines: [{ spans: [{ content: "Figure 1: caption" }] }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      markdown: "Body",
+      boxes: [normalizedBoxes[0]],
+    });
+
+    const boxes = await storage.readBoxes(attachment);
+
+    assert.isAbove(boxes.length, 1);
+    assert.isTrue(boxes.some((box) => box.markdown === "Figure 1: caption"));
+  });
+
+  it("refreshes stale normalized boxes when the raw MinerU types become more detailed", async function () {
+    const storage = createStorage(rootDir);
+    const attachment = {
+      id: 1,
+      key: "DETAIL",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+
+    await writeResultOrFail(storage, {
+      attachment,
+      mineruTaskID: "task-1",
+      rawResult: {
+        pdf_info: [
+          {
+            page_idx: 0,
+            page_size: [1000, 2000],
+            para_blocks: [
+              { type: "text", bbox: [100, 100, 500, 200], text: "Body" },
+              {
+                type: "image_caption",
+                bbox: [100, 300, 500, 360],
+                lines: [{ spans: [{ content: "Figure 1: caption" }] }],
+              },
+            ],
+          },
+        ],
+      },
+      markdown: "Body",
+      boxes: [
+        {
+          rawIndex: 0,
+          page: 1,
+          type: "text",
+          bbox: { x: 0.1, y: 0.05, width: 0.4, height: 0.05 },
+          markdown: "Body",
+          formula: null,
+        },
+        {
+          rawIndex: 1,
+          page: 1,
+          type: "text",
+          bbox: { x: 0.1, y: 0.15, width: 0.4, height: 0.03 },
+          markdown: "Figure 1: caption",
+          formula: null,
+        },
+      ],
+    });
+
+    const boxes = await storage.readBoxes(attachment);
+
+    assert.deepEqual(boxes.map((box) => box.type), [
+      "text",
+      "image_caption",
+    ]);
+  });
 });
 
 async function writeResultOrFail(

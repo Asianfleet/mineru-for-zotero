@@ -1,11 +1,4 @@
-export type MinerUBoxType =
-  | "text"
-  | "title"
-  | "list"
-  | "table"
-  | "figure"
-  | "formula"
-  | "unknown";
+export type MinerUBoxType = string;
 
 export interface AttachmentRef {
   id: number;

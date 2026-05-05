@@ -20,4 +20,69 @@
 
 .mineru-copy-box:hover {
   background: rgba(64, 156, 255, 0.18);
+  z-index: 10;
+}
+
+.mineru-copy-mode-hover .mineru-copy-box {
+  opacity: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.mineru-copy-mode-hover .mineru-copy-box:hover {
+  opacity: 1;
+  border-color: rgba(33, 99, 235, 0.9);
+  background: rgba(64, 156, 255, 0.18);
+}
+
+.mineru-copy-box-label,
+.mineru-copy-box-actions {
+  display: none;
+}
+
+.mineru-copy-box:hover .mineru-copy-box-label {
+  display: block;
+}
+
+.mineru-copy-box:hover .mineru-copy-box-actions {
+  display: flex;
+}
+
+.mineru-copy-box-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translateY(-100%);
+  padding: 2px 4px;
+  border-radius: 3px 3px 0 0;
+  background: rgba(33, 99, 235, 0.95);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1.2;
+  pointer-events: none;
+}
+
+.mineru-copy-box-actions {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  gap: 4px;
+  padding-top: 3px;
+}
+
+.mineru-copy-button {
+  border: 1px solid rgba(33, 99, 235, 0.9);
+  border-radius: 4px;
+  background: #fff;
+  color: rgba(20, 64, 160, 1);
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 2px 5px;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.mineru-copy-button:hover {
+  background: rgba(226, 239, 255, 1);
 }

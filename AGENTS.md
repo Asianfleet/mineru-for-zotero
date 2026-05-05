@@ -72,6 +72,11 @@ then rerun the full suite.
   runtime environment and console settings. For reader-toolbar or iframe click
   diagnostics, also emit to `Zotero.debug` and the relevant window
   `console.info`, and keep a visible UI state when possible.
+- When reader overlay data is missing, do not rely on logs alone. Surface a
+  user-facing notice, reset the overlay mode to `off`, and keep `boxes.normalized.json`
+  in sync with `mineru-result.json` even when the box count does not change,
+  otherwise newly supported MinerU types like captions, headers, and footnotes
+  can stay hidden in already-parsed PDFs.
 
 ## Commit & Pull Request Guidelines
 

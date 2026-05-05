@@ -5,6 +5,8 @@ import {
   destroyReaderOverlaysByReaderID,
   getReaderOverlayStateForReader,
   getReaderSelectedBoxCount,
+  readerOverlayNeedsWindowSync,
+  renderReaderOverlayForReader,
 } from "./readerOverlay";
 import { getString } from "../utils/locale";
 
@@ -221,6 +223,9 @@ function syncWindowToolbar(win: _ZoteroTypes.MainWindow): void {
     const binding = ensureButtonBinding(win, reader);
     if (binding) {
       activeIDs.add(reader._instanceID);
+      if (readerOverlayNeedsWindowSync(reader)) {
+        void renderReaderOverlayForReader(reader);
+      }
     }
   }
 
@@ -638,8 +643,9 @@ function positionMenu(button: HTMLButtonElement, menu: HTMLDivElement): void {
 function getWindowReaders(
   win: _ZoteroTypes.MainWindow,
 ): _ZoteroTypes.ReaderInstance[] {
-  const tabs = (win as Window & { Zotero_Tabs?: { _tabs?: Array<{ id: string }> } })
-    .Zotero_Tabs?._tabs;
+  const tabs = (
+    win as Window & { Zotero_Tabs?: { _tabs?: Array<{ id: string }> } }
+  ).Zotero_Tabs?._tabs;
   if (!Array.isArray(tabs)) {
     return [];
   }

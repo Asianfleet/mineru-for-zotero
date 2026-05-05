@@ -1,6 +1,9 @@
 import type { NormalizedBox, OverlayMode } from "./domain";
+import type { FluentMessageId } from "../../typings/i10n";
+import { formatBoxesForCopy, formatFormulaForCopy } from "./copyFormatter";
 import { getMinerUStorageRoot } from "./preferenceScript";
 import { createStorage } from "./storage";
+import { getString } from "../utils/locale";
 
 export type ReaderOverlayKey = `${string}:${string}`;
 
@@ -12,7 +15,9 @@ export interface ReaderOverlayState {
   selectedRawIndexes: Set<number>;
   hoverRawIndex: number | null;
   root: HTMLElement | null;
+  rootsByWindow: Map<Window, HTMLElement>;
   cleanupPositioning: (() => void) | null;
+  cleanupPositioningByWindow: Map<Window, () => void>;
   renderRevision: number;
 }
 
@@ -70,6 +75,73 @@ const READER_OVERLAY_CSS = `
 
 .mineru-copy-box:hover {
   background: rgba(64, 156, 255, 0.18);
+  z-index: 10;
+}
+
+.mineru-copy-mode-hover .mineru-copy-box {
+  opacity: 0;
+  border-color: transparent;
+  background: transparent;
+}
+
+.mineru-copy-mode-hover .mineru-copy-box:hover {
+  opacity: 1;
+  border-color: rgba(33, 99, 235, 0.9);
+  background: rgba(64, 156, 255, 0.18);
+}
+
+.mineru-copy-box-label,
+.mineru-copy-box-actions {
+  display: none;
+}
+
+.mineru-copy-box:hover .mineru-copy-box-label {
+  display: block;
+}
+
+.mineru-copy-box:hover .mineru-copy-box-actions {
+  display: flex;
+}
+
+.mineru-copy-box-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform: translateY(-100%);
+  padding: 2px 4px;
+  border-radius: 3px 3px 0 0;
+  background: rgba(33, 99, 235, 0.95);
+  color: #fff;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+  writing-mode: horizontal-tb;
+  pointer-events: none;
+}
+
+.mineru-copy-box-actions {
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  gap: 4px;
+  padding-top: 3px;
+}
+
+.mineru-copy-button {
+  border: 1px solid rgba(33, 99, 235, 0.9);
+  border-radius: 4px;
+  background: #fff;
+  color: rgba(20, 64, 160, 1);
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 2px 5px;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+
+.mineru-copy-button:hover {
+  background: rgba(226, 239, 255, 1);
 }
 `;
 
@@ -88,6 +160,7 @@ export function getReaderOverlayState(
   const states = getOverlayStates();
   const existing = states.get(key);
   if (existing) {
+    ensureReaderOverlayStateMaps(existing);
     return existing;
   }
 
@@ -99,7 +172,9 @@ export function getReaderOverlayState(
     selectedRawIndexes: new Set<number>(),
     hoverRawIndex: null,
     root: null,
+    rootsByWindow: new Map<Window, HTMLElement>(),
     cleanupPositioning: null,
+    cleanupPositioningByWindow: new Map<Window, () => void>(),
     renderRevision: 0,
   };
   states.set(key, state);
@@ -154,13 +229,13 @@ export async function renderReaderOverlayForReader(
   const mode = state.mode;
 
   if (state.mode === "off") {
+    cleanupReaderOverlayRoot(state);
     return state;
   }
 
-  const win = getReaderOverlayWindow(reader);
-  const doc = win?.document ?? null;
+  const windows = getReaderOverlayWindows(reader);
   const attachment = getReaderAttachmentRef(reader);
-  if (!win || !doc?.documentElement || !attachment) {
+  if (windows.length === 0 || !attachment) {
     cleanupReaderOverlayRoot(state);
     state.root = null;
     return state;
@@ -175,6 +250,8 @@ export async function renderReaderOverlayForReader(
       attachmentKey: attachment.key,
       error: error instanceof Error ? error.message : String(error),
     });
+    showReaderOverlayNotice("reader-overlay-missing-result");
+    state.mode = "off";
     cleanupReaderOverlayRoot(state);
     state.root = null;
     return state;
@@ -185,17 +262,27 @@ export async function renderReaderOverlayForReader(
   }
 
   cleanupReaderOverlayRoot(state);
-  const root = buildReaderOverlayRoot(doc, boxes, mode);
-  ensureReaderOverlayStyles(doc);
-  positionPageLayers(doc, root);
-  doc.body?.append(root);
-  state.cleanupPositioning = createReaderOverlayPositioningController({
-    doc,
-    win,
-    root,
-    reposition: () => positionPageLayers(doc, root),
-  }).cleanup;
-  state.root = root;
+  for (const win of windows) {
+    const doc = win.document ?? null;
+    if (!doc?.documentElement) {
+      continue;
+    }
+
+    const root = buildReaderOverlayRoot(doc, boxes, mode);
+    ensureReaderOverlayStyles(doc);
+    positionPageLayers(doc, root);
+    getReaderOverlayMountContainer(doc)?.append(root);
+    const cleanup = createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      reposition: () => positionPageLayers(doc, root),
+    }).cleanup;
+    state.rootsByWindow.set(win, root);
+    state.cleanupPositioningByWindow.set(win, cleanup);
+    state.root = root;
+    state.cleanupPositioning = cleanup;
+  }
   return state;
 }
 
@@ -220,6 +307,12 @@ export function setReaderOverlayRootForReader(
     return null;
   }
   state.root = root;
+  if (root) {
+    const win = root.ownerDocument?.defaultView ?? null;
+    if (win) {
+      ensureReaderOverlayStateMaps(state).rootsByWindow.set(win, root);
+    }
+  }
   return state;
 }
 
@@ -229,15 +322,65 @@ export function getReaderSelectedBoxCount(
   return getReaderOverlayStateForReader(reader)?.selectedRawIndexes.size ?? 0;
 }
 
+export function readerOverlayNeedsWindowSync(
+  reader: _ZoteroTypes.ReaderInstance,
+): boolean {
+  const state = getReaderOverlayStateForReader(reader);
+  if (!state || state.mode === "off") {
+    return false;
+  }
+
+  const windows = getReaderOverlayWindows(reader);
+  if (windows.length !== state.rootsByWindow.size) {
+    return true;
+  }
+
+  return windows.some((win) => !state.rootsByWindow.has(win));
+}
+
 export function getReaderOverlayWindow(
   reader: _ZoteroTypes.ReaderInstance,
 ): Window | null {
-  const view = (
-    reader._lastView ??
-    reader._primaryView ??
-    null
-  ) as { _iframeWindow?: Window | null } | null;
-  return view?._iframeWindow ?? reader._iframeWindow ?? null;
+  return getReaderOverlayWindows(reader).at(-1) ?? null;
+}
+
+export function getReaderOverlayWindows(
+  reader: _ZoteroTypes.ReaderInstance,
+): Window[] {
+  const windows = new Set<Window>();
+  for (const view of getReaderViews(reader)) {
+    const win = view?._iframeWindow ?? null;
+    if (win) {
+      windows.add(win);
+    }
+  }
+
+  if (reader._iframeWindow) {
+    windows.add(reader._iframeWindow);
+  }
+
+  return [...windows];
+}
+
+function getReaderViews(
+  reader: _ZoteroTypes.ReaderInstance,
+): Array<{ _iframeWindow?: Window | null } | null> {
+  const value = reader as _ZoteroTypes.ReaderInstance & {
+    _views?: Array<{ _iframeWindow?: Window | null }>;
+    _readerViews?: Array<{ _iframeWindow?: Window | null }>;
+    _secondaryView?: { _iframeWindow?: Window | null };
+  };
+  const view = (reader._lastView ?? reader._primaryView ?? null) as {
+    _iframeWindow?: Window | null;
+  } | null;
+
+  return [
+    ...(Array.isArray(value._views) ? value._views : []),
+    ...(Array.isArray(value._readerViews) ? value._readerViews : []),
+    reader._primaryView as { _iframeWindow?: Window | null } | null,
+    value._secondaryView ?? null,
+    view,
+  ];
 }
 
 export function destroyReaderOverlay(key: ReaderOverlayKey): void {
@@ -256,7 +399,9 @@ export function destroyReaderOverlaysForReader(
   destroyReaderOverlaysByReaderID(reader._instanceID);
 }
 
-export function destroyReaderOverlaysByReaderID(readerInstanceID: string): void {
+export function destroyReaderOverlaysByReaderID(
+  readerInstanceID: string,
+): void {
   const states = getOverlayStates();
   for (const [key, state] of getOverlayStates()) {
     if (state.readerInstanceID === readerInstanceID) {
@@ -297,7 +442,7 @@ export function buildReaderOverlayRoot(
     layer.className = "mineru-copy-page-layer";
     layer.dataset.pageNumber = String(page.page);
 
-    for (const box of page.boxes) {
+    for (const box of getRenderablePageBoxes(page.boxes)) {
       layer.append(createBoxElement(doc, box));
     }
     root.append(layer);
@@ -307,7 +452,7 @@ export function buildReaderOverlayRoot(
 }
 
 export function removeReaderOverlayRoot(root: Element | null): void {
-  root?.remove();
+  safeReaderOverlayCleanup(() => root?.remove());
 }
 
 export function createFallbackPageRect(doc: Document): PageRect {
@@ -324,6 +469,7 @@ export function createReaderOverlayPositioningController(
   let scheduledHandle: number | null = null;
   let intervalHandle: number | null = null;
   let cleaned = false;
+  const scrollContainer = getPrimaryScrollContainer(options.doc);
 
   const schedule = () => {
     if (cleaned || scheduledHandle !== null) {
@@ -353,6 +499,10 @@ export function createReaderOverlayPositioningController(
 
   options.win.addEventListener("scroll", schedule, true);
   options.win.addEventListener("resize", schedule);
+  options.win.addEventListener("wheel", onWheel, {
+    capture: true,
+    passive: false,
+  });
   for (const container of scrollContainers) {
     container.addEventListener("scroll", schedule, true);
   }
@@ -367,13 +517,23 @@ export function createReaderOverlayPositioningController(
         return;
       }
       cleaned = true;
-      options.win.removeEventListener("scroll", schedule, true);
-      options.win.removeEventListener("resize", schedule);
+      safeReaderOverlayCleanup(() =>
+        options.win.removeEventListener("scroll", schedule, true),
+      );
+      safeReaderOverlayCleanup(() =>
+        options.win.removeEventListener("resize", schedule),
+      );
+      safeReaderOverlayCleanup(() =>
+        options.win.removeEventListener("wheel", onWheel, true),
+      );
       for (const container of scrollContainers) {
-        container.removeEventListener("scroll", schedule, true);
+        safeReaderOverlayCleanup(() =>
+          container.removeEventListener("scroll", schedule, true),
+        );
       }
       if (intervalHandle !== null) {
-        options.win.clearInterval(intervalHandle);
+        const handle = intervalHandle;
+        safeReaderOverlayCleanup(() => options.win.clearInterval(handle));
         intervalHandle = null;
       }
 
@@ -381,21 +541,73 @@ export function createReaderOverlayPositioningController(
         return;
       }
 
+      const handle = scheduledHandle;
       if (options.win.cancelAnimationFrame) {
-        options.win.cancelAnimationFrame(scheduledHandle);
+        safeReaderOverlayCleanup(() =>
+          options.win.cancelAnimationFrame(handle),
+        );
       } else {
-        options.win.clearTimeout(scheduledHandle);
+        safeReaderOverlayCleanup(() => options.win.clearTimeout(handle));
       }
       scheduledHandle = null;
     },
   };
+
+  function onWheel(event: WheelEvent): void {
+    if (cleaned || !scrollContainer) {
+      return;
+    }
+
+    const target = event.target as Node | null;
+    if (!target || !options.root.contains(target)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+
+    if (forwardWheelToUnderlyingElement(options.doc, options.root, event)) {
+      return;
+    }
+
+    scrollElementBy(
+      scrollContainer,
+      event.deltaX,
+      event.deltaY,
+      event.deltaMode,
+    );
+  }
 }
 
 function cleanupReaderOverlayRoot(state: ReaderOverlayState): void {
-  state.cleanupPositioning?.();
+  ensureReaderOverlayStateMaps(state);
+  const hadPositioningByWindow = state.cleanupPositioningByWindow.size > 0;
+  const hadRootsByWindow = state.rootsByWindow.size > 0;
+  for (const cleanup of state.cleanupPositioningByWindow.values()) {
+    cleanup();
+  }
+  state.cleanupPositioningByWindow.clear();
+  for (const root of state.rootsByWindow.values()) {
+    removeReaderOverlayRoot(root);
+  }
+  state.rootsByWindow.clear();
+  if (!hadPositioningByWindow) {
+    state.cleanupPositioning?.();
+  }
   state.cleanupPositioning = null;
-  removeReaderOverlayRoot(state.root);
+  if (!hadRootsByWindow) {
+    removeReaderOverlayRoot(state.root);
+  }
   state.root = null;
+}
+
+function ensureReaderOverlayStateMaps(
+  state: ReaderOverlayState,
+): ReaderOverlayState {
+  state.rootsByWindow ??= new Map<Window, HTMLElement>();
+  state.cleanupPositioningByWindow ??= new Map<Window, () => void>();
+  return state;
 }
 
 function isCurrentRenderState(
@@ -427,6 +639,16 @@ function getReaderScrollContainers(doc: Document): Element[] {
     }
   }
   return [...containers];
+}
+
+function getPrimaryScrollContainer(doc: Document): Element | null {
+  return (
+    getReaderScrollContainers(doc)[0] ??
+    doc.scrollingElement ??
+    doc.documentElement ??
+    doc.body ??
+    null
+  );
 }
 
 export function ensureReaderOverlayStyles(doc: Document): void {
@@ -468,16 +690,191 @@ function getReaderAttachmentRef(
   return { libraryID, key };
 }
 
-function createBoxElement(
-  doc: Document,
-  box: NormalizedBox,
-): HTMLDivElement {
+function createBoxElement(doc: Document, box: NormalizedBox): HTMLDivElement {
   const element = doc.createElement("div");
   element.className = "mineru-copy-box";
   element.dataset.rawIndex = String(box.rawIndex);
   element.dataset.mineruBoxType = box.type;
   Object.assign(element.style, computeBoxStyle(box));
+  element.append(createBoxLabel(doc, box), createBoxActions(doc, box));
   return element;
+}
+
+function createBoxLabel(doc: Document, box: NormalizedBox): HTMLSpanElement {
+  const label = doc.createElement("span");
+  label.className = "mineru-copy-box-label";
+  label.textContent = formatBoxTypeLabel(box.type);
+  return label;
+}
+
+function createBoxActions(doc: Document, box: NormalizedBox): HTMLDivElement {
+  const actions = doc.createElement("div");
+  actions.className = "mineru-copy-box-actions";
+  if (isFormulaBox(box) && box.formula) {
+    actions.append(
+      createCopyButton(doc, "带 $ 复制", () => {
+        copyText(formatFormulaForCopy(box.formula ?? "", "with-dollar"));
+      }),
+      createCopyButton(doc, "不带 $ 复制", () => {
+        copyText(formatFormulaForCopy(box.formula ?? "", "without-dollar"));
+      }),
+    );
+    return actions;
+  }
+
+  actions.append(
+    createCopyButton(doc, "复制", () => {
+      copyText(formatBoxesForCopy([box]));
+    }),
+  );
+  return actions;
+}
+
+function isFormulaBox(box: NormalizedBox): boolean {
+  return [
+    "formula",
+    "interline_equation",
+    "inline_equation",
+    "equation",
+  ].includes(box.type);
+}
+
+function getRenderablePageBoxes(boxes: NormalizedBox[]): NormalizedBox[] {
+  return boxes.filter((box) => !isStructuralReferenceContainerBox(box, boxes));
+}
+
+function isStructuralReferenceContainerBox(
+  box: NormalizedBox,
+  boxes: NormalizedBox[],
+): boolean {
+  return (
+    normalizeBoxType(box.type) === "list" &&
+    boxes.some(
+      (candidate) =>
+        candidate !== box &&
+        isReferenceBoxType(candidate.type) &&
+        containsBox(box, candidate),
+    )
+  );
+}
+
+function containsBox(container: NormalizedBox, child: NormalizedBox): boolean {
+  if (container.page !== child.page) {
+    return false;
+  }
+
+  const epsilon = 0.0001;
+  const containerRight = container.bbox.x + container.bbox.width;
+  const containerBottom = container.bbox.y + container.bbox.height;
+  const childRight = child.bbox.x + child.bbox.width;
+  const childBottom = child.bbox.y + child.bbox.height;
+
+  return (
+    child.bbox.x + epsilon >= container.bbox.x &&
+    child.bbox.y + epsilon >= container.bbox.y &&
+    childRight <= containerRight + epsilon &&
+    childBottom <= containerBottom + epsilon
+  );
+}
+
+function formatBoxTypeLabel(type: string): string {
+  const normalized = normalizeBoxType(type);
+  const labels: Record<string, string> = {
+    text: "文本",
+    title: "标题",
+    list: "列表",
+    table: "表格",
+    table_body: "表格",
+    figure: "图片",
+    image: "图片",
+    image_body: "图片",
+    image_caption: "图片标题",
+    table_caption: "表格标题",
+    page_header: "页眉",
+    header: "页眉",
+    page_footer: "页脚",
+    footer: "页脚",
+    page_footnote: "脚注",
+    footnote: "脚注",
+    page_number: "页码",
+    ref_text: "引用",
+    reference: "引用",
+    citation: "引用",
+    bibliography: "引用",
+    formula: "公式",
+    interline_equation: "公式",
+    inline_equation: "公式",
+    equation: "公式",
+    unknown: "未知",
+  };
+  return labels[normalized] ?? normalized;
+}
+
+function isReferenceBoxType(type: string): boolean {
+  return ["ref_text", "reference", "citation", "bibliography"].includes(
+    normalizeBoxType(type),
+  );
+}
+
+function normalizeBoxType(type: string): string {
+  return type.trim().toLowerCase();
+}
+
+function showReaderOverlayNotice(id: FluentMessageId): void {
+  const text = getReaderOverlayNoticeText(id);
+  try {
+    new ztoolkit.ProgressWindow(addon.data.config.addonName, {
+      closeTime: 4000,
+    })
+      .createLine({
+        text,
+        type: "default",
+        progress: 100,
+      })
+      .show();
+  } catch {
+    // 提示窗口不能影响 reader 交互。
+  }
+}
+
+export function getReaderOverlayNoticeText(id: FluentMessageId): string {
+  try {
+    const value = getString(id);
+    if (value && value !== id) {
+      return value;
+    }
+  } catch {
+    // Fall through to the built-in fallback text.
+  }
+
+  if (id === "reader-overlay-missing-result") {
+    return "当前 PDF 还没有可用的 MinerU 解析结果，请先解析后再开启 box";
+  }
+  return id;
+}
+
+function createCopyButton(
+  doc: Document,
+  label: string,
+  onCopy: () => void,
+): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = "mineru-copy-button";
+  button.textContent = label;
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onCopy();
+  });
+  return button;
+}
+
+function copyText(text: string): void {
+  if (!text) {
+    return;
+  }
+  new ztoolkit.Clipboard().addText(text, "text/unicode").copy();
 }
 
 function groupBoxesByPage(
@@ -518,15 +915,107 @@ export function positionPageLayers(doc: Document, root: HTMLDivElement): void {
   }
 }
 
-export function findPageElement(doc: Document, pageNumber: number): Element | null {
+export function findPageElement(
+  doc: Document,
+  pageNumber: number,
+): Element | null {
   const escapedPageNumber = String(pageNumber).replace(/"/g, '\\"');
   return (
-    doc.querySelector(`.pdfViewer .page[data-page-number="${escapedPageNumber}"]`) ??
+    doc.querySelector(
+      `.pdfViewer .page[data-page-number="${escapedPageNumber}"]`,
+    ) ??
     doc.querySelector(`.page[data-page-number="${escapedPageNumber}"]`) ??
-    doc.querySelector(`[data-page-number="${escapedPageNumber}"]`) ??
-    doc.querySelector(`[data-page="${escapedPageNumber}"]`) ??
+    doc.querySelector(`.pdfViewer .page[data-page="${escapedPageNumber}"]`) ??
+    doc.querySelector(`.page[data-page="${escapedPageNumber}"]`) ??
     null
   );
+}
+
+function getReaderOverlayMountContainer(doc: Document): Element | null {
+  return getReaderScrollContainers(doc)[0] ?? doc.body ?? doc.documentElement;
+}
+
+function forwardWheelToUnderlyingElement(
+  doc: Document,
+  root: HTMLElement,
+  event: WheelEvent,
+): boolean {
+  const elementFromPoint = doc.elementFromPoint?.bind(doc);
+  if (!elementFromPoint) {
+    return false;
+  }
+
+  const previousDisplay = root.style.display;
+  root.style.display = "none";
+  const target = elementFromPoint(event.clientX, event.clientY);
+  root.style.display = previousDisplay;
+
+  if (!target || root.contains(target)) {
+    return false;
+  }
+
+  const WheelEventConstructor = getWheelEventConstructor(doc);
+  if (!WheelEventConstructor) {
+    return false;
+  }
+
+  const forwarded = new WheelEventConstructor("wheel", {
+    bubbles: true,
+    cancelable: true,
+    deltaX: event.deltaX,
+    deltaY: event.deltaY,
+    deltaZ: event.deltaZ,
+    deltaMode: event.deltaMode,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    screenX: event.screenX,
+    screenY: event.screenY,
+    ctrlKey: event.ctrlKey,
+    shiftKey: event.shiftKey,
+    altKey: event.altKey,
+    metaKey: event.metaKey,
+  });
+  target.dispatchEvent(forwarded);
+  return true;
+}
+
+function getWheelEventConstructor(doc: Document): typeof WheelEvent | null {
+  const readerWheelEvent = doc.defaultView?.WheelEvent;
+  if (readerWheelEvent) {
+    return readerWheelEvent;
+  }
+
+  if (typeof WheelEvent !== "undefined") {
+    return WheelEvent;
+  }
+
+  return null;
+}
+
+function scrollElementBy(
+  element: Element,
+  deltaX: number,
+  deltaY: number,
+  deltaMode: number,
+): void {
+  const factor = deltaMode === 1 ? 16 : deltaMode === 2 ? 320 : 1;
+  const target = element as HTMLElement & {
+    scrollBy?: (options: ScrollToOptions) => void;
+  };
+  const left = deltaX * factor;
+  const top = deltaY * factor;
+
+  if (typeof target.scrollBy === "function") {
+    target.scrollBy({ left, top, behavior: "auto" });
+    return;
+  }
+
+  if (typeof target.scrollLeft === "number") {
+    target.scrollLeft += left;
+  }
+  if (typeof target.scrollTop === "number") {
+    target.scrollTop += top;
+  }
 }
 
 function createPageRect(
@@ -574,4 +1063,21 @@ function logReaderOverlayDiagnostic(
   } catch {
     // 测试或 teardown 阶段可能没有 Zotero.debug。
   }
+}
+
+function safeReaderOverlayCleanup(cleanup: () => void): void {
+  try {
+    cleanup();
+  } catch (error) {
+    if (!isDeadObjectError(error)) {
+      throw error;
+    }
+  }
+}
+
+function isDeadObjectError(error: unknown): boolean {
+  return (
+    error instanceof TypeError &&
+    String(error.message).includes("can't access dead object")
+  );
 }
