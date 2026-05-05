@@ -712,7 +712,7 @@ Expected: exit code 0。
 
 用户确认后才能继续 Task 7。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/modules/parseManager.ts src/hooks.ts addon/locale/zh-CN/mainWindow.ftl addon/locale/en-US/mainWindow.ftl
@@ -833,7 +833,7 @@ Run:
 
 用户确认后才能继续 Task 8。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/modules/readerOverlay.ts src/modules/readerToolbar.ts src/addon.ts src/hooks.ts addon/locale/zh-CN/mainWindow.ftl addon/locale/en-US/mainWindow.ftl
@@ -847,7 +847,7 @@ git commit -m "feat(reader): add per-pane toolbar state"
 - Modify: `addon/content/zoteroPane.css`
 - Modify: `src/modules/readerToolbar.ts`
 
-- [ ] **Step 1: 渲染 overlay root**
+- [x] **Step 1: 渲染 overlay root**
 
 对每个 reader pane：
 
@@ -864,7 +864,7 @@ git commit -m "feat(reader): add per-pane toolbar state"
 - 如果当前 Zotero API 无法直接暴露 focused pane，需要在 overlay 层通过最近一次 pointer/focus/selection 事件维护 active pane。
 - 未解析 PDF 的提示和“立即解析”按钮应在 overlay/root 层实现；Task 7 不再承担这项 UI。
 
-- [ ] **Step 2: 实现两种显示模式**
+- [x] **Step 2: 实现两种显示模式**
 
 `mode === "all"`：
 
@@ -880,7 +880,7 @@ git commit -m "feat(reader): add per-pane toolbar state"
 - box 下方水平居中显示复制按钮。
 - formula box 显示两个按钮：“带 $ 复制”和“不带 $ 复制”。
 
-- [ ] **Step 3: 实现复制**
+- [x] **Step 3: 实现复制**
 
 复制使用已有 `ztoolkit.Clipboard()`：
 
@@ -895,7 +895,7 @@ formula box：
 - “带 $ 复制”调用 `formatFormulaForCopy(box.formula, "with-dollar")`。
 - “不带 $ 复制”调用 `formatFormulaForCopy(box.formula, "without-dollar")`。
 
-- [ ] **Step 4: 构建验证**
+- [x] **Step 4: 构建验证**
 
 Run:
 
@@ -904,6 +904,11 @@ Run:
 ```
 
 Expected: exit code 0。
+
+实际验证（2026-05-05）：
+
+- `.\node_modules\.bin\zotero-plugin.cmd test --no-watch --exit-on-finish`：48 passed。
+- `.\node_modules\.bin\tsc.cmd --noEmit`：exit code 0。
 
 - [ ] **Step 5: STOP: 手动测试检查点 D**
 
@@ -920,7 +925,7 @@ Expected: exit code 0。
 
 用户确认后才能继续 Task 9。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/modules/readerOverlay.ts addon/content/zoteroPane.css src/modules/readerToolbar.ts
