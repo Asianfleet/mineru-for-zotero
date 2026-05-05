@@ -65,7 +65,6 @@
   position: absolute;
   left: 0;
   top: 100%;
-  display: flex;
   gap: 4px;
   padding-top: 3px;
 }

@@ -120,7 +120,6 @@ const READER_OVERLAY_CSS = `
   position: absolute;
   left: 0;
   top: 100%;
-  display: flex;
   gap: 4px;
   padding-top: 3px;
 }
@@ -549,6 +548,13 @@ export function createReaderOverlayPositioningController(
     }
 
     event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+
+    if (forwardWheelToUnderlyingElement(options.doc, options.root, event)) {
+      return;
+    }
+
     scrollElementBy(scrollContainer, event.deltaX, event.deltaY, event.deltaMode);
   }
 }
@@ -856,6 +862,45 @@ export function findPageElement(
 
 function getReaderOverlayMountContainer(doc: Document): Element | null {
   return getReaderScrollContainers(doc)[0] ?? doc.body ?? doc.documentElement;
+}
+
+function forwardWheelToUnderlyingElement(
+  doc: Document,
+  root: HTMLElement,
+  event: WheelEvent,
+): boolean {
+  const elementFromPoint = doc.elementFromPoint?.bind(doc);
+  if (!elementFromPoint) {
+    return false;
+  }
+
+  const previousDisplay = root.style.display;
+  root.style.display = "none";
+  const target = elementFromPoint(event.clientX, event.clientY);
+  root.style.display = previousDisplay;
+
+  if (!target || root.contains(target)) {
+    return false;
+  }
+
+  const forwarded = new WheelEvent("wheel", {
+    bubbles: true,
+    cancelable: true,
+    deltaX: event.deltaX,
+    deltaY: event.deltaY,
+    deltaZ: event.deltaZ,
+    deltaMode: event.deltaMode,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    screenX: event.screenX,
+    screenY: event.screenY,
+    ctrlKey: event.ctrlKey,
+    shiftKey: event.shiftKey,
+    altKey: event.altKey,
+    metaKey: event.metaKey,
+  });
+  target.dispatchEvent(forwarded);
+  return true;
 }
 
 function scrollElementBy(

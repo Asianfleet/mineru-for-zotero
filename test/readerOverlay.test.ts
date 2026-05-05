@@ -133,6 +133,10 @@ describe("readerOverlay", function () {
       style.textContent,
       ".mineru-copy-box:hover .mineru-copy-box-actions",
     );
+    assert.notMatch(
+      style.textContent,
+      /\.mineru-copy-box-actions\s*\{\s*position:[^}]*display:/s,
+    );
   });
 
   it("provides a local fallback for the missing-result prompt", function () {
@@ -229,12 +233,110 @@ describe("readerOverlay", function () {
       preventDefault() {
         prevented = true;
       },
+      stopPropagation() {},
+      stopImmediatePropagation() {},
     } as unknown as WheelEvent);
 
     assert.isTrue(prevented);
     assert.deepEqual(scrollCalls, [
       { left: 4, top: 120, behavior: "auto" },
     ]);
+  });
+
+  it("redispatches wheel events over overlay boxes to the underlying PDF element", function () {
+    let wheelListener: ((event: WheelEvent) => void) | null = null;
+    const target = {} as Node;
+    const dispatched: WheelEvent[] = [];
+    const underlying = {
+      dispatchEvent(event: Event) {
+        dispatched.push(event as WheelEvent);
+        return true;
+      },
+    } as unknown as Element;
+    const root = {
+      style: { display: "" },
+      contains(node: Node) {
+        return node === target;
+      },
+    } as unknown as HTMLDivElement;
+    const scrollContainer = {
+      addEventListener() {},
+      removeEventListener() {},
+      scrollBy() {
+        assert.fail("Expected wheel to be forwarded before scroll fallback");
+      },
+    } as unknown as Element;
+    const doc = {
+      querySelector(selector: string) {
+        return selector === "#viewerContainer" ? scrollContainer : null;
+      },
+      elementFromPoint(clientX: number, clientY: number) {
+        assert.equal(clientX, 10);
+        assert.equal(clientY, 20);
+        assert.equal(root.style.display, "none");
+        return underlying;
+      },
+      documentElement: null,
+      body: null,
+    } as unknown as Document;
+    const win = {
+      addEventListener(type: string, listener: EventListener) {
+        if (type === "wheel") {
+          wheelListener = listener as (event: WheelEvent) => void;
+        }
+      },
+      removeEventListener() {},
+      requestAnimationFrame() {
+        return 1;
+      },
+      cancelAnimationFrame() {},
+      setTimeout() {
+        return 1;
+      },
+      clearTimeout() {},
+      setInterval() {
+        return 1;
+      },
+      clearInterval() {},
+    } as unknown as Window;
+
+    createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      reposition() {},
+    });
+
+    let prevented = false;
+    let stopped = false;
+    wheelListener?.({
+      target,
+      clientX: 10,
+      clientY: 20,
+      screenX: 30,
+      screenY: 40,
+      deltaX: 4,
+      deltaY: 120,
+      deltaZ: 0,
+      deltaMode: 0,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      preventDefault() {
+        prevented = true;
+      },
+      stopPropagation() {
+        stopped = true;
+      },
+      stopImmediatePropagation() {},
+    } as unknown as WheelEvent);
+
+    assert.isTrue(prevented);
+    assert.isTrue(stopped);
+    assert.equal(root.style.display, "");
+    assert.equal(dispatched.length, 1);
+    assert.equal(dispatched[0].deltaY, 120);
   });
 
   it("returns every reader pane window for split views", function () {
