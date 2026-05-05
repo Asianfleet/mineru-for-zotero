@@ -23,8 +23,9 @@
 - 已修复 split pane 关闭后的 overlay 清理问题：对 Zotero/Firefox dead object 做安全清理，移除 listener、timer、RAF 与 root DOM 时吞掉已销毁 pane 的 dead object TypeError；wheel 事件构造改用目标 document window，避免 `WheelEvent is not defined`。
 - 已对齐 MinerU 应用中的 box 标签与引用框：`table_body` 显示为“表格”，`ref_text` 归一化为 `reference` 并显示为“引用”；参考文献父级 `list` 大框在 normalizer 与 overlay 渲染层过滤，避免盖住单条参考文献；窄框标签强制横排显示。
 - Task 6 仍有两个计划细项未完全收口：boxes 为空时还未保存 failed manifest；重复解析确认目前使用系统 `confirm` 的 OK/Cancel，而不是计划中的自定义“使用已有结果 / 重新解析并覆盖”按钮。
-- Task 9 的多选复制尚未开始；Task 10 仅提前完成了部分真实解析错误处理、存量数据迁移和自动化验证。
-- 最近自动化验证：`.\node_modules\.bin\zotero-plugin.cmd test --no-watch --exit-on-finish` 通过 56 个测试；`.\node_modules\.bin\tsc.cmd --noEmit` 通过；针对 Task 8 修改文件的 Prettier check 通过。
+- Task 9 已完成多选状态、工具栏复制已选、清空选择、attachment change / mode off / split pane 销毁清理，并已通过 STOP 手动测试检查点 E；尚未开始 Task 10。
+- Task 9 的 split view 选择集合已确认采用共享行为：Zotero split view 中多个 pane 属于同一个 reader instance 和 attachment，因此共用同一个 `ReaderOverlayState.selectedRawIndexes`；任一 pane 的 `Shift/Ctrl + click` 会同步更新该 reader 下所有 pane 的选中样式和复制集合。这是当前用户期望的行为，不再按“两个 pane 的选择集合互不影响”验收。
+- 最近自动化验证：`.\node_modules\.bin\zotero-plugin.cmd test --no-watch --exit-on-finish` 通过 60 个测试；`.\node_modules\.bin\tsc.cmd --noEmit` 通过；`.\node_modules\.bin\tsc.cmd --noEmit --project test\tsconfig.json` 通过；针对 Task 9 修改代码文件的 Prettier check 通过。
 
 ---
 
@@ -970,16 +971,17 @@ git commit -m "fix(reader): 对齐 MinerU box 标签与引用框"
 - Modify: `src/modules/readerToolbar.ts`
 - Modify: `addon/content/zoteroPane.css`
 
-- [ ] **Step 1: 实现多选状态**
+- [x] **Step 1: 实现多选状态**
 
 交互规则：
 
-- `Shift + click` 或 `Ctrl + click` 切换当前 box 的 `rawIndex`。
+- `Ctrl + click` 切换当前 box 的 `rawIndex`。
+- `Shift + click` 以最近一次被点击/切换的 box 为锚点，选中锚点、当前 box，以及两者之间的可渲染 box；如果还没有锚点，则只选中当前 box 并把它作为锚点。
 - 已选 box 添加 `.mineru-copy-box-selected`。
 - 普通 click 不切换多选，只执行 hover/单 box 行为。
 - selection 存在于当前 reader instance state，不写全局变量。
 
-- [ ] **Step 2: 实现工具栏菜单动态数量**
+- [x] **Step 2: 实现工具栏菜单动态数量**
 
 菜单项显示：
 
@@ -989,7 +991,7 @@ git commit -m "fix(reader): 对齐 MinerU box 标签与引用框"
 
 N 从当前 reader state 的 `selectedRawIndexes.size` 计算。
 
-- [ ] **Step 3: 实现多选复制和清空选择**
+- [x] **Step 3: 实现多选复制和清空选择**
 
 `复制已选 box (N)`：
 
@@ -1003,7 +1005,7 @@ N 从当前 reader state 的 `selectedRawIndexes.size` 计算。
 - 只清除当前 reader instance state。
 - 重新渲染当前 pane。
 
-- [ ] **Step 4: 销毁场景补齐**
+- [x] **Step 4: 销毁场景补齐**
 
 必须覆盖：
 
@@ -1019,7 +1021,7 @@ N 从当前 reader state 的 `selectedRawIndexes.size` 计算。
 - 移除 event listener。
 - 删除当前 `ReaderOverlayKey` 对应 state。
 
-- [ ] **Step 5: 构建验证**
+- [x] **Step 5: 构建验证**
 
 Run:
 
@@ -1029,26 +1031,47 @@ Run:
 
 Expected: exit code 0。
 
-- [ ] **Step 6: STOP: 手动测试检查点 E**
+实际验证（2026-05-05，Task 9 实现、审查修复与 Shift 范围选择后）：
+
+- `.\node_modules\.bin\zotero-plugin.cmd test --no-watch --exit-on-finish`：60 passed。
+- `.\node_modules\.bin\tsc.cmd --noEmit`：exit code 0。
+- `.\node_modules\.bin\tsc.cmd --noEmit --project test\tsconfig.json`：exit code 0。
+- `.\node_modules\.bin\prettier.cmd --check src\modules\readerOverlay.ts src\modules\readerToolbar.ts addon\content\zoteroPane.css test\readerOverlay.test.ts`：exit code 0。
+
+- [x] **Step 6: STOP: 手动测试检查点 E**
 
 停止开发并请用户测试：
 
 - `Shift + 点击` 和 `Ctrl + 点击` 能切换多个 box 选中状态。
+- `Ctrl + 点击` 只切换当前 box；`Shift + 点击` 会选中最近一次点击的 box 与当前 box 之间的连续 box。
 - 已选 box 样式明显不同。
 - 工具栏菜单 `复制已选 box (N)` 数量实时更新。
 - 多选复制按 MinerU JSON 原始顺序，也就是 `rawIndex` 升序合并。
-- `清空选择` 只影响当前 reader pane。
-- split view 共享一个 toolbar 按钮，但两个 pane 的模式、hover、选择集合互不影响。
+- `清空选择` 作用于当前 reader instance state；在 split view 中会清空同一个 reader instance / attachment 下所有 pane 的共享选择集合。
+- split view 共享一个 toolbar 按钮；同一个 reader instance / attachment 下的多个 pane 共享选择集合，任一 pane 的选择变化会同步到其他 pane。原因是 `ReaderOverlayKey` 使用 `${reader._instanceID}:${attachmentKey}`，split view 多个 pane 会作为同一个 reader 的多个 window/root 挂到同一个 `ReaderOverlayState.rootsByWindow`，并共用同一个 `selectedRawIndexes` Set。`syncSelectedBoxClasses(state)` 会遍历所有 root 同步 `.mineru-copy-box-selected`。
 - 关闭其中一个 pane 后另一个 pane 的 overlay 正常工作。
 
-用户确认后才能继续 Task 10。
+手动测试记录（2026-05-05）：
 
-- [ ] **Step 7: Commit**
+- 用户确认除“split view 中两个 pane 的模式、hover、选择集合互不影响”之外都没问题。
+- 用户进一步确认希望 split view 中两个 pane 的选择集合保持同步；已按实际设计原因修正验收口径。
+- 用户确认区分 `Ctrl` 单点切换与 `Shift` 范围选择后的 Task 9 行为通过。
+- 当前 Task 9 已完成并通过检查点 E，可以继续 Step 7 提交；提交完成后才能进入 Task 10。
+
+- [x] **Step 7: Commit**
 
 ```powershell
 git add src/modules/readerOverlay.ts src/modules/readerToolbar.ts addon/content/zoteroPane.css
 git commit -m "feat(reader): support multi-select box copying"
 ```
+
+实际提交（2026-05-05）：
+
+```powershell
+git commit -m "feat(reader): 支持多选 box 复制"
+```
+
+- Commit: `b5cb062`
 
 ## Task 10: 真实解析闭环与错误处理
 
