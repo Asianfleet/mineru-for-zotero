@@ -3,6 +3,7 @@ import {
   createReaderToolbarIconDataURI,
   createReaderToolbarCommandButton,
   createReaderToolbarMenuState,
+  createReaderToolbarPanel,
   createReaderToolbarPanelStore,
   findReaderToolbarAnchor,
   setReaderToolbarButtonContent,
@@ -142,6 +143,59 @@ describe("readerToolbar", function () {
     assert.equal(button.style.background, "transparent");
     assert.equal(button.style.fontWeight, "400");
     assert.equal(button.style.backgroundColor, "");
+  });
+
+  it("styles the reader toolbar panel like Zotero reader popovers", function () {
+    const doc = {
+      createElement(tagName: string) {
+        assert.equal(tagName, "div");
+        return {
+          style: {},
+          hidden: false,
+        } as unknown as HTMLDivElement;
+      },
+    } as unknown as Document;
+
+    const panel = createReaderToolbarPanel(doc);
+
+    assert.equal(panel.style.minWidth, "180px");
+    assert.equal(panel.style.padding, "4px");
+    assert.equal(
+      panel.style.border,
+      "1px solid var(--material-border, #d0d0d0)",
+    );
+    assert.equal(panel.style.borderRadius, "6px");
+    assert.equal(panel.style.background, "var(--material-toolbar)");
+    assert.equal(
+      panel.style.boxShadow,
+      "0 0 3px 0 rgba(0,0,0,.55),0 8px 40px 0 rgba(0,0,0,.25),0 0 3px 0 rgba(255,255,255,.1) inset",
+    );
+    assert.equal(panel.style.fontSize, "13px");
+    assert.include(panel.style.fontFamily, "Microsoft YaHei");
+  });
+
+  it("uses compact Zotero-style typography for menu commands", function () {
+    const doc = {
+      createElement(tagName: string) {
+        assert.equal(tagName, "button");
+        return {
+          style: { backgroundColor: "" },
+          addEventListener() {},
+        } as unknown as HTMLButtonElement;
+      },
+    } as unknown as Document;
+
+    const button = createReaderToolbarCommandButton(
+      doc,
+      "仅显示鼠标所在 box",
+      () => {},
+    );
+
+    assert.equal(button.style.padding, "4px 8px");
+    assert.equal(button.style.borderRadius, "4px");
+    assert.equal(button.style.fontSize, "13px");
+    assert.equal(button.style.lineHeight, "1.35");
+    assert.include(button.style.fontFamily, "Microsoft YaHei");
   });
 
   it("creates a reader-safe data URI from SVG content", function () {

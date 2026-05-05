@@ -292,7 +292,7 @@ function ensureButtonBinding(
     readerString("reader-toolbar-label"),
   );
 
-  const menu = createPanel(doc);
+  const menu = createReaderToolbarPanel(doc);
   const menuState = panelStore.ensure(reader._instanceID);
   const sync = () => {
     const open = menuState.isOpen();
@@ -470,18 +470,22 @@ function cleanupWindowBindings(win: Window): void {
   }
 }
 
-function createPanel(doc: Document): HTMLDivElement {
+export function createReaderToolbarPanel(doc: Document): HTMLDivElement {
   const menu = doc.createElement("div");
   menu.className = "mineru-reader-toolbar-menu";
   menu.hidden = true;
   menu.style.position = "fixed";
   menu.style.zIndex = "2147483647";
-  menu.style.minWidth = "220px";
-  menu.style.padding = "6px";
-  menu.style.border = "1px solid var(--fill-secondary, #c8c8c8)";
-  menu.style.borderRadius = "8px";
-  menu.style.background = "var(--material-background, #fff)";
-  menu.style.boxShadow = "0 2px 8px rgba(0, 0, 0, 0.18)";
+  menu.style.minWidth = "180px";
+  menu.style.padding = "4px";
+  menu.style.border = "1px solid var(--material-border, #d0d0d0)";
+  menu.style.borderRadius = "6px";
+  menu.style.background = "var(--material-toolbar)";
+  menu.style.boxShadow =
+    "0 0 3px 0 rgba(0,0,0,.55),0 8px 40px 0 rgba(0,0,0,.25),0 0 3px 0 rgba(255,255,255,.1) inset";
+  menu.style.fontFamily =
+    'var(--font-family, "Microsoft YaHei UI", "Microsoft YaHei", sans-serif)';
+  menu.style.fontSize = "13px";
   return menu;
 }
 
@@ -566,11 +570,15 @@ export function createReaderToolbarCommandButton(
   button.style.display = "block";
   button.style.width = "100%";
   button.style.margin = "0";
-  button.style.padding = "6px 8px";
+  button.style.padding = "4px 8px";
   button.style.border = "0";
   button.style.borderRadius = "4px";
   button.style.background = "transparent";
+  button.style.fontFamily =
+    'var(--font-family, "Microsoft YaHei UI", "Microsoft YaHei", sans-serif)';
+  button.style.fontSize = "13px";
   button.style.fontWeight = "400";
+  button.style.lineHeight = "1.35";
   button.style.textAlign = "left";
   button.addEventListener("mouseenter", () => {
     button.style.backgroundColor = "var(--fill-quinary, rgba(0, 0, 0, 0.08))";
