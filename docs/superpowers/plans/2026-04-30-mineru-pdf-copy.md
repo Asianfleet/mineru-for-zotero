@@ -23,9 +23,11 @@
 - 已修复 split pane 关闭后的 overlay 清理问题：对 Zotero/Firefox dead object 做安全清理，移除 listener、timer、RAF 与 root DOM 时吞掉已销毁 pane 的 dead object TypeError；wheel 事件构造改用目标 document window，避免 `WheelEvent is not defined`。
 - 已对齐 MinerU 应用中的 box 标签与引用框：`table_body` 显示为“表格”，`ref_text` 归一化为 `reference` 并显示为“引用”；参考文献父级 `list` 大框在 normalizer 与 overlay 渲染层过滤，避免盖住单条参考文献；窄框标签强制横排显示。
 - Task 6 仍有两个计划细项未完全收口：boxes 为空时还未保存 failed manifest；重复解析确认目前使用系统 `confirm` 的 OK/Cancel，而不是计划中的自定义“使用已有结果 / 重新解析并覆盖”按钮。
-- Task 9 已完成多选状态、工具栏复制已选、清空选择、attachment change / mode off / split pane 销毁清理，并已通过 STOP 手动测试检查点 E；尚未开始 Task 10。
+- Task 9 已完成多选状态、工具栏复制已选、清空选择、attachment change / mode off / split pane 销毁清理，并已通过 STOP 手动测试检查点 E。
 - Task 9 的 split view 选择集合已确认采用共享行为：Zotero split view 中多个 pane 属于同一个 reader instance 和 attachment，因此共用同一个 `ReaderOverlayState.selectedRawIndexes`；任一 pane 的 `Shift/Ctrl + click` 会同步更新该 reader 下所有 pane 的选中样式和复制集合。这是当前用户期望的行为，不再按“两个 pane 的选择集合互不影响”验收。
-- 最近自动化验证：`.\node_modules\.bin\zotero-plugin.cmd test --no-watch --exit-on-finish` 通过 60 个测试；`.\node_modules\.bin\tsc.cmd --noEmit` 通过；`.\node_modules\.bin\tsc.cmd --noEmit --project test\tsconfig.json` 通过；针对 Task 9 修改代码文件的 Prettier check 通过。
+- Task 10 已完成真实解析闭环错误处理：错误分类提示、重复解析自定义确认、空 boxes 写 failed manifest 且禁用 overlay、覆盖失败保留旧 ready 结果、storage 临时/备份目录计数过滤均已补齐。
+- Task 10 的 STOP 手动测试检查点 F 已由用户确认通过；其中 split view 验收按 Task 9 已确认的同步行为执行，不再按“两个 pane 状态互不影响”验收。
+- 最近自动化验证：`.\node_modules\.bin\zotero-plugin.cmd test --no-watch --exit-on-finish` 通过 76 个测试；`.\node_modules\.bin\tsc.cmd --noEmit` 通过；`.\node_modules\.bin\tsc.cmd --noEmit --project test\tsconfig.json` 通过；针对 Task 10 修改 TS 文件的 ESLint 与 Prettier check 通过。
 
 ---
 
@@ -1084,7 +1086,7 @@ git commit -m "feat(reader): 支持多选 box 复制"
 
 当前状态（2026-05-02）：本任务尚未整体开始；其中 MinerU client 的真实下载、解压、错误摘要、空响应重试和真实 API 解析成功路径已在 Task 5/6 联调中提前完成。reader overlay、box 复制、重新解析失败保留旧结果、boxes 为空写 failed manifest 等完整闭环仍待实现或补齐。
 
-- [ ] **Step 1: 完成错误路径提示**
+- [x] **Step 1: 完成错误路径提示**
 
 按 spec 固定提示：
 
@@ -1098,7 +1100,7 @@ git commit -m "feat(reader): 支持多选 box 复制"
 - 坐标无法映射：禁用对应页 overlay，其他页面继续工作。
 - 重新解析覆盖失败：保留旧结果。
 
-- [ ] **Step 2: 实现重复解析确认**
+- [x] **Step 2: 实现重复解析确认**
 
 已有 ready 结果时：
 
@@ -1106,7 +1108,7 @@ git commit -m "feat(reader): 支持多选 box 复制"
 - “重新解析并覆盖”：调用解析流程，成功后原子替换结果目录。
 - 覆盖失败时旧 `manifest.json`、`mineru-result.json`、`content.md`、`boxes.normalized.json` 仍可读取。
 
-- [ ] **Step 3: 真实 API 冒烟验证**
+- [x] **Step 3: 真实 API 冒烟验证**
 
 在用户已经配置 API Key 的 Zotero 环境中：
 
@@ -1121,7 +1123,7 @@ git commit -m "feat(reader): 支持多选 box 复制"
 5. 打开 PDF reader，启用 overlay。
 6. 复制一个 text box 和一个 formula box。
 
-- [ ] **Step 4: 自动化验证**
+- [x] **Step 4: 自动化验证**
 
 Run:
 
@@ -1132,7 +1134,7 @@ Run:
 
 Expected: 两个命令都 exit code 0。
 
-- [ ] **Step 5: STOP: 手动测试检查点 F**
+- [x] **Step 5: STOP: 手动测试检查点 F**
 
 停止开发并请用户测试完整 MVP：
 
@@ -1143,11 +1145,24 @@ Expected: 两个命令都 exit code 0。
 - PDF tab 未解析时显示“立即解析”。
 - 三种 overlay 模式切换正确。
 - hover、单 box 复制、公式两种复制、多选复制正确。
-- Zotero split view 共享 toolbar 按钮，但按钮作用于当前 active/focused pane，两个 pane 状态互不影响。
+- Zotero split view 共享 toolbar 按钮；同一个 reader instance / attachment 下的多个 pane 共享 overlay 模式与选择集合，任一 pane 的选择变化会同步到其他 pane。
 
 用户确认后才能进入收尾。
 
-- [ ] **Step 6: Commit**
+实际验证（2026-05-05，Task 10 实现、审查修复与检查点 F 前自动化验证）：
+
+- `.\node_modules\.bin\zotero-plugin.cmd test --no-watch --exit-on-finish`：76 passed。
+- `.\node_modules\.bin\tsc.cmd --noEmit`：exit code 0。
+- `.\node_modules\.bin\tsc.cmd --noEmit --project test\tsconfig.json`：exit code 0。
+- `.\node_modules\.bin\prettier.cmd --check src\modules\parseManager.ts src\modules\storage.ts src\modules\mineruClient.ts test\parseManager.test.ts test\storage.test.ts test\readerOverlay.test.ts test\mineruClient.test.ts`：exit code 0。
+- `.\node_modules\.bin\eslint.cmd src\modules\parseManager.ts src\modules\storage.ts src\modules\mineruClient.ts test\parseManager.test.ts test\storage.test.ts test\readerOverlay.test.ts test\mineruClient.test.ts`：exit code 0。
+
+手动测试记录（2026-05-05）：
+
+- 用户确认除旧版 split view 独立状态验收项外，检查点 F 其余项目均通过。
+- split view 行为沿用 Task 9 已确认口径：同一 reader instance / attachment 下状态同步，而不是两个 pane 状态互不影响。
+
+- [x] **Step 6: Commit**
 
 ```powershell
 git add src/modules/parseManager.ts src/modules/mineruClient.ts src/modules/storage.ts addon/locale/zh-CN/mainWindow.ftl addon/locale/en-US/mainWindow.ftl
@@ -1189,7 +1204,7 @@ Expected: 三个命令都 exit code 0。
 - 外部程序可读取 `content.md` 和 `boxes.normalized.json`。
 - Reader overlay 三种模式可用。
 - 单 box、多 box、公式复制可用。
-- Split view 下共享 toolbar 按钮作用于当前 active/focused pane，pane 状态保持独立。
+- Split view 下共享 toolbar 按钮；同一 reader instance / attachment 下多个 pane 状态同步。
 - 关闭插件能力后不影响 Zotero reader 原生操作。
 
 ## 自审结果
