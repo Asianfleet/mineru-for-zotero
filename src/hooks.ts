@@ -1,5 +1,8 @@
 import { getString, initLocale } from "./utils/locale";
-import { parseSelectedAttachment, selectedHasPDFAttachment } from "./modules/parseManager";
+import {
+  parseSelectedAttachment,
+  selectedHasPDFAttachment,
+} from "./modules/parseManager";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { destroyAllReaderOverlays } from "./modules/readerOverlay";
 import {
@@ -37,7 +40,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   );
 
   registerItemMenu(win);
-  registerReaderToolbar(win);
+  await registerReaderToolbar(win);
 }
 
 function registerPreferencePane(): void {

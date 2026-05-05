@@ -59,6 +59,9 @@ export interface ReaderToolbarRegistration {
 
 const panelStore = createReaderToolbarPanelStore();
 const buttonBindings = new Map<string, ReaderToolbarButtonBinding>();
+const READER_TOOLBAR_ICON_PATH = "content/mineru.svg";
+let readerToolbarIconURI = "";
+let readerToolbarIconLoadPromise: Promise<void> | undefined;
 
 export function createReaderToolbarMenuState(): ReaderToolbarMenuState {
   let open = false;
@@ -107,7 +110,11 @@ export function createReaderToolbarPanelStore(): ReaderToolbarPanelStore {
   };
 }
 
-export function registerReaderToolbar(win: _ZoteroTypes.MainWindow): void {
+export async function registerReaderToolbar(
+  win: _ZoteroTypes.MainWindow,
+): Promise<void> {
+  await ensureReaderToolbarIconLoaded();
+
   win.MozXULElement.insertFTLIfNeeded(
     `${addon.data.config.addonRef}-mainWindow.ftl`,
   );
@@ -274,9 +281,16 @@ function ensureButtonBinding(
   button.tabIndex = -1;
   button.style.marginInlineStart = "4px";
   button.style.borderRadius = "4px";
-  button.style.paddingInline = "8px";
+  button.style.paddingInline = "6px";
   button.style.minWidth = "auto";
-  button.textContent = readerString("reader-toolbar-label");
+  button.style.display = "inline-flex";
+  button.style.alignItems = "center";
+  button.style.justifyContent = "center";
+  setReaderToolbarButtonContent(
+    button,
+    doc,
+    readerString("reader-toolbar-label"),
+  );
 
   const menu = createPanel(doc);
   const menuState = panelStore.ensure(reader._instanceID);
@@ -359,8 +373,81 @@ function updateButtonBinding(
   reader: _ZoteroTypes.ReaderInstance,
   binding: ReaderToolbarButtonBinding,
 ): void {
-  binding.button.textContent = readerString("reader-toolbar-label");
-  binding.button.title = readerString("reader-toolbar-label");
+  const doc = binding.button.ownerDocument ?? getReaderToolbarDocument(reader);
+  if (!doc) {
+    return;
+  }
+  setReaderToolbarButtonContent(
+    binding.button,
+    doc,
+    readerString("reader-toolbar-label"),
+  );
+}
+
+export function setReaderToolbarButtonContent(
+  button: HTMLButtonElement,
+  doc: Document,
+  label: string,
+): void {
+  if (!readerToolbarIconURI) {
+    button.textContent = label;
+    button.title = label;
+    button.setAttribute("aria-label", label);
+    return;
+  }
+
+  const existingIcon = button.firstElementChild as HTMLImageElement | null;
+  if (
+    !existingIcon ||
+    existingIcon.tagName.toLowerCase() !== "img" ||
+    existingIcon.src !== readerToolbarIconURI
+  ) {
+    const icon = doc.createElement("img");
+    icon.src = readerToolbarIconURI;
+    icon.alt = "";
+    icon.draggable = false;
+    icon.style.display = "block";
+    icon.style.width = "16px";
+    icon.style.height = "16px";
+    icon.style.pointerEvents = "none";
+    button.replaceChildren(icon);
+  }
+
+  button.title = label;
+  button.setAttribute("aria-label", label);
+}
+
+export function createReaderToolbarIconDataURI(svg: string): string {
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+export function setReaderToolbarIconURI(iconURI: string): void {
+  readerToolbarIconURI = iconURI;
+}
+
+async function ensureReaderToolbarIconLoaded(): Promise<void> {
+  readerToolbarIconLoadPromise ??= loadReaderToolbarIconURI();
+  await readerToolbarIconLoadPromise;
+}
+
+async function loadReaderToolbarIconURI(): Promise<void> {
+  try {
+    const response = await fetch(rootURI + READER_TOOLBAR_ICON_PATH);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    setReaderToolbarIconURI(
+      createReaderToolbarIconDataURI(await response.text()),
+    );
+  } catch (error) {
+    emitReaderToolbarDiagnostic(undefined, "MinerU toolbar icon load failed", {
+      error: errorMessage(error),
+    });
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function destroyButtonBinding(readerInstanceID: string): void {
@@ -556,7 +643,7 @@ function runReaderToolbarCommand(
 }
 
 function emitReaderToolbarDiagnostic(
-  reader: _ZoteroTypes.ReaderInstance,
+  reader: _ZoteroTypes.ReaderInstance | undefined,
   message: string,
   payload: Record<string, unknown>,
 ): void {
@@ -578,7 +665,7 @@ function emitReaderToolbarDiagnostic(
   if (typeof console !== "undefined") {
     consoles.add(console);
   }
-  const readerConsole = reader._iframeWindow?.console;
+  const readerConsole = reader?._iframeWindow?.console;
   if (readerConsole) {
     consoles.add(readerConsole);
   }
