@@ -207,6 +207,56 @@ describe("readerOverlay", function () {
       style.textContent,
       /\.mineru-copy-box-label\s*\{[^}]*writing-mode:\s*horizontal-tb/s,
     );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-box-label\s*\{[^}]*font-size:\s*12px/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-button\s*\{[^}]*border:\s*0[^}]*background:\s*var\(--material-toolbar,\s*ButtonFace\)[^}]*box-shadow:/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-button\s*\{[^}]*color:\s*inherit[^}]*font-size:\s*13px[^}]*padding:\s*4px 8px/s,
+    );
+  });
+
+  it("bridges the Zotero toolbar material variable from the parent reader window", function () {
+    const doc = createDocumentStub();
+    const parentDoc = createDocumentStub();
+    const parentWindow = {
+      document: parentDoc,
+      parent: null,
+      getComputedStyle() {
+        return {
+          getPropertyValue(name: string) {
+            return name === "--material-toolbar" ? "rgb(252, 252, 252)" : "";
+          },
+        };
+      },
+    };
+    parentWindow.parent = parentWindow;
+    const childWindow = {
+      document: doc,
+      parent: parentWindow,
+      getComputedStyle() {
+        return {
+          getPropertyValue() {
+            return "";
+          },
+        };
+      },
+    };
+    Object.assign(doc, { defaultView: childWindow });
+    Object.assign(parentDoc, { defaultView: parentWindow });
+
+    ensureReaderOverlayStyles(doc as unknown as Document);
+
+    const style = doc.headChildren[0];
+    assert.include(
+      style.textContent,
+      ":root {\n  --material-toolbar: rgb(252, 252, 252);\n}",
+    );
   });
 
   it("provides a local fallback for the missing-result prompt", function () {

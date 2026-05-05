@@ -61,6 +61,7 @@ interface PageRect {
 
 const fallbackStates = new Map<ReaderOverlayKey, ReaderOverlayState>();
 const READER_OVERLAY_STYLE_ID = "mineru-copy-overlay-styles";
+const READER_OVERLAY_THEME_VARIABLES = ["--material-toolbar"] as const;
 const READER_OVERLAY_CSS = `
 .mineru-copy-overlay-root {
   position: fixed;
@@ -133,7 +134,7 @@ const READER_OVERLAY_CSS = `
   border-radius: 3px 3px 0 0;
   background: rgba(33, 99, 235, 0.95);
   color: #fff;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.2;
   white-space: nowrap;
   writing-mode: horizontal-tb;
@@ -150,19 +151,25 @@ const READER_OVERLAY_CSS = `
 }
 
 .mineru-copy-button {
-  border: 1px solid rgba(33, 99, 235, 0.9);
-  border-radius: 4px;
-  background: #fff;
-  color: rgba(20, 64, 160, 1);
-  font-size: 11px;
-  line-height: 1.2;
-  padding: 2px 5px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--material-toolbar, ButtonFace);
+  box-shadow:
+    0 0 3px 0 rgba(0, 0, 0, 0.35),
+    0 2px 8px 0 rgba(0, 0, 0, 0.22);
+  color: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+  padding: 4px 8px;
   white-space: nowrap;
   pointer-events: auto;
 }
 
 .mineru-copy-button:hover {
-  background: rgba(226, 239, 255, 1);
+  background: var(--material-toolbar, ButtonFace);
+  box-shadow:
+    0 0 3px 0 rgba(0, 0, 0, 0.45),
+    0 4px 14px 0 rgba(0, 0, 0, 0.28);
 }
 `;
 
@@ -757,8 +764,84 @@ export function ensureReaderOverlayStyles(doc: Document): void {
 
   const style = doc.createElement("style");
   style.id = READER_OVERLAY_STYLE_ID;
-  style.textContent = READER_OVERLAY_CSS;
+  style.textContent = `${createReaderOverlayThemeCss(doc)}${READER_OVERLAY_CSS}`;
   doc.head?.append(style);
+}
+
+function createReaderOverlayThemeCss(doc: Document): string {
+  const declarations = READER_OVERLAY_THEME_VARIABLES.flatMap((name) => {
+    const value = resolveCssVariableFromWindowTree(doc, name);
+    return value ? [`  ${name}: ${value};`] : [];
+  });
+  return declarations.length > 0
+    ? `:root {\n${declarations.join("\n")}\n}\n`
+    : "";
+}
+
+function resolveCssVariableFromWindowTree(
+  doc: Document,
+  name: string,
+): string | null {
+  const firstValue = readCssVariable(doc, name);
+  if (firstValue) {
+    return firstValue;
+  }
+
+  let win = doc.defaultView ?? null;
+  const seen = new Set<Window>();
+  while (win && !seen.has(win)) {
+    seen.add(win);
+    const candidateDoc = getWindowDocument(win);
+    const value = candidateDoc ? readCssVariable(candidateDoc, name) : null;
+    if (value) {
+      return value;
+    }
+
+    const parent = getParentWindow(win);
+    if (!parent || parent === win) {
+      return null;
+    }
+    win = parent;
+  }
+  return null;
+}
+
+function readCssVariable(doc: Document, name: string): string | null {
+  const win = doc.defaultView;
+  if (!win) {
+    return null;
+  }
+
+  for (const element of [doc.documentElement, doc.body]) {
+    if (!element) {
+      continue;
+    }
+    const value = win.getComputedStyle(element).getPropertyValue(name).trim();
+    if (isSafeCssCustomPropertyValue(value)) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function isSafeCssCustomPropertyValue(value: string): boolean {
+  return value.length > 0 && !/[;{}]/.test(value);
+}
+
+function getWindowDocument(win: Window): Document | null {
+  try {
+    return win.document ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function getParentWindow(win: Window): Window | null {
+  try {
+    return win.parent ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function getOverlayStates(): Map<ReaderOverlayKey, ReaderOverlayState> {

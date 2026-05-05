@@ -69,7 +69,7 @@
   border-radius: 3px 3px 0 0;
   background: rgba(33, 99, 235, 0.95);
   color: #fff;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.2;
   pointer-events: none;
 }
@@ -84,17 +84,23 @@
 }
 
 .mineru-copy-button {
-  border: 1px solid rgba(33, 99, 235, 0.9);
-  border-radius: 4px;
-  background: #fff;
-  color: rgba(20, 64, 160, 1);
-  font-size: 11px;
-  line-height: 1.2;
-  padding: 2px 5px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--material-toolbar, ButtonFace);
+  box-shadow:
+    0 0 3px 0 rgba(0, 0, 0, 0.35),
+    0 2px 8px 0 rgba(0, 0, 0, 0.22);
+  color: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+  padding: 4px 8px;
   white-space: nowrap;
   pointer-events: auto;
 }
 
 .mineru-copy-button:hover {
-  background: rgba(226, 239, 255, 1);
+  background: var(--material-toolbar, ButtonFace);
+  box-shadow:
+    0 0 3px 0 rgba(0, 0, 0, 0.45),
+    0 4px 14px 0 rgba(0, 0, 0, 0.28);
 }
