@@ -13,6 +13,7 @@ export interface ReaderOverlayState {
   attachmentKey: string;
   mode: OverlayMode;
   selectedRawIndexes: Set<number>;
+  selectionAnchorRawIndex: number | null;
   hoverRawIndex: number | null;
   root: HTMLElement | null;
   rootsByWindow: Map<Window, HTMLElement>;
@@ -39,6 +40,14 @@ export interface ReaderOverlayPositioningControllerOptions {
 export interface ReaderOverlayPositioningController {
   schedule(): void;
   cleanup(): void;
+}
+
+export interface ReaderOverlaySelectionOptions {
+  selectedRawIndexes?: Set<number>;
+  selectableRawIndexes?: number[];
+  getSelectionAnchorRawIndex?: () => number | null;
+  setSelectionAnchorRawIndex?: (rawIndex: number | null) => void;
+  onSelectionChange?: () => void;
 }
 
 interface PageRect {
@@ -78,6 +87,12 @@ const READER_OVERLAY_CSS = `
   z-index: 10;
 }
 
+.mineru-copy-box-selected {
+  border-color: rgba(217, 119, 6, 0.95);
+  outline: 1px solid rgba(217, 119, 6, 0.95);
+  background: rgba(245, 158, 11, 0.18);
+}
+
 .mineru-copy-mode-hover .mineru-copy-box {
   opacity: 0;
   border-color: transparent;
@@ -88,6 +103,12 @@ const READER_OVERLAY_CSS = `
   opacity: 1;
   border-color: rgba(33, 99, 235, 0.9);
   background: rgba(64, 156, 255, 0.18);
+}
+
+.mineru-copy-mode-hover .mineru-copy-box-selected {
+  opacity: 1;
+  border-color: rgba(217, 119, 6, 0.95);
+  background: rgba(245, 158, 11, 0.18);
 }
 
 .mineru-copy-box-label,
@@ -170,6 +191,7 @@ export function getReaderOverlayState(
     attachmentKey,
     mode: "off",
     selectedRawIndexes: new Set<number>(),
+    selectionAnchorRawIndex: null,
     hoverRawIndex: null,
     root: null,
     rootsByWindow: new Map<Window, HTMLElement>(),
@@ -230,6 +252,7 @@ export async function renderReaderOverlayForReader(
 
   if (state.mode === "off") {
     cleanupReaderOverlayRoot(state);
+    getOverlayStates().delete(state.key);
     return state;
   }
 
@@ -268,7 +291,14 @@ export async function renderReaderOverlayForReader(
       continue;
     }
 
-    const root = buildReaderOverlayRoot(doc, boxes, mode);
+    const root = buildReaderOverlayRoot(doc, boxes, mode, {
+      selectedRawIndexes: state.selectedRawIndexes,
+      getSelectionAnchorRawIndex: () => state.selectionAnchorRawIndex,
+      setSelectionAnchorRawIndex: (rawIndex) => {
+        state.selectionAnchorRawIndex = rawIndex;
+      },
+      onSelectionChange: () => syncSelectedBoxClasses(state),
+    });
     ensureReaderOverlayStyles(doc);
     positionPageLayers(doc, root);
     getReaderOverlayMountContainer(doc)?.append(root);
@@ -294,8 +324,36 @@ export function clearReaderOverlaySelectionForReader(
     return null;
   }
   state.selectedRawIndexes.clear();
+  state.selectionAnchorRawIndex = null;
   state.hoverRawIndex = null;
+  syncSelectedBoxClasses(state);
   return state;
+}
+
+export async function copySelectedBoxesForReader(
+  reader: _ZoteroTypes.ReaderInstance,
+): Promise<string | null> {
+  const state = getReaderOverlayStateForReader(reader);
+  const attachment = getReaderAttachmentRef(reader);
+  if (!state || !attachment || state.selectedRawIndexes.size === 0) {
+    return null;
+  }
+
+  const boxes = await createStorage(getMinerUStorageRoot()).readBoxes(
+    attachment,
+  );
+  const text = formatSelectedBoxesForCopy(boxes, state.selectedRawIndexes);
+  copyText(text);
+  return text || null;
+}
+
+export function formatSelectedBoxesForCopy(
+  boxes: NormalizedBox[],
+  selectedRawIndexes: Set<number>,
+): string {
+  return formatBoxesForCopy(
+    boxes.filter((box) => selectedRawIndexes.has(box.rawIndex)),
+  );
 }
 
 export function setReaderOverlayRootForReader(
@@ -433,9 +491,13 @@ export function buildReaderOverlayRoot(
   doc: Document,
   boxes: NormalizedBox[],
   mode: Exclude<OverlayMode, "off">,
+  selectionOptions: ReaderOverlaySelectionOptions = {},
 ): HTMLDivElement {
   const root = doc.createElement("div");
   root.className = `mineru-copy-overlay-root mineru-copy-mode-${mode}`;
+  const selectableRawIndexes = [
+    ...(selectionOptions.selectableRawIndexes ?? []),
+  ];
 
   for (const page of groupBoxesByPage(boxes)) {
     const layer = doc.createElement("div");
@@ -443,10 +505,14 @@ export function buildReaderOverlayRoot(
     layer.dataset.pageNumber = String(page.page);
 
     for (const box of getRenderablePageBoxes(page.boxes)) {
-      layer.append(createBoxElement(doc, box));
+      if (!selectableRawIndexes.includes(box.rawIndex)) {
+        selectableRawIndexes.push(box.rawIndex);
+      }
+      layer.append(createBoxElement(doc, box, selectionOptions));
     }
     root.append(layer);
   }
+  selectionOptions.selectableRawIndexes = selectableRawIndexes;
 
   return root;
 }
@@ -602,6 +668,39 @@ function cleanupReaderOverlayRoot(state: ReaderOverlayState): void {
   state.root = null;
 }
 
+function syncSelectedBoxClasses(state: ReaderOverlayState): void {
+  ensureReaderOverlayStateMaps(state);
+  for (const root of state.rootsByWindow.values()) {
+    safeReaderOverlayCleanup(() => {
+      for (const element of Array.from(
+        root.querySelectorAll(".mineru-copy-box"),
+      ) as HTMLElement[]) {
+        const rawIndex = Number(element.dataset.rawIndex);
+        setBoxSelectedClass(
+          element,
+          Number.isFinite(rawIndex) && state.selectedRawIndexes.has(rawIndex),
+        );
+      }
+    });
+  }
+}
+
+function setBoxSelectedClass(element: HTMLElement, selected: boolean): void {
+  const selectedClass = "mineru-copy-box-selected";
+  if (element.classList) {
+    element.classList.toggle(selectedClass, selected);
+    return;
+  }
+
+  const classes = new Set(element.className.split(/\s+/).filter(Boolean));
+  if (selected) {
+    classes.add(selectedClass);
+  } else {
+    classes.delete(selectedClass);
+  }
+  element.className = [...classes].join(" ");
+}
+
 function ensureReaderOverlayStateMaps(
   state: ReaderOverlayState,
 ): ReaderOverlayState {
@@ -690,14 +789,92 @@ function getReaderAttachmentRef(
   return { libraryID, key };
 }
 
-function createBoxElement(doc: Document, box: NormalizedBox): HTMLDivElement {
+function createBoxElement(
+  doc: Document,
+  box: NormalizedBox,
+  selectionOptions: ReaderOverlaySelectionOptions,
+): HTMLDivElement {
   const element = doc.createElement("div");
   element.className = "mineru-copy-box";
   element.dataset.rawIndex = String(box.rawIndex);
   element.dataset.mineruBoxType = box.type;
   Object.assign(element.style, computeBoxStyle(box));
+  setBoxSelectedClass(
+    element,
+    selectionOptions.selectedRawIndexes?.has(box.rawIndex) ?? false,
+  );
+  element.addEventListener("click", (event) => {
+    const mouseEvent = event as MouseEvent;
+    if (!mouseEvent.shiftKey && !mouseEvent.ctrlKey) {
+      return;
+    }
+
+    mouseEvent.preventDefault();
+    mouseEvent.stopPropagation();
+    const selectedRawIndexes = selectionOptions.selectedRawIndexes;
+    if (!selectedRawIndexes) {
+      return;
+    }
+
+    if (mouseEvent.shiftKey) {
+      selectBoxRange(box.rawIndex, selectionOptions);
+    } else if (selectedRawIndexes.has(box.rawIndex)) {
+      selectedRawIndexes.delete(box.rawIndex);
+    } else {
+      selectedRawIndexes.add(box.rawIndex);
+    }
+    selectionOptions.setSelectionAnchorRawIndex?.(box.rawIndex);
+    setBoxSelectedClass(element, selectedRawIndexes.has(box.rawIndex));
+    selectionOptions.onSelectionChange?.();
+  });
   element.append(createBoxLabel(doc, box), createBoxActions(doc, box));
   return element;
+}
+
+function selectBoxRange(
+  rawIndex: number,
+  selectionOptions: ReaderOverlaySelectionOptions,
+): void {
+  const selectedRawIndexes = selectionOptions.selectedRawIndexes;
+  if (!selectedRawIndexes) {
+    return;
+  }
+
+  const anchorRawIndex =
+    selectionOptions.getSelectionAnchorRawIndex?.() ?? null;
+  if (anchorRawIndex === null) {
+    selectedRawIndexes.add(rawIndex);
+    return;
+  }
+
+  const rangeRawIndexes = getRawIndexRange(
+    selectionOptions.selectableRawIndexes ?? [],
+    anchorRawIndex,
+    rawIndex,
+  );
+  for (const rangeRawIndex of rangeRawIndexes) {
+    selectedRawIndexes.add(rangeRawIndex);
+  }
+}
+
+function getRawIndexRange(
+  selectableRawIndexes: number[],
+  startRawIndex: number,
+  endRawIndex: number,
+): number[] {
+  const startPosition = selectableRawIndexes.indexOf(startRawIndex);
+  const endPosition = selectableRawIndexes.indexOf(endRawIndex);
+  if (startPosition >= 0 && endPosition >= 0) {
+    const start = Math.min(startPosition, endPosition);
+    const end = Math.max(startPosition, endPosition);
+    return selectableRawIndexes.slice(start, end + 1);
+  }
+
+  const start = Math.min(startRawIndex, endRawIndex);
+  const end = Math.max(startRawIndex, endRawIndex);
+  return selectableRawIndexes.filter(
+    (candidate) => candidate >= start && candidate <= end,
+  );
 }
 
 function createBoxLabel(doc: Document, box: NormalizedBox): HTMLSpanElement {

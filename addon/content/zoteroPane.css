@@ -23,6 +23,12 @@
   z-index: 10;
 }
 
+.mineru-copy-box-selected {
+  border-color: rgba(217, 119, 6, 0.95);
+  outline: 1px solid rgba(217, 119, 6, 0.95);
+  background: rgba(245, 158, 11, 0.18);
+}
+
 .mineru-copy-mode-hover .mineru-copy-box {
   opacity: 0;
   border-color: transparent;
@@ -33,6 +39,12 @@
   opacity: 1;
   border-color: rgba(33, 99, 235, 0.9);
   background: rgba(64, 156, 255, 0.18);
+}
+
+.mineru-copy-mode-hover .mineru-copy-box-selected {
+  opacity: 1;
+  border-color: rgba(217, 119, 6, 0.95);
+  background: rgba(245, 158, 11, 0.18);
 }
 
 .mineru-copy-box-label,

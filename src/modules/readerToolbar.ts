@@ -2,6 +2,7 @@ import type { FluentMessageId } from "../../typings/i10n";
 import {
   applyReaderOverlayMode,
   clearReaderOverlaySelectionForReader,
+  copySelectedBoxesForReader,
   destroyReaderOverlaysByReaderID,
   getReaderOverlayStateForReader,
   getReaderSelectedBoxCount,
@@ -47,6 +48,7 @@ interface ReaderToolbarButtonBinding {
   button: HTMLButtonElement;
   menu: HTMLDivElement;
   win: Window;
+  attachmentKey: string;
   cleanup: () => void;
 }
 
@@ -55,15 +57,8 @@ export interface ReaderToolbarRegistration {
   registeredWindows: Set<Window>;
 }
 
-interface ReaderToolbarDiagnosticState {
-  command: string;
-  mode: string | null;
-  selectedCount: number;
-}
-
 const panelStore = createReaderToolbarPanelStore();
 const buttonBindings = new Map<string, ReaderToolbarButtonBinding>();
-const diagnosticStore = new Map<string, ReaderToolbarDiagnosticState>();
 
 export function createReaderToolbarMenuState(): ReaderToolbarMenuState {
   let open = false;
@@ -253,7 +248,11 @@ function ensureButtonBinding(
 
   const existing = buttonBindings.get(reader._instanceID);
   if (existing) {
-    if (!existing.button.isConnected || !existing.menu.isConnected) {
+    if (existing.attachmentKey !== attachment.key) {
+      destroyReaderOverlaysByReaderID(reader._instanceID);
+      destroyButtonBinding(reader._instanceID);
+      panelStore.delete(reader._instanceID);
+    } else if (!existing.button.isConnected || !existing.menu.isConnected) {
       destroyButtonBinding(reader._instanceID);
     } else {
       updateButtonBinding(reader, existing);
@@ -349,7 +348,7 @@ function ensureButtonBinding(
     button.remove();
     menu.remove();
   };
-  const binding = { button, menu, win, cleanup };
+  const binding = { button, menu, win, attachmentKey: attachment.key, cleanup };
   buttonBindings.set(reader._instanceID, binding);
   updateButtonBinding(reader, binding);
   sync();
@@ -414,7 +413,7 @@ function updateMenu(
       readerString("reader-show-all-boxes"),
       () => {
         runReaderToolbarCommand(reader, "show-all-boxes", () => {
-          void applyReaderOverlayMode(reader, "all");
+          return applyReaderOverlayMode(reader, "all");
         });
         updateMenu(reader, doc, menu, sync);
         sync();
@@ -426,7 +425,7 @@ function updateMenu(
       readerString("reader-show-hover-box"),
       () => {
         runReaderToolbarCommand(reader, "show-hover-box", () => {
-          void applyReaderOverlayMode(reader, "hover");
+          return applyReaderOverlayMode(reader, "hover");
         });
         updateMenu(reader, doc, menu, sync);
         sync();
@@ -438,7 +437,7 @@ function updateMenu(
       readerString("reader-disable-plugin"),
       () => {
         runReaderToolbarCommand(reader, "disable-plugin", () => {
-          void applyReaderOverlayMode(reader, "off");
+          return applyReaderOverlayMode(reader, "off");
         });
         updateMenu(reader, doc, menu, sync);
         sync();
@@ -452,7 +451,7 @@ function updateMenu(
       }),
       () => {
         runReaderToolbarCommand(reader, "copy-selected-boxes", () => {
-          getReaderOverlayStateForReader(reader);
+          return copySelectedBoxesForReader(reader);
         });
         updateMenu(reader, doc, menu, sync);
         sync();
@@ -464,12 +463,12 @@ function updateMenu(
       () => {
         runReaderToolbarCommand(reader, "clear-selection", () => {
           clearReaderOverlaySelectionForReader(reader);
+          return renderReaderOverlayForReader(reader);
         });
         updateMenu(reader, doc, menu, sync);
         sync();
       },
     ),
-    createDiagnosticRow(doc, reader),
   );
 }
 
@@ -512,7 +511,7 @@ export function createReaderToolbarCommandButton(
 function runReaderToolbarCommand(
   reader: _ZoteroTypes.ReaderInstance,
   command: string,
-  action: () => void,
+  action: () => void | Promise<unknown>,
 ): void {
   const beforeState = getReaderOverlayStateForReader(reader);
   emitReaderToolbarDiagnostic(reader, "MinerU reader toolbar command", {
@@ -523,21 +522,46 @@ function runReaderToolbarCommand(
     beforeSelectedCount: beforeState?.selectedRawIndexes.size ?? 0,
   });
 
-  action();
+  let result: void | Promise<unknown>;
+  try {
+    result = action();
+  } catch (error) {
+    emitReaderToolbarDiagnostic(
+      reader,
+      "MinerU reader toolbar command failed",
+      {
+        command,
+        readerInstanceID: reader._instanceID,
+        attachmentKey: reader._item?.key ?? null,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    );
+    return;
+  }
 
-  const afterState = getReaderOverlayStateForReader(reader);
-  diagnosticStore.set(reader._instanceID, {
-    command,
-    mode: afterState?.mode ?? null,
-    selectedCount: afterState?.selectedRawIndexes.size ?? 0,
-  });
-  emitReaderToolbarDiagnostic(reader, "MinerU reader toolbar state", {
-    command,
-    readerInstanceID: reader._instanceID,
-    attachmentKey: reader._item?.key ?? null,
-    afterMode: afterState?.mode ?? null,
-    afterSelectedCount: afterState?.selectedRawIndexes.size ?? 0,
-  });
+  void Promise.resolve(result)
+    .then(() => {
+      const afterState = getReaderOverlayStateForReader(reader);
+      emitReaderToolbarDiagnostic(reader, "MinerU reader toolbar state", {
+        command,
+        readerInstanceID: reader._instanceID,
+        attachmentKey: reader._item?.key ?? null,
+        afterMode: afterState?.mode ?? null,
+        afterSelectedCount: afterState?.selectedRawIndexes.size ?? 0,
+      });
+    })
+    .catch((error) => {
+      emitReaderToolbarDiagnostic(
+        reader,
+        "MinerU reader toolbar command failed",
+        {
+          command,
+          readerInstanceID: reader._instanceID,
+          attachmentKey: reader._item?.key ?? null,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      );
+    });
 }
 
 function emitReaderToolbarDiagnostic(
@@ -580,32 +604,6 @@ function emitReaderToolbarDiagnostic(
   for (const targetConsole of consoles) {
     targetConsole.info(text);
   }
-}
-
-function createDiagnosticRow(
-  doc: Document,
-  reader: _ZoteroTypes.ReaderInstance,
-): HTMLDivElement {
-  const row = doc.createElement("div");
-  row.style.marginTop = "6px";
-  row.style.padding = "6px 8px 0";
-  row.style.borderTop = "1px solid var(--fill-quaternary, rgba(0, 0, 0, 0.08))";
-  row.style.fontSize = "11px";
-  row.style.color = "var(--text-secondary, #666)";
-  row.style.whiteSpace = "nowrap";
-  row.style.overflow = "hidden";
-  row.style.textOverflow = "ellipsis";
-
-  const state = diagnosticStore.get(reader._instanceID);
-  if (!state) {
-    row.textContent = "debug: no command yet";
-    return row;
-  }
-
-  row.textContent =
-    `debug: ${state.command}; mode=${state.mode ?? "null"}; ` +
-    `selected=${state.selectedCount}`;
-  return row;
 }
 
 function isOutsideToolbarMenu(

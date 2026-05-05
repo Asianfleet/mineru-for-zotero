@@ -2,6 +2,7 @@ import { assert } from "chai";
 import {
   applyReaderOverlayMode,
   buildReaderOverlayRoot,
+  clearReaderOverlaySelectionForReader,
   createReaderOverlayPositioningController,
   ensureReaderOverlayStyles,
   getReaderOverlayNoticeText,
@@ -12,6 +13,7 @@ import {
   setReaderOverlayModeForReader,
   setReaderOverlayRootForReader,
 } from "../src/modules/readerOverlay";
+import * as readerOverlay from "../src/modules/readerOverlay";
 import { normalizedBoxes } from "./domainFixtures";
 
 describe("readerOverlay", function () {
@@ -601,6 +603,182 @@ describe("readerOverlay", function () {
 
     assert.equal(getReaderSelectedBoxCount(reader), 2);
   });
+
+  it("clears selected box classes across rendered split roots", function () {
+    const reader = createReader({
+      instanceID: "reader-clear-selection",
+      attachmentKey: "ABC123",
+      views: [createView("primary"), createView("secondary")],
+    });
+    const state = setReaderOverlayModeForReader(reader, "all");
+    if (!state) {
+      assert.fail("Expected overlay state");
+    }
+    state.selectedRawIndexes.add(0);
+    state.selectedRawIndexes.add(1);
+
+    const primaryRoot = buildReaderOverlayRoot(
+      createDocumentStub() as unknown as Document,
+      normalizedBoxes,
+      "all",
+      { selectedRawIndexes: state.selectedRawIndexes },
+    );
+    const secondaryRoot = buildReaderOverlayRoot(
+      createDocumentStub() as unknown as Document,
+      normalizedBoxes,
+      "all",
+      { selectedRawIndexes: state.selectedRawIndexes },
+    );
+    state.rootsByWindow.set(
+      {} as Window,
+      primaryRoot as unknown as HTMLElement,
+    );
+    state.rootsByWindow.set(
+      {} as Window,
+      secondaryRoot as unknown as HTMLElement,
+    );
+    const primaryBoxes = findElementsByClass(primaryRoot, "mineru-copy-box");
+    const secondaryBoxes = findElementsByClass(
+      secondaryRoot,
+      "mineru-copy-box",
+    );
+    assert.lengthOf(primaryBoxes, 3, "primary root should render three boxes");
+    assert.lengthOf(
+      secondaryBoxes,
+      3,
+      "secondary root should render three boxes",
+    );
+    assert.include(
+      primaryBoxes[0].className,
+      "mineru-copy-box-selected",
+      "primary first box starts selected",
+    );
+    assert.include(
+      secondaryBoxes[1].className,
+      "mineru-copy-box-selected",
+      "secondary second box starts selected",
+    );
+
+    try {
+      clearReaderOverlaySelectionForReader(reader);
+    } catch (error) {
+      assert.fail(
+        JSON.stringify({
+          type: Object.prototype.toString.call(error),
+          value: String(error),
+          message: error instanceof Error ? error.message : null,
+        }),
+      );
+    }
+    for (const root of [primaryRoot, secondaryRoot]) {
+      for (const box of findElementsByClass(root, "mineru-copy-box")) {
+        assert.notInclude(
+          box.className,
+          "mineru-copy-box-selected",
+          "clearing selection removes selected class",
+        );
+      }
+    }
+  });
+
+  it("marks selected boxes and toggles only on modified clicks", function () {
+    const doc = createDocumentStub();
+    const state = {
+      selectedRawIndexes: new Set<number>([1]),
+    };
+
+    const root = (
+      buildReaderOverlayRoot as (
+        doc: Document,
+        boxes: typeof normalizedBoxes,
+        mode: "all",
+        options: { selectedRawIndexes: Set<number> },
+      ) => FakeElement
+    )(doc as unknown as Document, normalizedBoxes, "all", state);
+
+    const boxes = findElementsByClass(root, "mineru-copy-box");
+    assert.lengthOf(boxes, 3);
+    assert.notInclude(boxes[0].className, "mineru-copy-box-selected");
+    assert.include(boxes[1].className, "mineru-copy-box-selected");
+
+    boxes[0].dispatch("click", createClickEvent());
+    assert.deepEqual([...state.selectedRawIndexes], [1]);
+
+    boxes[0].dispatch("click", createClickEvent({ shiftKey: true }));
+    assert.deepEqual([...state.selectedRawIndexes].sort(), [0, 1]);
+    assert.include(boxes[0].className, "mineru-copy-box-selected");
+
+    boxes[1].dispatch("click", createClickEvent({ ctrlKey: true }));
+    assert.deepEqual([...state.selectedRawIndexes], [0]);
+    assert.notInclude(boxes[1].className, "mineru-copy-box-selected");
+  });
+
+  it("selects the rawIndex range from the last clicked box on shift click", function () {
+    const doc = createDocumentStub();
+    const selectionAnchor = { rawIndex: null as number | null };
+    let root: FakeElement;
+    const state = {
+      selectedRawIndexes: new Set<number>(),
+      getSelectionAnchorRawIndex: () => selectionAnchor.rawIndex,
+      setSelectionAnchorRawIndex: (rawIndex: number | null) => {
+        selectionAnchor.rawIndex = rawIndex;
+      },
+      onSelectionChange: () => {
+        for (const box of findElementsByClass(root, "mineru-copy-box")) {
+          const selected = state.selectedRawIndexes.has(
+            Number(box.dataset.rawIndex),
+          );
+          const classes = new Set(box.className.split(/\s+/).filter(Boolean));
+          if (selected) {
+            classes.add("mineru-copy-box-selected");
+          } else {
+            classes.delete("mineru-copy-box-selected");
+          }
+          box.className = [...classes].join(" ");
+        }
+      },
+    };
+
+    root = (
+      buildReaderOverlayRoot as (
+        doc: Document,
+        boxes: typeof normalizedBoxes,
+        mode: "all",
+        options: {
+          selectedRawIndexes: Set<number>;
+          getSelectionAnchorRawIndex: () => number | null;
+          setSelectionAnchorRawIndex: (rawIndex: number | null) => void;
+          onSelectionChange: () => void;
+        },
+      ) => FakeElement
+    )(doc as unknown as Document, normalizedBoxes, "all", state);
+
+    const boxes = findElementsByClass(root, "mineru-copy-box");
+    boxes[0].dispatch("click", createClickEvent({ ctrlKey: true }));
+    boxes[2].dispatch("click", createClickEvent({ shiftKey: true }));
+
+    assert.deepEqual([...state.selectedRawIndexes].sort(), [0, 1, 2]);
+    assert.include(boxes[0].className, "mineru-copy-box-selected");
+    assert.include(boxes[1].className, "mineru-copy-box-selected");
+    assert.include(boxes[2].className, "mineru-copy-box-selected");
+  });
+
+  it("formats selected boxes by rawIndex before copying", function () {
+    assert.equal(
+      (
+        readerOverlay as unknown as {
+          formatSelectedBoxesForCopy: (
+            boxes: typeof normalizedBoxes,
+            selectedRawIndexes: Set<number>,
+          ) => string;
+        }
+      ).formatSelectedBoxesForCopy(
+        [normalizedBoxes[2], normalizedBoxes[1], normalizedBoxes[0]],
+        new Set([2, 0]),
+      ),
+      "第一段\n\n公式：E=mc^2",
+    );
+  });
 });
 
 function createReader(input: {
@@ -720,11 +898,13 @@ interface FakeElement {
   children: FakeElement[];
   append: (...children: FakeElement[]) => void;
   addEventListener: (_type: string, _listener: EventListener) => void;
+  dispatch: (_type: string, _event: Event) => void;
   querySelectorAll: (_selector: string) => FakeElement[];
   remove: () => void;
 }
 
 function createFakeElement(): FakeElement {
+  const listeners = new Map<string, EventListener[]>();
   return {
     className: "",
     dataset: {},
@@ -735,14 +915,19 @@ function createFakeElement(): FakeElement {
     append(...children: FakeElement[]) {
       this.children.push(...children);
     },
-    addEventListener() {},
+    addEventListener(type: string, listener: EventListener) {
+      listeners.set(type, [...(listeners.get(type) ?? []), listener]);
+    },
+    dispatch(type: string, event: Event) {
+      for (const listener of listeners.get(type) ?? []) {
+        listener.call(this, event);
+      }
+    },
     querySelectorAll(selector: string) {
-      if (selector !== ".mineru-copy-page-layer") {
+      if (!selector.startsWith(".")) {
         return [];
       }
-      return this.children.filter((child) =>
-        child.className.includes("mineru-copy-page-layer"),
-      );
+      return findElementsByClass(this, selector.slice(1));
     },
     remove() {},
   };
@@ -763,4 +948,18 @@ function findElementsByClass(
   };
   visit(root);
   return matches;
+}
+
+function createClickEvent(
+  input: {
+    shiftKey?: boolean;
+    ctrlKey?: boolean;
+  } = {},
+): MouseEvent {
+  return {
+    shiftKey: input.shiftKey ?? false,
+    ctrlKey: input.ctrlKey ?? false,
+    preventDefault() {},
+    stopPropagation() {},
+  } as unknown as MouseEvent;
 }
