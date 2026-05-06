@@ -1,5 +1,7 @@
 # MinerU for Zotero
 
+[![Using Zotero Plugin Template](https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue?style=flat-square&logo=github)](https://github.com/windingwind/zotero-plugin-template)
+
 [中文](README_zh.md)
 
 MinerU for Zotero is a Zotero 7 plugin that submits PDFs to the official

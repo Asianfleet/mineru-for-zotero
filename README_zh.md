@@ -1,6 +1,8 @@
 # MinerU for Zotero
 
-[English](README.md)
+[![Using Zotero Plugin Template](https://img.shields.io/badge/Using-Zotero%20Plugin%20Template-blue?style=flat-square&logo=github)](https://github.com/windingwind/zotero-plugin-template)
+
+[English](README.md) 
 
 MinerU for Zotero 是一个 Zotero 7 插件，用于把 PDF 提交给 MinerU
 官方 API 解析，并在 Zotero PDF Reader 中基于 MinerU 的 box 信息快速复制
