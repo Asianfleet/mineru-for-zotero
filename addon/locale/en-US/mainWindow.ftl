@@ -1,4 +1,5 @@
 parse-menuitem-label = Parse PDF with MinerU
+parse-all-menuitem-label = Parse all PDFs
 parse-error-not-pdf = Only PDF attachments are supported
 parse-error-file-access = File access failed
 parse-error-missing-api-key = Configure the MinerU API Key in settings first
