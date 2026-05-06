@@ -32,13 +32,23 @@ export interface ParseManagerDependencies {
 }
 
 interface ParseManager {
+  getItemParseContext(item: Zotero.Item): Promise<ItemParseContext>;
   parseAttachment(
     attachment: Zotero.Item,
+    options?: { force?: boolean },
+  ): Promise<void>;
+  parseAttachments(
+    attachments: Zotero.Item[],
     options?: { force?: boolean },
   ): Promise<void>;
 }
 
 type ParsePhase = "submit" | "poll" | "download" | "write";
+
+export type ItemParseContext =
+  | { kind: "attachment"; attachment: Zotero.Item }
+  | { kind: "regular"; item: Zotero.Item; attachments: Zotero.Item[] }
+  | { kind: "unsupported"; item: Zotero.Item };
 
 export async function parseSelectedAttachment(options?: {
   force?: boolean;
@@ -62,14 +72,116 @@ export async function parseAttachment(
   );
 }
 
+export async function parseAttachments(
+  attachments: Zotero.Item[],
+  options?: { force?: boolean },
+): Promise<void> {
+  await createParseManager(createDefaultDependencies()).parseAttachments(
+    attachments,
+    options,
+  );
+}
+
 export function createParseManager(
   dependencies: ParseManagerDependencies,
 ): ParseManager {
   return {
+    async getItemParseContext(item) {
+      return getItemParseContext(item);
+    },
     async parseAttachment(attachment, options) {
       await parseAttachmentWithDependencies(attachment, options, dependencies);
     },
+    async parseAttachments(attachments, options) {
+      await parseAttachmentsWithDependencies(
+        attachments,
+        options,
+        dependencies,
+      );
+    },
   };
+}
+
+async function parseAttachmentsWithDependencies(
+  attachments: Zotero.Item[],
+  options: { force?: boolean } | undefined,
+  dependencies: ParseManagerDependencies,
+): Promise<void> {
+  const pdfAttachments = attachments.filter((attachment) =>
+    attachment.isPDFAttachment(),
+  );
+  if (pdfAttachments.length === 0) {
+    dependencies.showMessage("parse-error-not-pdf");
+    return;
+  }
+
+  const apiKey = dependencies.getApiKey().trim();
+  if (!apiKey) {
+    dependencies.showMessage("parse-error-missing-api-key");
+    return;
+  }
+
+  if (options?.force === true) {
+    await Promise.all(
+      pdfAttachments.map((attachment) =>
+        parseAttachmentWithDependencies(attachment, options, dependencies),
+      ),
+    );
+    return;
+  }
+
+  const readyAttachmentIDs = await getReadyAttachmentIDs(
+    pdfAttachments,
+    dependencies,
+  );
+  let attachmentsToParse = pdfAttachments;
+  if (readyAttachmentIDs.size > 0) {
+    const choice = await dependencies.confirmReparse();
+    if (choice === "use-existing") {
+      dependencies.showMessage("parse-use-existing-result");
+      attachmentsToParse = pdfAttachments.filter(
+        (attachment) => !readyAttachmentIDs.has(attachment.id),
+      );
+    }
+  }
+
+  await Promise.all(
+    attachmentsToParse.map((attachment) =>
+      parseAttachmentWithDependencies(
+        attachment,
+        { ...options, force: true },
+        dependencies,
+      ),
+    ),
+  );
+}
+
+async function getReadyAttachmentIDs(
+  attachments: Zotero.Item[],
+  dependencies: ParseManagerDependencies,
+): Promise<Set<number>> {
+  const storage = getStorage(dependencies);
+  const refs = await Promise.all(
+    attachments.map(async (attachment) => {
+      const filePath = await getAttachmentFilePath(attachment, dependencies);
+      return filePath
+        ? { attachment, ref: await toAttachmentRef(attachment, filePath) }
+        : null;
+    }),
+  );
+  const readyPairs = await Promise.all(
+    refs.map(async (entry) => {
+      if (!entry) {
+        return null;
+      }
+      return (await storage.hasReadyResult(entry.ref))
+        ? entry.attachment.id
+        : null;
+    }),
+  );
+  return new Set(
+    readyPairs.filter((id): id is number => typeof id === "number"),
+  );
 }
 
 async function parseAttachmentWithDependencies(
@@ -160,34 +272,56 @@ async function parseAttachmentWithDependencies(
 }
 
 export async function selectedHasPDFAttachment(): Promise<boolean> {
-  return Boolean(await getSelectedPDFAttachment());
+  const context = await getSelectedParseContext();
+  return Boolean(context && context.kind !== "unsupported");
 }
 
 async function getSelectedPDFAttachment(): Promise<Zotero.Item | null> {
+  const context = await getSelectedParseContext();
+  if (!context) {
+    return null;
+  }
+  if (context.kind === "attachment") {
+    return context.attachment;
+  }
+  if (context.kind === "regular") {
+    return context.attachments[0] ?? null;
+  }
+  return null;
+}
+
+export async function getSelectedParseContext(): Promise<ItemParseContext | null> {
   const pane = Zotero.getActiveZoteroPane();
   const items = pane.getSelectedItems();
   for (const item of items) {
-    const attachment = await resolvePDFAttachment(item);
-    if (attachment) {
-      return attachment;
+    const context = await getItemParseContext(item);
+    if (context.kind !== "unsupported") {
+      return context;
     }
   }
   return null;
 }
 
-async function resolvePDFAttachment(
+async function getItemParseContext(
   item: Zotero.Item,
-): Promise<Zotero.Item | null> {
+): Promise<ItemParseContext> {
   if (item.isAttachment()) {
-    return item.isPDFAttachment() ? item : null;
+    return item.isPDFAttachment()
+      ? { kind: "attachment", attachment: item }
+      : { kind: "unsupported", item };
   }
 
   if (!item.isRegularItem()) {
-    return null;
+    return { kind: "unsupported", item };
   }
 
   const attachments = await item.getBestAttachments();
-  return attachments.find((attachment) => attachment.isPDFAttachment()) ?? null;
+  const pdfAttachments = attachments.filter((attachment) =>
+    attachment.isPDFAttachment(),
+  );
+  return pdfAttachments.length > 0
+    ? { kind: "regular", item, attachments: pdfAttachments }
+    : { kind: "unsupported", item };
 }
 
 async function toAttachmentRef(

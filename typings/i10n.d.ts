@@ -7,6 +7,7 @@ export type FluentMessageId =
   | 'menuitem-label'
   | 'menuitem-submenulabel'
   | 'menupopup-label'
+  | 'parse-all-menuitem-label'
   | 'parse-confirm-overwrite'
   | 'parse-confirm-reparse'
   | 'parse-confirm-title'

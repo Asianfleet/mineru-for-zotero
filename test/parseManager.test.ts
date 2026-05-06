@@ -10,6 +10,162 @@ import {
 import { normalizedBoxes } from "./domainFixtures";
 
 describe("parseManager", function () {
+  it("resolves a selected regular item to all of its PDF attachments", async function () {
+    const pdfA = pdfAttachment({ id: 1, fileName: "a.pdf" });
+    const textAttachment = {
+      isAttachment: () => true,
+      isPDFAttachment: () => false,
+    } as unknown as Zotero.Item;
+    const pdfB = pdfAttachment({ id: 2, fileName: "b.pdf" });
+    const manager = createParseManager(baseDependencies([]));
+
+    const context = await manager.getItemParseContext(
+      regularItem([pdfA, textAttachment, pdfB]),
+    );
+
+    assert.equal(context.kind, "regular");
+    assert.deepEqual(
+      context.kind === "regular"
+        ? context.attachments.map((attachment) => attachment.id)
+        : [],
+      [1, 2],
+    );
+  });
+
+  it("parses multiple attachments in parallel and confirms existing results once", async function () {
+    const messages: string[] = [];
+    const started: string[] = [];
+    let confirmCount = 0;
+    let releaseSubmissions: (() => void) | undefined;
+    const bothSubmissionsStarted = new Promise<void>((resolve) => {
+      releaseSubmissions = resolve;
+    });
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      storage: {
+        ...baseStorage(),
+        hasReadyResult: async (attachment) => attachment.id === 1,
+      },
+      confirmReparse: async () => {
+        confirmCount += 1;
+        return "reparse";
+      },
+      client: {
+        submitPdf: async (filePath) => {
+          started.push(filePath);
+          if (started.length === 2) {
+            releaseSubmissions?.();
+          }
+          await bothSubmissionsStarted;
+          return { taskID: `task-${started.length}` };
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({
+          rawResult: {
+            pages: [
+              {
+                pageNo: 1,
+                width: 1000,
+                height: 1000,
+                blocks: [
+                  { type: "text", bbox: [0, 0, 100, 100], markdown: "A" },
+                ],
+              },
+            ],
+          },
+          markdown: "A",
+        }),
+      },
+    });
+
+    await manager.parseAttachments([
+      pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
+      pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
+    ]);
+
+    assert.equal(confirmCount, 1);
+    assert.sameMembers(started, ["C:/tmp/a.pdf", "C:/tmp/b.pdf"]);
+  });
+
+  it("skips existing results after a single bulk use-existing choice", async function () {
+    const messages: string[] = [];
+    const submitted: string[] = [];
+    let confirmCount = 0;
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      storage: {
+        ...baseStorage(),
+        hasReadyResult: async (attachment) => attachment.id === 1,
+      },
+      confirmReparse: async () => {
+        confirmCount += 1;
+        return "use-existing";
+      },
+      client: {
+        submitPdf: async (filePath) => {
+          submitted.push(filePath);
+          return { taskID: "task-new" };
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({
+          rawResult: {
+            pages: [
+              {
+                pageNo: 1,
+                width: 1000,
+                height: 1000,
+                blocks: [
+                  { type: "text", bbox: [0, 0, 100, 100], markdown: "A" },
+                ],
+              },
+            ],
+          },
+          markdown: "A",
+        }),
+      },
+    });
+
+    await manager.parseAttachments([
+      pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
+      pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
+    ]);
+
+    assert.equal(confirmCount, 1);
+    assert.deepEqual(submitted, ["C:/tmp/b.pdf"]);
+  });
+
+  it("stops bulk parsing before confirmation when the API Key is missing", async function () {
+    const messages: string[] = [];
+    let confirmCalled = false;
+    let submitCalled = false;
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getApiKey: () => "",
+      storage: {
+        ...baseStorage(),
+        hasReadyResult: async () => true,
+      },
+      confirmReparse: async () => {
+        confirmCalled = true;
+        return "reparse";
+      },
+      client: {
+        submitPdf: async () => {
+          submitCalled = true;
+          throw new Error("submitPdf should not be called");
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({ rawResult: {}, markdown: "" }),
+      },
+    });
+
+    await manager.parseAttachments([pdfAttachment()]);
+
+    assert.isFalse(confirmCalled);
+    assert.isFalse(submitCalled);
+    assert.include(messages, "parse-error-missing-api-key");
+  });
+
   it("stops before network calls when the API Key is missing", async function () {
     const messages: string[] = [];
     let submitCalled = false;
@@ -347,14 +503,27 @@ function baseStorage(): ParseManagerDependencies["storage"] {
   };
 }
 
-function pdfAttachment(): Zotero.Item {
+function pdfAttachment(options?: {
+  id?: number;
+  fileName?: string;
+  filePath?: string;
+}): Zotero.Item {
   return {
-    id: 1,
-    key: "ABC123",
+    id: options?.id ?? 1,
+    key: `ABC${options?.id ?? 123}`,
     libraryID: 12,
-    attachmentFilename: "a.pdf",
+    attachmentFilename: options?.fileName ?? "a.pdf",
     attachmentModificationTime: Promise.resolve(1),
+    isAttachment: () => true,
     isPDFAttachment: () => true,
-    getFilePathAsync: async () => "C:/tmp/a.pdf",
+    getFilePathAsync: async () => options?.filePath ?? "C:/tmp/a.pdf",
+  } as unknown as Zotero.Item;
+}
+
+function regularItem(attachments: Zotero.Item[]): Zotero.Item {
+  return {
+    isAttachment: () => false,
+    isRegularItem: () => true,
+    getBestAttachments: async () => attachments,
   } as unknown as Zotero.Item;
 }

@@ -42,9 +42,9 @@ parsing, formatting, storage, client boundaries, and lifecycle behavior when
 those areas change. Run `npm test` plus `npm run lint:check` before opening a
 pull request.
 
-After code changes, run the full scaffold test suite with `zotero-plugin test`.
-If the command stalls while Zotero is open, ask the user to close Zotero and
-then rerun the full suite.
+After code changes, run the full scaffold test suite with
+`zotero-plugin test --exit-on-finish` so the scaffold test Zotero process exits
+automatically after the suite completes.
 
 For small edits to existing XHTML files such as `addon/content/preferences.xhtml`,
 avoid running `prettier --write` unless formatting is part of the task. It can
