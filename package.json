@@ -1,7 +1,7 @@
 {
   "name": "mineru-for-zotero",
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Parse PDFs with MinerU and copy structured content from Zotero Reader",
   "config": {
     "addonName": "MinerU for Zotero",
