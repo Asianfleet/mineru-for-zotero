@@ -7,8 +7,7 @@ export default zotero({
     {
       files: ["**/*.ts"],
       rules: {
-        // We disable this rule here because the template
-        // contains some unused examples and variables
+        // Some files intentionally keep unused helpers and debug hooks.
         "@typescript-eslint/no-unused-vars": "off",
       },
     },

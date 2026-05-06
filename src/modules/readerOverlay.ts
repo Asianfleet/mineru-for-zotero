@@ -816,7 +816,11 @@ function readCssVariable(doc: Document, name: string): string | null {
     if (!element) {
       continue;
     }
-    const value = win.getComputedStyle(element).getPropertyValue(name).trim();
+    const computedStyle = win.getComputedStyle(element);
+    if (!computedStyle) {
+      continue;
+    }
+    const value = computedStyle.getPropertyValue(name).trim();
     if (isSafeCssCustomPropertyValue(value)) {
       return value;
     }

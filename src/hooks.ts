@@ -238,8 +238,8 @@ function onShutdown(): void {
 }
 
 /**
- * This function is just an example of dispatcher for Notify events.
- * Any operations should be placed in a function to keep this funcion clear.
+ * Dispatches Notify events.
+ * Keep the event-specific work in dedicated helpers to keep this function small.
  */
 async function onNotify(
   event: string,
@@ -251,8 +251,8 @@ async function onNotify(
 }
 
 /**
- * This function is just an example of dispatcher for Preference UI events.
- * Any operations should be placed in a function to keep this funcion clear.
+ * Dispatches Preference UI events.
+ * Keep the event-specific work in dedicated helpers to keep this function small.
  * @param type event type
  * @param data event data
  */
