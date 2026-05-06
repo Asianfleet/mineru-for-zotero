@@ -3,6 +3,10 @@ import { createStorage } from "./storage";
 
 const STORAGE_ROOT = "ProfD/mineru-copy";
 
+interface ZoteroURLLauncher {
+  launchURL(url: string): void;
+}
+
 export async function registerPrefsScripts(_window: Window) {
   const storageRoot = getMinerUStorageRoot();
   const storage = createStorage(storageRoot);
@@ -21,10 +25,40 @@ export async function registerPrefsScripts(_window: Window) {
     ?.addEventListener("click", () => {
       void storage.openDataFolder();
     });
+
+  registerExternalLink(
+    document,
+    `${config.addonRef}-github-link`,
+    "https://github.com/Asianfleet/mineru-for-zotero",
+  );
+  registerExternalLink(
+    document,
+    `${config.addonRef}-mineru-link`,
+    "https://mineru.net/",
+  );
 }
 
 export function getMinerUStorageRoot(): string {
   return STORAGE_ROOT;
+}
+
+export function openExternalURL(
+  url: string,
+  launcher: ZoteroURLLauncher = Zotero as unknown as ZoteroURLLauncher,
+): void {
+  launcher.launchURL(url);
+}
+
+function registerExternalLink(
+  document: Document,
+  id: string,
+  url: string,
+): void {
+  const link = document.getElementById(id);
+  link?.addEventListener("click", (event: Event) => {
+    event.preventDefault();
+    openExternalURL(url);
+  });
 }
 
 async function updateParsedCount(
