@@ -7,6 +7,8 @@ MinerU for Zotero 是一个 Zotero 7 插件，用于把 PDF 提交给 MinerU
 ## 功能
 
 - 在 Zotero 条目或 PDF attachment 右键菜单中提交 MinerU 解析。
+- 普通条目右键菜单会列出该条目下的 PDF attachment，并支持一键解析所有
+  PDF。
 - 在 PDF Reader 工具栏中切换 MinerU box overlay。
 - 支持显示全部 box、仅显示鼠标所在 box、关闭插件能力三种模式。
 - 支持单个 box 复制、多选 box 复制。
@@ -45,12 +47,19 @@ API Key 不写入 `.env`。
 1. 在 Zotero 条目列表中选择一个 PDF attachment，或选择含 PDF attachment
    的普通条目。
 2. 右键点击 `使用 MinerU 解析 PDF`。
-3. 等待上传、解析、下载和本地写入完成。
+3. 如果选中的是 PDF attachment，插件会直接解析该 PDF。
+4. 如果选中的是普通条目，插件会打开带 MinerU 图标的子菜单：
+   - `解析所有 PDF`：解析该条目下的全部 PDF attachment。
+   - 单个 PDF 文件名：只解析对应的 PDF attachment。
+5. 等待上传、解析、下载和本地写入完成。
 
-如果该 PDF 已有解析结果，插件会询问：
+如果待解析 PDF 已有解析结果，插件会询问：
 
 - `使用已有结果`：保留现有结果，直接在 Reader 中使用。
 - `重新解析并覆盖`：重新提交 MinerU，成功后替换旧结果；失败时保留旧结果。
+
+批量解析时，如果部分 PDF 已有可用结果，选择 `使用已有结果` 会跳过这些 PDF，
+继续解析其余未完成的 PDF；选择 `重新解析并覆盖` 会重新提交全部待解析 PDF。
 
 ### 在 Reader 中复制内容
 
@@ -145,19 +154,6 @@ npm run release
 
 `npm run release` 会走 `zotero-plugin-scaffold` 的发布流程。GitHub Action 会在
 tag 推送后构建插件，并发布 `.xpi`、`update.json` 和 `update-beta.json`。
-
-## 发布前检查
-
-发布前请确认：
-
-- `npm test`、`npm run lint:check`、`npm run build` 已通过。
-- 已在真实 Zotero 7 中手工验证解析、Reader overlay、复制和错误提示。
-- `.env`、日志、临时 ZIP、诊断 JSON、截图等本地文件没有进入提交。
-- `package.json` 版本号、仓库地址、插件 ID、插件名称和描述正确。
-- `addon/manifest.json` 的 Zotero 版本范围符合目标发布范围。
-- GitHub Release 中包含 `.xpi` 和 update manifest。
-
-更完整的发布清单见 [docs/release-checklist.md](docs/release-checklist.md)。
 
 ## License
 
