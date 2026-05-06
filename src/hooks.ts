@@ -62,6 +62,10 @@ function registerItemMenu(win: _ZoteroTypes.MainWindow): void {
   const menuItem = doc.createXULElement("menuitem");
   menuItem.id = "zotero-itemmenu-mineru-parse-pdf";
   menuItem.setAttribute("label", getString("parse-menuitem-label"));
+  menuItem.setAttribute(
+    "image",
+    `chrome://${addon.data.config.addonRef}/content/mineru.svg`,
+  );
   menuItem.addEventListener("command", () => {
     void parseSelectedAttachment();
   });
