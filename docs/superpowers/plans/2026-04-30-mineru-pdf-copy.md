@@ -93,6 +93,7 @@
 ## Task 1: 建立领域类型与纯逻辑测试骨架
 
 **Files:**
+
 - Create: `src/modules/domain.ts`
 - Create: `test/domainFixtures.ts`
 - Create: `test/copyFormatter.test.ts`
@@ -103,7 +104,14 @@
 `src/modules/domain.ts` 内容结构：
 
 ```ts
-export type MinerUBoxType = "text" | "title" | "list" | "table" | "figure" | "formula" | "unknown";
+export type MinerUBoxType =
+  | "text"
+  | "title"
+  | "list"
+  | "table"
+  | "figure"
+  | "formula"
+  | "unknown";
 
 export interface AttachmentRef {
   id: number;
@@ -151,7 +159,10 @@ export type FormulaCopyMode = "with-dollar" | "without-dollar";
 
 ```ts
 import { assert } from "chai";
-import { formatBoxesForCopy, formatFormulaForCopy } from "../src/modules/copyFormatter";
+import {
+  formatBoxesForCopy,
+  formatFormulaForCopy,
+} from "../src/modules/copyFormatter";
 import { normalizedBoxes } from "./domainFixtures";
 
 describe("copyFormatter", function () {
@@ -231,6 +242,7 @@ git commit -m "test(mineru): add domain formatter normalizer coverage"
 ## Task 2: 实现 copyFormatter 与 boxNormalizer
 
 **Files:**
+
 - Create: `src/modules/copyFormatter.ts`
 - Create: `src/modules/boxNormalizer.ts`
 - Modify: `test/domainFixtures.ts`
@@ -251,7 +263,12 @@ export const mineruResultFixture = {
       blocks: [
         { type: "text", bbox: [100, 400, 400, 500], markdown: "第一段" },
         { type: "text", bbox: [100, 520, 400, 620], markdown: "第二段" },
-        { type: "formula", bbox: [100, 650, 500, 740], markdown: "公式：E=mc^2", formula: "E=mc^2" },
+        {
+          type: "formula",
+          bbox: [100, 650, 500, 740],
+          markdown: "公式：E=mc^2",
+          formula: "E=mc^2",
+        },
       ],
     },
   ],
@@ -300,7 +317,10 @@ export function formatBoxesForCopy(boxes: NormalizedBox[]): string {
     .join("\n\n");
 }
 
-export function formatFormulaForCopy(formula: string, mode: FormulaCopyMode): string {
+export function formatFormulaForCopy(
+  formula: string,
+  mode: FormulaCopyMode,
+): string {
   const value = formula.trim();
   return mode === "with-dollar" ? `$${value}$` : value;
 }
@@ -407,6 +427,7 @@ git commit -m "feat(mineru): normalize boxes and format copied markdown"
 ## Task 3: 实现 storage 原子写入与读取
 
 **Files:**
+
 - Create: `src/modules/storage.ts`
 - Create: `test/storage.test.ts`
 - Modify: `src/modules/domain.ts`
@@ -423,20 +444,35 @@ import { normalizedBoxes } from "./domainFixtures";
 describe("storage", function () {
   it("uses libraryID and attachmentKey as stable directory name", function () {
     const storage = createStorage("TmpD/mineru-copy");
-    assert.equal(storage.getAttachmentDir({ libraryID: 12, key: "ABC123" }), "TmpD/mineru-copy/attachments/12-ABC123");
+    assert.equal(
+      storage.getAttachmentDir({ libraryID: 12, key: "ABC123" }),
+      "TmpD/mineru-copy/attachments/12-ABC123",
+    );
   });
 
   it("writes and reads ready result", async function () {
     const storage = createStorage("TmpD/mineru-copy");
     await storage.writeResult({
-      attachment: { id: 1, key: "ABC123", libraryID: 12, fileName: "a.pdf", filePath: "a.pdf", mtime: 1 },
+      attachment: {
+        id: 1,
+        key: "ABC123",
+        libraryID: 12,
+        fileName: "a.pdf",
+        filePath: "a.pdf",
+        mtime: 1,
+      },
       mineruTaskID: "task-1",
       rawResult: { ok: true },
       markdown: "# A",
       boxes: normalizedBoxes,
     });
-    assert.isTrue(await storage.hasReadyResult({ libraryID: 12, key: "ABC123" }));
-    assert.equal((await storage.readManifest({ libraryID: 12, key: "ABC123" })).status, "ready");
+    assert.isTrue(
+      await storage.hasReadyResult({ libraryID: 12, key: "ABC123" }),
+    );
+    assert.equal(
+      (await storage.readManifest({ libraryID: 12, key: "ABC123" })).status,
+      "ready",
+    );
   });
 });
 ```
@@ -450,9 +486,15 @@ import type { AttachmentRef, NormalizedBox, ParseManifest } from "./domain";
 
 export interface StorageAdapter {
   getAttachmentDir(ref: Pick<AttachmentRef, "libraryID" | "key">): string;
-  hasReadyResult(ref: Pick<AttachmentRef, "libraryID" | "key">): Promise<boolean>;
-  readManifest(ref: Pick<AttachmentRef, "libraryID" | "key">): Promise<ParseManifest>;
-  readBoxes(ref: Pick<AttachmentRef, "libraryID" | "key">): Promise<NormalizedBox[]>;
+  hasReadyResult(
+    ref: Pick<AttachmentRef, "libraryID" | "key">,
+  ): Promise<boolean>;
+  readManifest(
+    ref: Pick<AttachmentRef, "libraryID" | "key">,
+  ): Promise<ParseManifest>;
+  readBoxes(
+    ref: Pick<AttachmentRef, "libraryID" | "key">,
+  ): Promise<NormalizedBox[]>;
   writeResult(input: {
     attachment: AttachmentRef;
     mineruTaskID: string;
@@ -494,6 +536,7 @@ git commit -m "feat(mineru): persist parsed attachment results"
 ## Task 4: 设置页 API Key 与数据目录
 
 **Files:**
+
 - Modify: `typings/prefs.d.ts`
 - Modify: `addon/prefs.js`
 - Modify: `addon/content/preferences.xhtml`
@@ -576,6 +619,7 @@ git commit -m "feat(settings): add MinerU API key and data folder controls"
 ## Task 5: MinerU client 边界与官方接口复核
 
 **Files:**
+
 - Create: `src/modules/mineruClient.ts`
 - Modify: `src/modules/domain.ts`
 
@@ -592,8 +636,12 @@ git commit -m "feat(settings): add MinerU API key and data folder controls"
 ```ts
 export interface MinerUClient {
   submitPdf(filePath: string): Promise<{ taskID: string }>;
-  pollTask(taskID: string): Promise<{ status: "running" | "succeeded" | "failed"; error?: string }>;
-  downloadResult(taskID: string): Promise<{ rawResult: unknown; markdown: string }>;
+  pollTask(
+    taskID: string,
+  ): Promise<{ status: "running" | "succeeded" | "failed"; error?: string }>;
+  downloadResult(
+    taskID: string,
+  ): Promise<{ rawResult: unknown; markdown: string }>;
 }
 ```
 
@@ -636,6 +684,7 @@ git commit -m "feat(mineru): add official api client boundary"
 ## Task 6: parseManager 与右键菜单解析入口
 
 **Files:**
+
 - Create: `src/modules/parseManager.ts`
 - Modify: `src/hooks.ts`
 - Modify: `addon/locale/zh-CN/mainWindow.ftl`
@@ -648,8 +697,13 @@ git commit -m "feat(mineru): add official api client boundary"
 `parseManager` 对外暴露：
 
 ```ts
-export async function parseSelectedAttachment(options?: { force?: boolean }): Promise<void>;
-export async function parseAttachment(attachment: Zotero.Item, options?: { force?: boolean }): Promise<void>;
+export async function parseSelectedAttachment(options?: {
+  force?: boolean;
+}): Promise<void>;
+export async function parseAttachment(
+  attachment: Zotero.Item,
+  options?: { force?: boolean },
+): Promise<void>;
 ```
 
 流程：
@@ -728,6 +782,7 @@ git commit -m "feat(parse): add MinerU PDF context menu flow"
 ## Task 7: Reader toolbar 按钮与 per-pane 状态骨架
 
 **Files:**
+
 - Create: `src/modules/readerOverlay.ts`
 - Create: `src/modules/readerToolbar.ts`
 - Modify: `src/addon.ts`
@@ -756,7 +811,10 @@ interface ReaderOverlayState {
 key 生成规则：
 
 ```ts
-export function getReaderOverlayKey(readerInstanceID: string, attachmentKey: string): ReaderOverlayKey {
+export function getReaderOverlayKey(
+  readerInstanceID: string,
+  attachmentKey: string,
+): ReaderOverlayKey {
   return `${readerInstanceID}:${attachmentKey}`;
 }
 ```
@@ -849,6 +907,7 @@ git commit -m "feat(reader): add per-pane toolbar state"
 ## Task 8: Overlay 渲染、hover、单 box 复制
 
 **Files:**
+
 - Modify: `src/modules/readerOverlay.ts`
 - Modify: `addon/content/zoteroPane.css`
 - Modify: `src/modules/readerToolbar.ts`
@@ -969,6 +1028,7 @@ git commit -m "fix(reader): 对齐 MinerU box 标签与引用框"
 ## Task 9: 多选、工具栏复制与 split view 销毁
 
 **Files:**
+
 - Modify: `src/modules/readerOverlay.ts`
 - Modify: `src/modules/readerToolbar.ts`
 - Modify: `addon/content/zoteroPane.css`
@@ -1078,6 +1138,7 @@ git commit -m "feat(reader): 支持多选 box 复制"
 ## Task 10: 真实解析闭环与错误处理
 
 **Files:**
+
 - Modify: `src/modules/parseManager.ts`
 - Modify: `src/modules/mineruClient.ts`
 - Modify: `src/modules/storage.ts`
