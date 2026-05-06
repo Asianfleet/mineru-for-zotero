@@ -46,6 +46,11 @@ After code changes, run the full scaffold test suite with `zotero-plugin test`.
 If the command stalls while Zotero is open, ask the user to close Zotero and
 then rerun the full suite.
 
+For small edits to existing XHTML files such as `addon/content/preferences.xhtml`,
+avoid running `prettier --write` unless formatting is part of the task. It can
+reflow unrelated long tags and expand the diff; if it happens during validation,
+restore unrelated formatting before final verification.
+
 ## Project Notes
 
 - When debugging the MinerU parsing pipeline, do not infer API behavior from UI
