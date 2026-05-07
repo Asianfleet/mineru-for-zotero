@@ -976,20 +976,35 @@ function createBoxActions(doc: Document, box: NormalizedBox): HTMLDivElement {
   actions.className = "mineru-copy-box-actions";
   if (isFormulaBox(box) && box.formula) {
     actions.append(
-      createCopyButton(doc, "带 $ 复制", () => {
-        copyText(formatFormulaForCopy(box.formula ?? "", "with-dollar"));
-      }),
-      createCopyButton(doc, "不带 $ 复制", () => {
-        copyText(formatFormulaForCopy(box.formula ?? "", "without-dollar"));
-      }),
+      createCopyButton(
+        doc,
+        readerOverlayString("reader-copy-formula-with-dollar", "Copy with $"),
+        () => {
+          copyText(formatFormulaForCopy(box.formula ?? "", "with-dollar"));
+        },
+      ),
+      createCopyButton(
+        doc,
+        readerOverlayString(
+          "reader-copy-formula-without-dollar",
+          "Copy without $",
+        ),
+        () => {
+          copyText(formatFormulaForCopy(box.formula ?? "", "without-dollar"));
+        },
+      ),
     );
     return actions;
   }
 
   actions.append(
-    createCopyButton(doc, "复制", () => {
-      copyText(formatBoxesForCopy([box]));
-    }),
+    createCopyButton(
+      doc,
+      readerOverlayString("reader-copy-box", "Copy"),
+      () => {
+        copyText(formatBoxesForCopy([box]));
+      },
+    ),
   );
   return actions;
 }
@@ -1043,35 +1058,54 @@ function containsBox(container: NormalizedBox, child: NormalizedBox): boolean {
 
 function formatBoxTypeLabel(type: string): string {
   const normalized = normalizeBoxType(type);
-  const labels: Record<string, string> = {
-    text: "文本",
-    title: "标题",
-    list: "列表",
-    table: "表格",
-    table_body: "表格",
-    figure: "图片",
-    image: "图片",
-    image_body: "图片",
-    image_caption: "图片标题",
-    table_caption: "表格标题",
-    page_header: "页眉",
-    header: "页眉",
-    page_footer: "页脚",
-    footer: "页脚",
-    page_footnote: "脚注",
-    footnote: "脚注",
-    page_number: "页码",
-    ref_text: "引用",
-    reference: "引用",
-    citation: "引用",
-    bibliography: "引用",
-    formula: "公式",
-    interline_equation: "公式",
-    inline_equation: "公式",
-    equation: "公式",
-    unknown: "未知",
+  const labels: Record<string, { id: FluentMessageId; fallback: string }> = {
+    text: { id: "reader-box-type-text", fallback: "Text" },
+    title: { id: "reader-box-type-title", fallback: "Title" },
+    list: { id: "reader-box-type-list", fallback: "List" },
+    table: { id: "reader-box-type-table", fallback: "Table" },
+    table_body: { id: "reader-box-type-table", fallback: "Table" },
+    figure: { id: "reader-box-type-image", fallback: "Image" },
+    image: { id: "reader-box-type-image", fallback: "Image" },
+    image_body: { id: "reader-box-type-image", fallback: "Image" },
+    image_caption: {
+      id: "reader-box-type-image-caption",
+      fallback: "Image caption",
+    },
+    table_caption: {
+      id: "reader-box-type-table-caption",
+      fallback: "Table caption",
+    },
+    page_header: { id: "reader-box-type-page-header", fallback: "Header" },
+    header: { id: "reader-box-type-page-header", fallback: "Header" },
+    page_footer: { id: "reader-box-type-page-footer", fallback: "Footer" },
+    footer: { id: "reader-box-type-page-footer", fallback: "Footer" },
+    page_footnote: { id: "reader-box-type-footnote", fallback: "Footnote" },
+    footnote: { id: "reader-box-type-footnote", fallback: "Footnote" },
+    page_number: { id: "reader-box-type-page-number", fallback: "Page number" },
+    ref_text: { id: "reader-box-type-reference", fallback: "Reference" },
+    reference: { id: "reader-box-type-reference", fallback: "Reference" },
+    citation: { id: "reader-box-type-reference", fallback: "Reference" },
+    bibliography: { id: "reader-box-type-reference", fallback: "Reference" },
+    formula: { id: "reader-box-type-formula", fallback: "Formula" },
+    interline_equation: { id: "reader-box-type-formula", fallback: "Formula" },
+    inline_equation: { id: "reader-box-type-formula", fallback: "Formula" },
+    equation: { id: "reader-box-type-formula", fallback: "Formula" },
+    unknown: { id: "reader-box-type-unknown", fallback: "Unknown" },
   };
-  return labels[normalized] ?? normalized;
+  const label = labels[normalized];
+  return label ? readerOverlayString(label.id, label.fallback) : normalized;
+}
+
+function readerOverlayString(id: FluentMessageId, fallback: string): string {
+  try {
+    const value = getString(id);
+    if (value && value !== id && !value.endsWith(`-${id}`)) {
+      return value;
+    }
+  } catch {
+    // Fall through to the built-in fallback text.
+  }
+  return fallback;
 }
 
 function isReferenceBoxType(type: string): boolean {
@@ -1112,7 +1146,10 @@ export function getReaderOverlayNoticeText(id: FluentMessageId): string {
   }
 
   if (id === "reader-overlay-missing-result") {
-    return "当前 PDF 还没有可用的 MinerU 解析结果，请先解析后再开启 box";
+    return (
+      "This PDF does not have a MinerU parse result yet. " +
+      "Parse it before enabling boxes."
+    );
   }
   return id;
 }

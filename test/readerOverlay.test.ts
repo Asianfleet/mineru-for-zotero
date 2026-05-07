@@ -83,24 +83,94 @@ describe("readerOverlay", function () {
       findElementsByClass(root, "mineru-copy-box-label").map(
         (element) => element.textContent,
       ),
-      ["文本", "标题", "图片标题", "页眉", "页码", "公式", "表格", "引用"],
+      [
+        "Text",
+        "Title",
+        "Image caption",
+        "Header",
+        "Page number",
+        "Formula",
+        "Table",
+        "Reference",
+      ],
     );
     assert.deepEqual(
       findElementsByClass(root, "mineru-copy-button").map(
         (element) => element.textContent,
       ),
       [
-        "复制",
-        "复制",
-        "复制",
-        "复制",
-        "复制",
-        "带 $ 复制",
-        "不带 $ 复制",
-        "复制",
-        "复制",
+        "Copy",
+        "Copy",
+        "Copy",
+        "Copy",
+        "Copy",
+        "Copy with $",
+        "Copy without $",
+        "Copy",
+        "Copy",
       ],
     );
+  });
+
+  it("uses Fluent messages for hover labels and copy buttons", function () {
+    const globals = globalThis as typeof globalThis & { addon?: unknown };
+    const originalAddon = globals.addon;
+    globals.addon = {
+      data: {
+        locale: {
+          current: {
+            formatMessagesSync(messages: Array<{ id: string }>) {
+              const values: Record<string, string> = {
+                "mineruForZotero-reader-box-type-text": "Text",
+                "mineruForZotero-reader-box-type-title": "Title",
+                "mineruForZotero-reader-box-type-image-caption":
+                  "Image caption",
+                "mineruForZotero-reader-box-type-formula": "Formula",
+                "mineruForZotero-reader-copy-box": "Copy",
+                "mineruForZotero-reader-copy-formula-with-dollar":
+                  "Copy with $",
+                "mineruForZotero-reader-copy-formula-without-dollar":
+                  "Copy without $",
+              };
+              return messages.map(({ id }) => ({
+                value: values[id] ?? null,
+                attributes: null,
+              }));
+            },
+          },
+        },
+      },
+    };
+
+    try {
+      const doc = createDocumentStub();
+
+      const root = buildReaderOverlayRoot(
+        doc as unknown as Document,
+        [
+          createBox(0, "text", "First paragraph"),
+          createBox(1, "title", "Title"),
+          createBox(2, "image_caption", "Image caption"),
+          createBox(3, "interline_equation", "E=mc^2", "E=mc^2"),
+        ],
+        "hover",
+      );
+
+      assert.deepEqual(
+        findElementsByClass(root, "mineru-copy-box-label").map(
+          (element) => element.textContent,
+        ),
+        ["Text", "Title", "Image caption", "Formula"],
+      );
+      assert.deepEqual(
+        findElementsByClass(root, "mineru-copy-button").map(
+          (element) => element.textContent,
+        ),
+        ["Copy", "Copy", "Copy", "Copy with $", "Copy without $"],
+      );
+    } finally {
+      globals.addon = originalAddon;
+    }
   });
 
   it("renders labels and copy buttons in all mode", function () {
@@ -123,13 +193,13 @@ describe("readerOverlay", function () {
       findElementsByClass(root, "mineru-copy-box-label").map(
         (element) => element.textContent,
       ),
-      ["文本", "标题", "图片标题", "页眉", "页码", "公式"],
+      ["Text", "Title", "Image caption", "Header", "Page number", "Formula"],
     );
     assert.deepEqual(
       findElementsByClass(root, "mineru-copy-button").map(
         (element) => element.textContent,
       ),
-      ["复制", "复制", "复制", "复制", "复制", "带 $ 复制", "不带 $ 复制"],
+      ["Copy", "Copy", "Copy", "Copy", "Copy", "Copy with $", "Copy without $"],
     );
   });
 
@@ -165,7 +235,7 @@ describe("readerOverlay", function () {
       findElementsByClass(root, "mineru-copy-box-label").map(
         (element) => element.textContent,
       ),
-      ["引用", "引用"],
+      ["Reference", "Reference"],
     );
   });
 
@@ -262,7 +332,7 @@ describe("readerOverlay", function () {
   it("provides a local fallback for the missing-result prompt", function () {
     assert.equal(
       getReaderOverlayNoticeText("reader-overlay-missing-result"),
-      "当前 PDF 还没有可用的 MinerU 解析结果，请先解析后再开启 box",
+      "This PDF does not have a MinerU parse result yet. Parse it before enabling boxes.",
     );
   });
 

@@ -6,4 +6,5 @@ pref-open-data-folder = 打开数据文件夹
 pref-parsed-count = 已解析 PDF：{ $count }
 pref-parsed-count-error = 已解析 PDF：读取失败
 pref-data-folder-path = 数据目录：{ $path }
+pref-about-title = 关于
 pref-help = { $name } Build { $version } { $time }
