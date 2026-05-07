@@ -17,6 +17,7 @@ parse-confirm-use-existing = 使用已有结果
 parse-confirm-overwrite = 重新解析并覆盖
 parse-use-existing-result = 使用已有解析结果，可在 PDF tab 中启用 overlay。
 reader-toolbar-label = MinerU box
+reader-mode-group-label = 模式
 reader-show-all-boxes = 显示全部 box
 reader-show-hover-box = 仅显示鼠标所在 box
 reader-disable-plugin = 关闭插件能力

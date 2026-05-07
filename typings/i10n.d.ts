@@ -40,6 +40,7 @@ export type FluentMessageId =
   | 'reader-clear-selection'
   | 'reader-copy-selected-boxes'
   | 'reader-disable-plugin'
+  | 'reader-mode-group-label'
   | 'reader-overlay-missing-result'
   | 'reader-show-all-boxes'
   | 'reader-show-hover-box'

@@ -3,11 +3,13 @@ import {
   createReaderToolbarIconDataURI,
   createReaderToolbarCommandButton,
   createReaderToolbarMenuState,
+  createReaderToolbarModeButton,
   createReaderToolbarPanel,
   createReaderToolbarPanelStore,
   findReaderToolbarAnchor,
   setReaderToolbarButtonContent,
   setReaderToolbarIconURI,
+  setReaderToolbarModeIconSVG,
 } from "../src/modules/readerToolbar";
 
 describe("readerToolbar", function () {
@@ -158,6 +160,8 @@ describe("readerToolbar", function () {
 
     const panel = createReaderToolbarPanel(doc);
 
+    assert.include(panel.className, "appearance-popup");
+    assert.include(panel.className, "mineru-reader-toolbar-menu");
     assert.equal(panel.style.minWidth, "180px");
     assert.equal(panel.style.padding, "4px");
     assert.equal(
@@ -196,6 +200,64 @@ describe("readerToolbar", function () {
     assert.equal(button.style.fontSize, "13px");
     assert.equal(button.style.lineHeight, "1.35");
     assert.include(button.style.fontFamily, "Microsoft YaHei");
+  });
+
+  it("creates active icon buttons for reader toolbar modes", function () {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg"><path d="M1 1"></path></svg>';
+    setReaderToolbarModeIconSVG("hover", svg);
+    let click: EventListener | undefined;
+    const doc = {
+      createElement(tagName: string) {
+        return {
+          tagName,
+          innerHTML: "",
+          style: {
+            background: "",
+            backgroundColor: "",
+            border: "",
+            padding: "",
+          },
+          setAttribute(name: string, value: string) {
+            this[name] = value;
+          },
+          addEventListener(type: string, listener: EventListener) {
+            if (type === "click") {
+              click = listener;
+            }
+          },
+        } as unknown as HTMLButtonElement;
+      },
+    } as unknown as Document;
+    let clicked = false;
+
+    const button = createReaderToolbarModeButton(
+      doc,
+      "仅显示鼠标所在 box",
+      "hover",
+      true,
+      () => {
+        clicked = true;
+      },
+    ) as HTMLButtonElement & {
+      "aria-label"?: string;
+      "aria-pressed"?: string;
+    };
+    click?.({
+      preventDefault() {},
+      stopPropagation() {},
+    } as Event);
+
+    assert.equal(button.className, "active");
+    assert.equal(button.tabIndex, -1);
+    assert.equal(button.innerHTML, svg);
+    assert.equal(button.title, "仅显示鼠标所在 box");
+    assert.equal(button["aria-label"], "仅显示鼠标所在 box");
+    assert.equal(button["aria-pressed"], "true");
+    assert.equal(button.style.background, "");
+    assert.equal(button.style.border, "");
+    assert.equal(button.style.padding, "");
+    assert.isTrue(clicked);
   });
 
   it("creates a reader-safe data URI from SVG content", function () {

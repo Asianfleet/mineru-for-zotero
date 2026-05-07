@@ -11,10 +11,13 @@ import {
 } from "./readerOverlay";
 import { getString } from "../utils/locale";
 
+type ReaderOverlayMode = "all" | "hover" | "off";
+
 type ReaderMessageId =
   | "reader-clear-selection"
   | "reader-copy-selected-boxes"
   | "reader-disable-plugin"
+  | "reader-mode-group-label"
   | "reader-show-all-boxes"
   | "reader-show-hover-box"
   | "reader-toolbar-label";
@@ -60,8 +63,15 @@ export interface ReaderToolbarRegistration {
 const panelStore = createReaderToolbarPanelStore();
 const buttonBindings = new Map<string, ReaderToolbarButtonBinding>();
 const READER_TOOLBAR_ICON_PATH = "content/mineru.svg";
+const READER_TOOLBAR_MODE_ICON_PATHS: Record<ReaderOverlayMode, string> = {
+  all: "content/box-mode-all.svg",
+  hover: "content/box-mode-hover.svg",
+  off: "content/box-mode-off.svg",
+};
 let readerToolbarIconURI = "";
+const readerToolbarModeSVGs: Partial<Record<ReaderOverlayMode, string>> = {};
 let readerToolbarIconLoadPromise: Promise<void> | undefined;
+let readerToolbarModeIconLoadPromise: Promise<void> | undefined;
 
 export function createReaderToolbarMenuState(): ReaderToolbarMenuState {
   let open = false;
@@ -113,7 +123,7 @@ export function createReaderToolbarPanelStore(): ReaderToolbarPanelStore {
 export async function registerReaderToolbar(
   win: _ZoteroTypes.MainWindow,
 ): Promise<void> {
-  await ensureReaderToolbarIconLoaded();
+  await ensureReaderToolbarAssetsLoaded();
 
   win.MozXULElement.insertFTLIfNeeded(
     `${addon.data.config.addonRef}-mainWindow.ftl`,
@@ -389,7 +399,23 @@ export function setReaderToolbarButtonContent(
   doc: Document,
   label: string,
 ): void {
-  if (!readerToolbarIconURI) {
+  setReaderToolbarIconButtonContent(button, doc, label, readerToolbarIconURI);
+}
+
+export function setReaderToolbarModeIconSVG(
+  mode: ReaderOverlayMode,
+  svg: string,
+): void {
+  readerToolbarModeSVGs[mode] = svg;
+}
+
+function setReaderToolbarIconButtonContent(
+  button: HTMLButtonElement,
+  doc: Document,
+  label: string,
+  iconURI: string,
+): void {
+  if (!iconURI) {
     button.textContent = label;
     button.title = label;
     button.setAttribute("aria-label", label);
@@ -400,10 +426,10 @@ export function setReaderToolbarButtonContent(
   if (
     !existingIcon ||
     existingIcon.tagName.toLowerCase() !== "img" ||
-    existingIcon.src !== readerToolbarIconURI
+    existingIcon.src !== iconURI
   ) {
     const icon = doc.createElement("img");
-    icon.src = readerToolbarIconURI;
+    icon.src = iconURI;
     icon.alt = "";
     icon.draggable = false;
     icon.style.display = "block";
@@ -417,6 +443,26 @@ export function setReaderToolbarButtonContent(
   button.setAttribute("aria-label", label);
 }
 
+function setReaderToolbarInlineSVGButtonContent(
+  button: HTMLButtonElement,
+  label: string,
+  svg: string,
+): void {
+  if (svg) {
+    button.innerHTML = normalizeReaderToolbarModeSVG(svg);
+  } else {
+    button.textContent = label;
+  }
+  button.title = label;
+  button.setAttribute("aria-label", label);
+}
+
+function normalizeReaderToolbarModeSVG(svg: string): string {
+  return svg
+    .replace(/\sfill="#333333"/g, ' fill="currentColor"')
+    .replace(/\sfill="#333"/g, ' fill="currentColor"');
+}
+
 export function createReaderToolbarIconDataURI(svg: string): string {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
@@ -428,6 +474,18 @@ export function setReaderToolbarIconURI(iconURI: string): void {
 async function ensureReaderToolbarIconLoaded(): Promise<void> {
   readerToolbarIconLoadPromise ??= loadReaderToolbarIconURI();
   await readerToolbarIconLoadPromise;
+}
+
+async function ensureReaderToolbarModeIconLoaded(): Promise<void> {
+  readerToolbarModeIconLoadPromise ??= loadReaderToolbarModeSVGs();
+  await readerToolbarModeIconLoadPromise;
+}
+
+async function ensureReaderToolbarAssetsLoaded(): Promise<void> {
+  await Promise.all([
+    ensureReaderToolbarIconLoaded(),
+    ensureReaderToolbarModeIconLoaded(),
+  ]);
 }
 
 async function loadReaderToolbarIconURI(): Promise<void> {
@@ -444,6 +502,32 @@ async function loadReaderToolbarIconURI(): Promise<void> {
       error: errorMessage(error),
     });
   }
+}
+
+async function loadReaderToolbarModeSVGs(): Promise<void> {
+  const entries = Object.entries(READER_TOOLBAR_MODE_ICON_PATHS) as Array<
+    [ReaderOverlayMode, string]
+  >;
+  await Promise.all(
+    entries.map(async ([mode, path]) => {
+      try {
+        const response = await fetch(rootURI + path);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        setReaderToolbarModeIconSVG(mode, await response.text());
+      } catch (error) {
+        emitReaderToolbarDiagnostic(
+          undefined,
+          "MinerU toolbar mode icon load failed",
+          {
+            mode,
+            error: errorMessage(error),
+          },
+        );
+      }
+    }),
+  );
 }
 
 function errorMessage(error: unknown): string {
@@ -472,12 +556,13 @@ function cleanupWindowBindings(win: Window): void {
 
 export function createReaderToolbarPanel(doc: Document): HTMLDivElement {
   const menu = doc.createElement("div");
-  menu.className = "mineru-reader-toolbar-menu";
+  menu.className = "appearance-popup mineru-reader-toolbar-menu";
   menu.hidden = true;
   menu.style.position = "fixed";
   menu.style.zIndex = "2147483647";
+  menu.style.width = "260px";
   menu.style.minWidth = "180px";
-  menu.style.padding = "4px";
+  menu.style.padding = "8px";
   menu.style.border = "1px solid var(--material-border, #d0d0d0)";
   menu.style.borderRadius = "6px";
   menu.style.background = "var(--material-toolbar)";
@@ -495,41 +580,24 @@ function updateMenu(
   menu: HTMLDivElement,
   sync: () => void,
 ): void {
-  menu.replaceChildren();
-  menu.append(
-    createReaderToolbarCommandButton(
-      doc,
-      readerString("reader-show-all-boxes"),
-      () => {
-        runReaderToolbarCommand(reader, "show-all-boxes", () => {
-          return applyReaderOverlayMode(reader, "all");
-        });
-        updateMenu(reader, doc, menu, sync);
-        sync();
-      },
-    ),
-    createReaderToolbarCommandButton(
-      doc,
-      readerString("reader-show-hover-box"),
-      () => {
-        runReaderToolbarCommand(reader, "show-hover-box", () => {
-          return applyReaderOverlayMode(reader, "hover");
-        });
-        updateMenu(reader, doc, menu, sync);
-        sync();
-      },
-    ),
-    createReaderToolbarCommandButton(
-      doc,
-      readerString("reader-disable-plugin"),
-      () => {
-        runReaderToolbarCommand(reader, "disable-plugin", () => {
-          return applyReaderOverlayMode(reader, "off");
-        });
-        updateMenu(reader, doc, menu, sync);
-        sync();
-      },
-    ),
+  const currentMode = (getReaderOverlayStateForReader(reader)?.mode ??
+    "off") as ReaderOverlayMode;
+  const modeGroup = doc.createElement("div");
+  modeGroup.className = "group";
+  modeGroup.append(
+    createReaderToolbarModeGroup(doc, currentMode, (mode) => {
+      runReaderToolbarCommand(reader, `set-mode-${mode}`, () => {
+        return applyReaderOverlayMode(reader, mode);
+      });
+      updateMenu(reader, doc, menu, sync);
+      sync();
+    }),
+  );
+
+  const commandGroup = doc.createElement("div");
+  commandGroup.className = "group";
+  commandGroup.style.gap = "8px";
+  commandGroup.append(
     createReaderToolbarCommandButton(
       doc,
       readerString("reader-copy-selected-boxes", {
@@ -556,6 +624,80 @@ function updateMenu(
       },
     ),
   );
+
+  menu.replaceChildren();
+  menu.append(modeGroup, commandGroup);
+}
+
+export function createReaderToolbarModeGroup(
+  doc: Document,
+  currentMode: ReaderOverlayMode,
+  onCommand: (mode: ReaderOverlayMode) => void,
+): HTMLDivElement {
+  const option = doc.createElement("div");
+  option.className = "option";
+  option.style.display = "flex";
+  option.style.justifyContent = "space-between";
+  option.style.padding = "0 0 8px 0";
+
+  const label = doc.createElement("label");
+  label.style.display = "flex";
+  label.style.alignItems = "center";
+  label.textContent = readerString("reader-mode-group-label");
+
+  const group = doc.createElement("div");
+  group.className = "split-toggle";
+  group.setAttribute("data-tabstop", "1");
+
+  const modes: Array<{ mode: ReaderOverlayMode; label: string }> = [
+    { mode: "all", label: readerString("reader-show-all-boxes") },
+    { mode: "hover", label: readerString("reader-show-hover-box") },
+    { mode: "off", label: readerString("reader-disable-plugin") },
+  ];
+
+  for (const entry of modes) {
+    group.append(
+      createReaderToolbarModeButton(
+        doc,
+        entry.label,
+        entry.mode,
+        currentMode === entry.mode,
+        () => {
+          onCommand(entry.mode);
+        },
+      ),
+    );
+  }
+
+  option.append(label, group);
+  return option;
+}
+
+export function createReaderToolbarModeButton(
+  doc: Document,
+  label: string,
+  mode: ReaderOverlayMode,
+  active: boolean,
+  onCommand: () => void,
+): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.tabIndex = -1;
+  button.className = active ? "active" : "";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.setAttribute("aria-pressed", active ? "true" : "false");
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onCommand();
+  });
+  setReaderToolbarInlineSVGButtonContent(
+    button,
+    label,
+    readerToolbarModeSVGs[mode] ?? "",
+  );
+  return button;
 }
 
 export function createReaderToolbarCommandButton(
@@ -570,7 +712,7 @@ export function createReaderToolbarCommandButton(
   button.style.display = "block";
   button.style.width = "100%";
   button.style.margin = "0";
-  button.style.padding = "4px 8px";
+  button.style.padding = "0";
   button.style.border = "0";
   button.style.borderRadius = "4px";
   button.style.background = "transparent";

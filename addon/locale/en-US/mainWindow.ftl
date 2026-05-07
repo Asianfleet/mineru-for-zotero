@@ -17,6 +17,7 @@ parse-confirm-use-existing = Use existing result
 parse-confirm-overwrite = Reparse and overwrite
 parse-use-existing-result = Using the existing parse result. You can enable the overlay in the PDF tab.
 reader-toolbar-label = MinerU boxes
+reader-mode-group-label = Mode
 reader-show-all-boxes = Show all boxes
 reader-show-hover-box = Show only hovered box
 reader-disable-plugin = Disable plugin features
