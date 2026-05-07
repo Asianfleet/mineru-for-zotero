@@ -1,5 +1,6 @@
 import { assert } from "chai";
 import {
+  createReaderToolbarActionRow,
   createReaderToolbarIconDataURI,
   createReaderToolbarCommandButton,
   createReaderToolbarMenuState,
@@ -163,7 +164,7 @@ describe("readerToolbar", function () {
     assert.include(panel.className, "appearance-popup");
     assert.include(panel.className, "mineru-reader-toolbar-menu");
     assert.equal(panel.style.minWidth, "180px");
-    assert.equal(panel.style.padding, "4px");
+    assert.equal(panel.style.padding, "8px");
     assert.equal(
       panel.style.border,
       "1px solid var(--material-border, #d0d0d0)",
@@ -200,6 +201,91 @@ describe("readerToolbar", function () {
     assert.equal(button.style.fontSize, "13px");
     assert.equal(button.style.lineHeight, "1.35");
     assert.include(button.style.fontFamily, "Microsoft YaHei");
+  });
+
+  it("keeps selection status as a label and places copy before clear actions", function () {
+    const children: unknown[] = [];
+    const doc = {
+      createElement(tagName: string) {
+        return {
+          tagName,
+          className: "",
+          textContent: "",
+          innerHTML: "",
+          style: { backgroundColor: "" },
+          children: [] as unknown[],
+          append(...nodes: unknown[]) {
+            this.children.push(...nodes);
+          },
+          replaceChildren(...nodes: unknown[]) {
+            this.children.splice(0, this.children.length, ...nodes);
+          },
+          setAttribute(name: string, value: string) {
+            this[name] = value;
+          },
+          addEventListener() {},
+        } as unknown as HTMLElement;
+      },
+    } as unknown as Document;
+
+    const group = {
+      className: "group",
+      style: {},
+      append(...nodes: unknown[]) {
+        children.push(...nodes);
+      },
+    } as unknown as HTMLDivElement;
+
+    createReaderToolbarActionRow(doc, group, {
+      copyLabel: "复制已选内容",
+      selectedCount: 3,
+      copyIconSVG:
+        '<svg xmlns="http://www.w3.org/2000/svg"><path fill="#333333"></path></svg>',
+      clearLabel: "清空选择",
+      clearIconSVG:
+        '<svg xmlns="http://www.w3.org/2000/svg"><path fill="#333333"></path></svg>',
+      onCopy() {},
+      onClear() {},
+    });
+
+    assert.equal(group.className, "group");
+    assert.equal(children.length, 1);
+
+    const row = children[0] as HTMLDivElement & { children: HTMLElement[] };
+    assert.equal(row.className, "mineru-reader-toolbar-action-row");
+    assert.equal(row.style.display, "flex");
+    assert.equal(row.style.justifyContent, "space-between");
+
+    const label = row.children[0] as HTMLDivElement & {
+      children: HTMLElement[];
+    };
+    assert.equal(label.className, "mineru-reader-toolbar-selection-label");
+    assert.equal(label.children[0].textContent, "复制已选内容");
+    assert.equal(label.children[1].className, "mineru-reader-toolbar-badge");
+    assert.equal(label.children[1].textContent, "3");
+
+    const actions = row.children[1] as HTMLDivElement & {
+      children: HTMLButtonElement[];
+    };
+    assert.equal(actions.className, "mineru-reader-toolbar-action-buttons");
+
+    const copyButton = actions.children[0];
+    assert.include(copyButton.className, "mineru-reader-toolbar-icon-command");
+    assert.include(copyButton.innerHTML, "currentColor");
+    assert.equal(copyButton.style.width, "24px");
+    assert.equal(copyButton.style.height, "24px");
+    assert.equal(copyButton.style.padding, "0");
+    assert.equal(copyButton.style.color, "var(--fill-secondary)");
+    assert.equal(copyButton.title, "复制已选内容");
+
+    const clearButton = actions.children[1];
+    assert.include(clearButton.className, "mineru-reader-toolbar-icon-command");
+    assert.include(clearButton.innerHTML, "currentColor");
+    assert.equal(clearButton.style.width, "24px");
+    assert.equal(clearButton.style.height, "24px");
+    assert.equal(clearButton.style.padding, "0");
+    assert.equal(clearButton.style.color, "var(--fill-secondary)");
+    assert.equal(clearButton.title, "清空选择");
   });
 
   it("creates active icon buttons for reader toolbar modes", function () {

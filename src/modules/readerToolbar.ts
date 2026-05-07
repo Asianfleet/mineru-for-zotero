@@ -68,10 +68,17 @@ const READER_TOOLBAR_MODE_ICON_PATHS: Record<ReaderOverlayMode, string> = {
   hover: "content/box-mode-hover.svg",
   off: "content/box-mode-off.svg",
 };
+const READER_TOOLBAR_CLEAR_SELECTION_ICON_PATH =
+  "content/box-action-clear-selection.svg";
+const READER_TOOLBAR_COPY_SELECTION_ICON_PATH =
+  "content/box-action-copy-selection.svg";
 let readerToolbarIconURI = "";
 const readerToolbarModeSVGs: Partial<Record<ReaderOverlayMode, string>> = {};
+let readerToolbarClearSelectionSVG = "";
+let readerToolbarCopySelectionSVG = "";
 let readerToolbarIconLoadPromise: Promise<void> | undefined;
 let readerToolbarModeIconLoadPromise: Promise<void> | undefined;
+let readerToolbarActionIconLoadPromise: Promise<void> | undefined;
 
 export function createReaderToolbarMenuState(): ReaderToolbarMenuState {
   let open = false;
@@ -409,6 +416,14 @@ export function setReaderToolbarModeIconSVG(
   readerToolbarModeSVGs[mode] = svg;
 }
 
+export function setReaderToolbarClearSelectionSVG(svg: string): void {
+  readerToolbarClearSelectionSVG = svg;
+}
+
+export function setReaderToolbarCopySelectionSVG(svg: string): void {
+  readerToolbarCopySelectionSVG = svg;
+}
+
 function setReaderToolbarIconButtonContent(
   button: HTMLButtonElement,
   doc: Document,
@@ -460,7 +475,9 @@ function setReaderToolbarInlineSVGButtonContent(
 function normalizeReaderToolbarModeSVG(svg: string): string {
   return svg
     .replace(/\sfill="#333333"/g, ' fill="currentColor"')
-    .replace(/\sfill="#333"/g, ' fill="currentColor"');
+    .replace(/\sfill="#333"/g, ' fill="currentColor"')
+    .replace(/\sstroke="#333333"/g, ' stroke="currentColor"')
+    .replace(/\sstroke="#333"/g, ' stroke="currentColor"');
 }
 
 export function createReaderToolbarIconDataURI(svg: string): string {
@@ -481,10 +498,16 @@ async function ensureReaderToolbarModeIconLoaded(): Promise<void> {
   await readerToolbarModeIconLoadPromise;
 }
 
+async function ensureReaderToolbarActionIconLoaded(): Promise<void> {
+  readerToolbarActionIconLoadPromise ??= loadReaderToolbarActionIconSVGs();
+  await readerToolbarActionIconLoadPromise;
+}
+
 async function ensureReaderToolbarAssetsLoaded(): Promise<void> {
   await Promise.all([
     ensureReaderToolbarIconLoaded(),
     ensureReaderToolbarModeIconLoaded(),
+    ensureReaderToolbarActionIconLoaded(),
   ]);
 }
 
@@ -528,6 +551,44 @@ async function loadReaderToolbarModeSVGs(): Promise<void> {
       }
     }),
   );
+}
+
+async function loadReaderToolbarActionIconSVGs(): Promise<void> {
+  await Promise.all([
+    loadReaderToolbarActionIconSVG(
+      "copy-selection",
+      READER_TOOLBAR_COPY_SELECTION_ICON_PATH,
+      setReaderToolbarCopySelectionSVG,
+    ),
+    loadReaderToolbarActionIconSVG(
+      "clear-selection",
+      READER_TOOLBAR_CLEAR_SELECTION_ICON_PATH,
+      setReaderToolbarClearSelectionSVG,
+    ),
+  ]);
+}
+
+async function loadReaderToolbarActionIconSVG(
+  action: string,
+  path: string,
+  setSVG: (svg: string) => void,
+): Promise<void> {
+  try {
+    const response = await fetch(rootURI + path);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    setSVG(await response.text());
+  } catch (error) {
+    emitReaderToolbarDiagnostic(
+      undefined,
+      "MinerU toolbar action icon load failed",
+      {
+        action,
+        error: errorMessage(error),
+      },
+    );
+  }
 }
 
 function errorMessage(error: unknown): string {
@@ -596,37 +657,161 @@ function updateMenu(
 
   const commandGroup = doc.createElement("div");
   commandGroup.className = "group";
-  commandGroup.style.gap = "8px";
-  commandGroup.append(
-    createReaderToolbarCommandButton(
-      doc,
-      readerString("reader-copy-selected-boxes", {
-        count: getReaderSelectedBoxCount(reader),
-      }),
-      () => {
-        runReaderToolbarCommand(reader, "copy-selected-boxes", () => {
-          return copySelectedBoxesForReader(reader);
-        });
-        updateMenu(reader, doc, menu, sync);
-        sync();
-      },
-    ),
-    createReaderToolbarCommandButton(
-      doc,
-      readerString("reader-clear-selection"),
-      () => {
-        runReaderToolbarCommand(reader, "clear-selection", () => {
-          clearReaderOverlaySelectionForReader(reader);
-          return renderReaderOverlayForReader(reader);
-        });
-        updateMenu(reader, doc, menu, sync);
-        sync();
-      },
-    ),
-  );
+  createReaderToolbarActionRow(doc, commandGroup, {
+    copyLabel: readerString("reader-copy-selected-boxes"),
+    selectedCount: getReaderSelectedBoxCount(reader),
+    copyIconSVG: readerToolbarCopySelectionSVG,
+    clearLabel: readerString("reader-clear-selection"),
+    clearIconSVG: readerToolbarClearSelectionSVG,
+    onCopy() {
+      runReaderToolbarCommand(reader, "copy-selected-boxes", () => {
+        return copySelectedBoxesForReader(reader);
+      });
+      updateMenu(reader, doc, menu, sync);
+      sync();
+    },
+    onClear() {
+      runReaderToolbarCommand(reader, "clear-selection", () => {
+        clearReaderOverlaySelectionForReader(reader);
+        return renderReaderOverlayForReader(reader);
+      });
+      updateMenu(reader, doc, menu, sync);
+      sync();
+    },
+  });
 
   menu.replaceChildren();
   menu.append(modeGroup, commandGroup);
+}
+
+export function createReaderToolbarActionRow(
+  doc: Document,
+  group: HTMLDivElement,
+  options: {
+    copyLabel: string;
+    selectedCount: number;
+    copyIconSVG: string;
+    clearLabel: string;
+    clearIconSVG: string;
+    onCopy: () => void;
+    onClear: () => void;
+  },
+): HTMLDivElement {
+  const row = doc.createElement("div");
+  row.className = "mineru-reader-toolbar-action-row";
+  row.style.display = "flex";
+  row.style.alignItems = "center";
+  row.style.justifyContent = "space-between";
+  row.style.gap = "8px";
+  row.style.width = "100%";
+
+  row.append(
+    createReaderToolbarSelectionLabel(
+      doc,
+      options.copyLabel,
+      options.selectedCount,
+    ),
+    createReaderToolbarActionButtons(doc, options),
+  );
+  group.append(row);
+  return row;
+}
+
+function createReaderToolbarSelectionLabel(
+  doc: Document,
+  label: string,
+  selectedCount: number,
+): HTMLDivElement {
+  const container = doc.createElement("div");
+  container.className = "mineru-reader-toolbar-selection-label";
+  container.style.display = "inline-flex";
+  container.style.alignItems = "center";
+  container.style.gap = "6px";
+  container.style.minWidth = "0";
+  container.style.padding = "0";
+
+  const text = doc.createElement("span");
+  text.textContent = label;
+
+  const badge = doc.createElement("span");
+  badge.className = "mineru-reader-toolbar-badge";
+  badge.textContent = String(selectedCount);
+  badge.style.display = "inline-flex";
+  badge.style.alignItems = "center";
+  badge.style.justifyContent = "center";
+  badge.style.minWidth = "16px";
+  badge.style.height = "16px";
+  badge.style.padding = "0 5px";
+  badge.style.borderRadius = "4px";
+  badge.style.background = "var(--fill-quinary, rgba(0, 0, 0, 0.08))";
+  badge.style.fontSize = "11px";
+  badge.style.lineHeight = "16px";
+  badge.style.fontWeight = "600";
+
+  container.append(text, badge);
+  return container;
+}
+
+function createReaderToolbarActionButtons(
+  doc: Document,
+  options: {
+    copyLabel: string;
+    copyIconSVG: string;
+    clearLabel: string;
+    clearIconSVG: string;
+    onCopy: () => void;
+    onClear: () => void;
+  },
+): HTMLDivElement {
+  const actions = doc.createElement("div");
+  actions.className = "mineru-reader-toolbar-action-buttons";
+  actions.style.display = "inline-flex";
+  actions.style.alignItems = "center";
+  actions.style.gap = "4px";
+  actions.append(
+    createReaderToolbarIconCommandButton(
+      doc,
+      options.copyLabel,
+      options.copyIconSVG,
+      options.onCopy,
+    ),
+    createReaderToolbarIconCommandButton(
+      doc,
+      options.clearLabel,
+      options.clearIconSVG,
+      options.onClear,
+    ),
+  );
+  return actions;
+}
+
+function createReaderToolbarIconCommandButton(
+  doc: Document,
+  label: string,
+  svg: string,
+  onCommand: () => void,
+): HTMLButtonElement {
+  const button = createReaderToolbarCommandButton(doc, "", onCommand);
+  button.className = "mineru-reader-toolbar-icon-command";
+  button.style.display = "inline-flex";
+  button.style.alignItems = "center";
+  button.style.justifyContent = "center";
+  button.style.width = "24px";
+  button.style.height = "24px";
+  button.style.padding = "0";
+  button.style.color = "var(--fill-secondary)";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+
+  setReaderToolbarInlineSVGButtonContent(button, label, svg);
+  const icon = button.firstElementChild as HTMLElement | null;
+  if (icon) {
+    icon.style.display = "block";
+    icon.style.width = "16px";
+    icon.style.height = "16px";
+    icon.style.pointerEvents = "none";
+  }
+  return button;
 }
 
 export function createReaderToolbarModeGroup(
@@ -712,7 +897,7 @@ export function createReaderToolbarCommandButton(
   button.style.display = "block";
   button.style.width = "100%";
   button.style.margin = "0";
-  button.style.padding = "0";
+  button.style.padding = "4px 8px";
   button.style.border = "0";
   button.style.borderRadius = "4px";
   button.style.background = "transparent";

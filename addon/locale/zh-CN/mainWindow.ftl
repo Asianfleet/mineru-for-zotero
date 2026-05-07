@@ -21,6 +21,6 @@ reader-mode-group-label = 模式
 reader-show-all-boxes = 显示全部 box
 reader-show-hover-box = 仅显示鼠标所在 box
 reader-disable-plugin = 关闭插件能力
-reader-copy-selected-boxes = 复制已选 box ({ $count })
+reader-copy-selected-boxes = 复制已选内容
 reader-clear-selection = 清空选择
 reader-overlay-missing-result = 当前 PDF 还没有可用的 MinerU 解析结果，请先解析后再开启 box
