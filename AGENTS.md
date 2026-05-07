@@ -77,6 +77,10 @@ restore unrelated formatting before final verification.
   runtime environment and console settings. For reader-toolbar or iframe click
   diagnostics, also emit to `Zotero.debug` and the relevant window
   `console.info`, and keep a visible UI state when possible.
+- For Zotero/Firefox prompt dialogs using `confirmEx`, treat dialog close,
+  Escape, and cancel-like positions as the non-destructive choice. Do not bind
+  button position 1 to destructive actions such as reparsing or overwriting,
+  because close/cancel behavior can return that position.
 - When reader overlay data is missing, do not rely on logs alone. Surface a
   user-facing notice, reset the overlay mode to `off`, and keep `boxes.normalized.json`
   in sync with `mineru-result.json` even when the box count does not change,

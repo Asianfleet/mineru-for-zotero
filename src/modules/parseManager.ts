@@ -50,6 +50,24 @@ export type ItemParseContext =
   | { kind: "regular"; item: Zotero.Item; attachments: Zotero.Item[] }
   | { kind: "unsupported"; item: Zotero.Item };
 
+type PromptService = {
+  BUTTON_TITLE_IS_STRING: number;
+  BUTTON_POS_0: number;
+  BUTTON_POS_1: number;
+  BUTTON_POS_1_DEFAULT?: number;
+  confirmEx: (
+    parent: Window,
+    title: string,
+    text: string,
+    buttonFlags: number,
+    button0Title: string,
+    button1Title: string,
+    button2Title: string | null,
+    checkMsg: string | null,
+    checkState: object,
+  ) => number;
+};
+
 export async function parseSelectedAttachment(options?: {
   force?: boolean;
 }): Promise<void> {
@@ -360,26 +378,38 @@ async function confirmReparse(): Promise<ReparseChoice> {
   const win = Zotero.getMainWindow();
   const prompt = getPromptService(win);
   if (prompt) {
-    const flags =
-      prompt.BUTTON_TITLE_IS_STRING * prompt.BUTTON_POS_0 +
-      prompt.BUTTON_TITLE_IS_STRING * prompt.BUTTON_POS_1;
+    const flags = getReparsePromptButtonFlags(prompt);
     const button = prompt.confirmEx(
       win,
       getString("parse-confirm-title"),
       getString("parse-confirm-reparse"),
       flags,
-      getString("parse-confirm-use-existing"),
       getString("parse-confirm-overwrite"),
+      getString("parse-confirm-use-existing"),
       null,
       null,
       {},
     );
-    return button === 1 ? "reparse" : "use-existing";
+    return resolveReparseChoiceFromPromptButton(button);
   }
 
   return win.confirm(getString("parse-confirm-reparse"))
     ? "reparse"
     : "use-existing";
+}
+
+function getReparsePromptButtonFlags(prompt: PromptService): number {
+  return (
+    prompt.BUTTON_TITLE_IS_STRING * prompt.BUTTON_POS_0 +
+    prompt.BUTTON_TITLE_IS_STRING * prompt.BUTTON_POS_1 +
+    (prompt.BUTTON_POS_1_DEFAULT ?? 0)
+  );
+}
+
+export function resolveReparseChoiceFromPromptButton(
+  button: number,
+): ReparseChoice {
+  return button === 0 ? "reparse" : "use-existing";
 }
 
 function showMessage(id: FluentMessageId, args?: Record<string, string>): void {
@@ -512,22 +542,7 @@ function getSafeMessageText(
   }
 }
 
-function getPromptService(win: Window): {
-  BUTTON_TITLE_IS_STRING: number;
-  BUTTON_POS_0: number;
-  BUTTON_POS_1: number;
-  confirmEx: (
-    parent: Window,
-    title: string,
-    text: string,
-    buttonFlags: number,
-    button0Title: string,
-    button1Title: string,
-    button2Title: string | null,
-    checkMsg: string | null,
-    checkState: object,
-  ) => number;
-} | null {
+function getPromptService(win: Window): PromptService | null {
   const runtime = globalThis as typeof globalThis & {
     Services?: { prompt?: unknown };
   };
@@ -541,7 +556,7 @@ function getPromptService(win: Window): {
   ) {
     return null;
   }
-  return prompt as ReturnType<typeof getPromptService>;
+  return prompt as PromptService;
 }
 
 function basename(path: string): string {

@@ -1,6 +1,7 @@
 import { assert } from "chai";
 import {
   createParseManager,
+  resolveReparseChoiceFromPromptButton,
   type ParseManagerDependencies,
 } from "../src/modules/parseManager";
 import {
@@ -10,6 +11,11 @@ import {
 import { normalizedBoxes } from "./domainFixtures";
 
 describe("parseManager", function () {
+  it("treats prompt close and cancel position as use-existing", function () {
+    assert.equal(resolveReparseChoiceFromPromptButton(1), "use-existing");
+    assert.equal(resolveReparseChoiceFromPromptButton(0), "reparse");
+  });
+
   it("resolves a selected regular item to all of its PDF attachments", async function () {
     const pdfA = pdfAttachment({ id: 1, fileName: "a.pdf" });
     const textAttachment = {
