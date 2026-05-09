@@ -34,6 +34,7 @@ export interface ReaderOverlayPositioningControllerOptions {
   win: Window;
   root: HTMLDivElement;
   reposition: () => void;
+  selectionOptions?: ReaderOverlaySelectionOptions;
   intervalMS?: number;
 }
 
@@ -78,17 +79,26 @@ const READER_OVERLAY_CSS = `
   pointer-events: none;
 }
 
+.mineru-copy-overlay-modifier-active .mineru-copy-page-layer {
+  pointer-events: auto;
+}
+
 .mineru-copy-box {
   position: absolute;
   box-sizing: border-box;
   border: 1px solid rgba(33, 99, 235, 0.9);
   background: transparent;
+  pointer-events: none;
+}
+
+.mineru-copy-overlay-modifier-active .mineru-copy-box {
   pointer-events: auto;
 }
 
-.mineru-copy-box:hover {
+.mineru-copy-box:hover,
+.mineru-copy-box-hovered {
   background: rgba(64, 156, 255, 0.18);
-  z-index: 10;
+  z-index: 2147483001;
 }
 
 .mineru-copy-box-selected {
@@ -103,7 +113,8 @@ const READER_OVERLAY_CSS = `
   background: transparent;
 }
 
-.mineru-copy-mode-hover .mineru-copy-box:hover {
+.mineru-copy-mode-hover .mineru-copy-box:hover,
+.mineru-copy-mode-hover .mineru-copy-box-hovered {
   opacity: 1;
   border-color: rgba(33, 99, 235, 0.9);
   background: rgba(64, 156, 255, 0.18);
@@ -120,11 +131,13 @@ const READER_OVERLAY_CSS = `
   display: none;
 }
 
-.mineru-copy-box:hover .mineru-copy-box-label {
+.mineru-copy-box:hover .mineru-copy-box-label,
+.mineru-copy-box-hovered .mineru-copy-box-label {
   display: block;
 }
 
-.mineru-copy-box:hover .mineru-copy-box-actions {
+.mineru-copy-box:hover .mineru-copy-box-actions,
+.mineru-copy-box-hovered .mineru-copy-box-actions {
   display: flex;
 }
 
@@ -301,6 +314,7 @@ export async function renderReaderOverlayForReader(
       continue;
     }
 
+    const mountContainer = getReaderOverlayMountContainer(doc);
     const root = buildReaderOverlayRoot(doc, boxes, mode, {
       selectedRawIndexes: state.selectedRawIndexes,
       getSelectionAnchorRawIndex: () => state.selectionAnchorRawIndex,
@@ -311,12 +325,25 @@ export async function renderReaderOverlayForReader(
     });
     ensureReaderOverlayStyles(doc);
     positionPageLayers(doc, root);
-    getReaderOverlayMountContainer(doc)?.append(root);
+    mountContainer?.append(root);
     const cleanup = createReaderOverlayPositioningController({
       doc,
       win,
       root,
       reposition: () => positionPageLayers(doc, root),
+      selectionOptions: {
+        selectedRawIndexes: state.selectedRawIndexes,
+        selectableRawIndexes:
+          root.dataset.selectableRawIndexes
+            ?.split(",")
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value)) ?? [],
+        getSelectionAnchorRawIndex: () => state.selectionAnchorRawIndex,
+        setSelectionAnchorRawIndex: (rawIndex) => {
+          state.selectionAnchorRawIndex = rawIndex;
+        },
+        onSelectionChange: () => syncSelectedBoxClasses(state),
+      },
     }).cleanup;
     state.rootsByWindow.set(win, root);
     state.cleanupPositioningByWindow.set(win, cleanup);
@@ -419,15 +446,49 @@ export function getReaderOverlayWindows(
   for (const view of getReaderViews(reader)) {
     const win = view?._iframeWindow ?? null;
     if (win) {
-      windows.add(win);
+      addReaderOverlayWindowWithDescendants(windows, win);
     }
   }
 
   if (reader._iframeWindow) {
-    windows.add(reader._iframeWindow);
+    addReaderOverlayWindowWithDescendants(windows, reader._iframeWindow);
   }
 
   return [...windows];
+}
+
+function addReaderOverlayWindowWithDescendants(
+  windows: Set<Window>,
+  win: Window,
+): void {
+  if (windows.has(win)) {
+    return;
+  }
+  windows.add(win);
+
+  const doc = getWindowDocument(win);
+  const frames =
+    typeof doc?.querySelectorAll === "function"
+      ? (Array.from(doc.querySelectorAll("iframe, frame")) as Element[])
+      : [];
+  for (const frame of frames) {
+    const childWindow = getFrameContentWindow(frame);
+    if (childWindow) {
+      addReaderOverlayWindowWithDescendants(windows, childWindow);
+    }
+  }
+}
+
+function getFrameContentWindow(frame: Element): Window | null {
+  try {
+    const win = (frame as HTMLIFrameElement | HTMLFrameElement).contentWindow;
+    if (!win?.document?.documentElement) {
+      return null;
+    }
+    return win;
+  } catch {
+    return null;
+  }
 }
 
 function getReaderViews(
@@ -523,6 +584,7 @@ export function buildReaderOverlayRoot(
     root.append(layer);
   }
   selectionOptions.selectableRawIndexes = selectableRawIndexes;
+  root.dataset.selectableRawIndexes = selectableRawIndexes.join(",");
 
   return root;
 }
@@ -544,7 +606,9 @@ export function createReaderOverlayPositioningController(
 ): ReaderOverlayPositioningController {
   let scheduledHandle: number | null = null;
   let intervalHandle: number | null = null;
+  let blurCleanupHandle: number | null = null;
   let cleaned = false;
+  let modifierActive = false;
   const scrollContainer = getPrimaryScrollContainer(options.doc);
 
   const schedule = () => {
@@ -581,6 +645,41 @@ export function createReaderOverlayPositioningController(
     capture: true,
     passive: false,
   });
+  const eventWindows = getReaderOverlayEventWindows(options.win);
+  for (const eventWindow of eventWindows) {
+    eventWindow.addEventListener("keydown", onModifierKeyChange);
+    eventWindow.addEventListener("keyup", onModifierKeyChange);
+    eventWindow.addEventListener("blur", onWindowBlur);
+    eventWindow.addEventListener("pointerdown", onReaderModifiedDown, {
+      capture: true,
+      passive: false,
+    });
+    eventWindow.addEventListener("mousedown", onReaderModifiedDown, {
+      capture: true,
+      passive: false,
+    });
+  }
+  options.win.addEventListener("mousemove", onMouseMove);
+  options.win.addEventListener("pointermove", onMouseMove);
+  const readerDocumentEventTarget = isEventTarget(options.doc)
+    ? options.doc
+    : null;
+  readerDocumentEventTarget?.addEventListener(
+    "pointerdown",
+    onReaderModifiedDown,
+    {
+      capture: true,
+      passive: false,
+    },
+  );
+  readerDocumentEventTarget?.addEventListener(
+    "mousedown",
+    onReaderModifiedDown,
+    {
+      capture: true,
+      passive: false,
+    },
+  );
   for (const container of scrollContainers) {
     container.addEventListener("scroll", schedule, true);
   }
@@ -604,6 +703,55 @@ export function createReaderOverlayPositioningController(
       safeReaderOverlayCleanup(() =>
         options.win.removeEventListener("wheel", onWheel, true),
       );
+      for (const eventWindow of eventWindows) {
+        safeReaderOverlayCleanup(() =>
+          eventWindow.removeEventListener("keydown", onModifierKeyChange),
+        );
+        safeReaderOverlayCleanup(() =>
+          eventWindow.removeEventListener("keyup", onModifierKeyChange),
+        );
+        safeReaderOverlayCleanup(() =>
+          eventWindow.removeEventListener("blur", onWindowBlur),
+        );
+        safeReaderOverlayCleanup(() =>
+          eventWindow.removeEventListener(
+            "pointerdown",
+            onReaderModifiedDown,
+            true,
+          ),
+        );
+        safeReaderOverlayCleanup(() =>
+          eventWindow.removeEventListener(
+            "mousedown",
+            onReaderModifiedDown,
+            true,
+          ),
+        );
+      }
+      safeReaderOverlayCleanup(() =>
+        options.win.removeEventListener("mousemove", onMouseMove),
+      );
+      safeReaderOverlayCleanup(() =>
+        options.win.removeEventListener("pointermove", onMouseMove),
+      );
+      if (readerDocumentEventTarget) {
+        safeReaderOverlayCleanup(() =>
+          readerDocumentEventTarget.removeEventListener(
+            "pointerdown",
+            onReaderModifiedDown,
+            true,
+          ),
+        );
+        safeReaderOverlayCleanup(() =>
+          readerDocumentEventTarget.removeEventListener(
+            "mousedown",
+            onReaderModifiedDown,
+            true,
+          ),
+        );
+      }
+      setOverlayModifierActive(options.root, false);
+      setHoveredBox(options.root, null);
       for (const container of scrollContainers) {
         safeReaderOverlayCleanup(() =>
           container.removeEventListener("scroll", schedule, true),
@@ -613,6 +761,11 @@ export function createReaderOverlayPositioningController(
         const handle = intervalHandle;
         safeReaderOverlayCleanup(() => options.win.clearInterval(handle));
         intervalHandle = null;
+      }
+      if (blurCleanupHandle !== null) {
+        const handle = blurCleanupHandle;
+        safeReaderOverlayCleanup(() => options.win.clearTimeout(handle));
+        blurCleanupHandle = null;
       }
 
       if (scheduledHandle === null) {
@@ -656,6 +809,89 @@ export function createReaderOverlayPositioningController(
       event.deltaMode,
     );
   }
+
+  function onModifierKeyChange(event: Event): void {
+    if (cleaned) {
+      return;
+    }
+
+    const keyEvent = event as KeyboardEvent;
+    const active = keyEvent.shiftKey || keyEvent.ctrlKey;
+    clearPendingModifierBlurCleanup();
+    modifierActive = active;
+    setOverlayModifierActive(options.root, active);
+  }
+
+  function onWindowBlur(): void {
+    if (!modifierActive) {
+      setOverlayModifierActive(options.root, false);
+      setHoveredBox(options.root, null);
+    } else {
+      scheduleModifierBlurCleanup();
+    }
+  }
+
+  function onMouseMove(event: Event): void {
+    if (cleaned) {
+      return;
+    }
+
+    const mouseEvent = event as MouseEvent;
+    clearPendingModifierBlurCleanup();
+    modifierActive = mouseEvent.shiftKey || mouseEvent.ctrlKey;
+    setOverlayModifierActive(options.root, modifierActive);
+    setHoveredBox(
+      options.root,
+      findBoxAtPoint(options.root, mouseEvent.clientX, mouseEvent.clientY),
+    );
+  }
+
+  function onReaderModifiedDown(event: Event): void {
+    const mouseEvent = event as MouseEvent;
+    if (!mouseEvent.shiftKey && !mouseEvent.ctrlKey) {
+      return;
+    }
+    if (mouseEvent.button !== undefined && mouseEvent.button !== 0) {
+      return;
+    }
+
+    const box = findBoxAtPoint(
+      options.root,
+      mouseEvent.clientX,
+      mouseEvent.clientY,
+    );
+    if (!box) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+    applyReaderOverlayBoxSelectionFromElement(
+      box,
+      mouseEvent.shiftKey,
+      options.selectionOptions,
+    );
+  }
+
+  function scheduleModifierBlurCleanup(): void {
+    clearPendingModifierBlurCleanup();
+    blurCleanupHandle = options.win.setTimeout(() => {
+      blurCleanupHandle = null;
+      modifierActive = false;
+      setOverlayModifierActive(options.root, false);
+      setHoveredBox(options.root, null);
+    }, 250);
+  }
+
+  function clearPendingModifierBlurCleanup(): void {
+    if (blurCleanupHandle === null) {
+      return;
+    }
+    const handle = blurCleanupHandle;
+    blurCleanupHandle = null;
+    options.win.clearTimeout(handle);
+  }
 }
 
 function cleanupReaderOverlayRoot(state: ReaderOverlayState): void {
@@ -698,17 +934,179 @@ function syncSelectedBoxClasses(state: ReaderOverlayState): void {
 }
 
 function setBoxSelectedClass(element: HTMLElement, selected: boolean): void {
-  const selectedClass = "mineru-copy-box-selected";
-  if (element.classList) {
-    element.classList.toggle(selectedClass, selected);
+  setElementClass(element, "mineru-copy-box-selected", selected);
+}
+
+function setOverlayModifierActive(element: HTMLElement, active: boolean): void {
+  setElementClass(element, "mineru-copy-overlay-modifier-active", active);
+}
+
+function setHoveredBox(
+  root: HTMLElement,
+  hoveredBox: HTMLElement | null,
+): void {
+  for (const element of getBoxElements(root)) {
+    setElementClass(element, "mineru-copy-box-hovered", element === hoveredBox);
+  }
+}
+
+function findBoxAtPoint(
+  root: HTMLElement,
+  clientX: number,
+  clientY: number,
+): HTMLElement | null {
+  const boxes = getBoxElements(root);
+  const hoveredBox = boxes.find((box) =>
+    box.className.split(/\s+/).includes("mineru-copy-box-hovered"),
+  );
+  const hoveredRect = hoveredBox?.getBoundingClientRect?.();
+  if (
+    hoveredBox &&
+    hoveredRect &&
+    isPointInBoxActionsHoverArea(hoveredBox, hoveredRect, clientX, clientY)
+  ) {
+    return hoveredBox;
+  }
+
+  for (let index = boxes.length - 1; index >= 0; index -= 1) {
+    const box = boxes[index];
+    const rect = box.getBoundingClientRect?.();
+    if (rect && isPointInRect(clientX, clientY, rect)) {
+      return box;
+    }
+  }
+  return null;
+}
+
+function isPointInBoxActionsHoverArea(
+  box: HTMLElement,
+  rect: DOMRect,
+  clientX: number,
+  clientY: number,
+): boolean {
+  const actions = getBoxActionsElement(box);
+  const actionsRect = actions?.getBoundingClientRect?.() ?? null;
+  if (!actionsRect) {
+    return (
+      clientX >= rect.left &&
+      clientX <= rect.right &&
+      clientY >= rect.bottom &&
+      clientY <= rect.bottom + 36
+    );
+  }
+
+  if (isPointInRect(clientX, clientY, actionsRect)) {
+    return true;
+  }
+
+  return (
+    clientX >= actionsRect.left &&
+    clientX <= actionsRect.right &&
+    clientY >= Math.min(rect.bottom, actionsRect.top) &&
+    clientY <= Math.max(rect.bottom, actionsRect.top)
+  );
+}
+
+function isPointInRect(
+  clientX: number,
+  clientY: number,
+  rect: DOMRect,
+): boolean {
+  return (
+    clientX >= rect.left &&
+    clientX <= rect.right &&
+    clientY >= rect.top &&
+    clientY <= rect.bottom
+  );
+}
+
+function getBoxActionsElement(box: HTMLElement): HTMLElement | null {
+  const querySelector = box.querySelector?.bind(box);
+  if (querySelector) {
+    return querySelector(".mineru-copy-box-actions") as HTMLElement | null;
+  }
+
+  const querySelectorAll = box.querySelectorAll?.bind(box);
+  const firstAction = querySelectorAll?.(".mineru-copy-box-actions")[0] as
+    | HTMLElement
+    | undefined;
+  return firstAction ?? null;
+}
+
+function getBoxElements(root: HTMLElement): HTMLElement[] {
+  if (typeof root.querySelectorAll !== "function") {
+    return [];
+  }
+  return Array.from(root.querySelectorAll(".mineru-copy-box")) as HTMLElement[];
+}
+
+function applyReaderOverlayBoxSelectionFromElement(
+  element: HTMLElement,
+  rangeSelection: boolean,
+  selectionOptions: ReaderOverlaySelectionOptions | undefined,
+): void {
+  const selectedRawIndexes = selectionOptions?.selectedRawIndexes;
+  if (!selectedRawIndexes) {
     return;
   }
 
-  const classes = new Set(element.className.split(/\s+/).filter(Boolean));
-  if (selected) {
-    classes.add(selectedClass);
+  const rawIndex = Number(element.dataset.rawIndex);
+  if (!Number.isFinite(rawIndex)) {
+    return;
+  }
+
+  if (rangeSelection) {
+    selectBoxRange(rawIndex, selectionOptions);
+  } else if (selectedRawIndexes.has(rawIndex)) {
+    selectedRawIndexes.delete(rawIndex);
   } else {
-    classes.delete(selectedClass);
+    selectedRawIndexes.add(rawIndex);
+  }
+  selectionOptions.setSelectionAnchorRawIndex?.(rawIndex);
+  setBoxSelectedClass(element, selectedRawIndexes.has(rawIndex));
+  selectionOptions.onSelectionChange?.();
+}
+
+function getReaderOverlayEventWindows(win: Window): Window[] {
+  const windows = new Set<Window>();
+  let current: Window | null = win;
+  while (current && !windows.has(current)) {
+    windows.add(current);
+    const parent = getParentWindow(current);
+    if (!parent || parent === current) {
+      break;
+    }
+    current = parent;
+  }
+  return [...windows];
+}
+
+function isEventTarget(value: unknown): value is EventTarget {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    typeof (value as EventTarget).addEventListener === "function" &&
+    typeof (value as EventTarget).removeEventListener === "function"
+  );
+}
+
+function setElementClass(
+  element: HTMLElement,
+  className: string,
+  enabled: boolean,
+): void {
+  if (element.classList) {
+    element.classList.toggle(className, enabled);
+    return;
+  }
+
+  const currentClassName =
+    typeof element.className === "string" ? element.className : "";
+  const classes = new Set(currentClassName.split(/\s+/).filter(Boolean));
+  if (enabled) {
+    classes.add(className);
+  } else {
+    classes.delete(className);
   }
   element.className = [...classes].join(" ");
 }
@@ -763,16 +1161,18 @@ function getPrimaryScrollContainer(doc: Document): Element | null {
 }
 
 export function ensureReaderOverlayStyles(doc: Document): void {
-  const textContent = `${createReaderOverlayThemeCss(doc)}${READER_OVERLAY_CSS}`;
-  const existing = doc.getElementById(READER_OVERLAY_STYLE_ID);
-  if (existing) {
-    existing.textContent = textContent;
+  const css = `${createReaderOverlayThemeCss(doc)}${READER_OVERLAY_CSS}`;
+  const existingStyle = doc.getElementById(READER_OVERLAY_STYLE_ID);
+  if (existingStyle) {
+    if (existingStyle.textContent !== css) {
+      existingStyle.textContent = css;
+    }
     return;
   }
 
   const style = doc.createElement("style");
   style.id = READER_OVERLAY_STYLE_ID;
-  style.textContent = textContent;
+  style.textContent = css;
   doc.head?.append(style);
 }
 
@@ -896,6 +1296,15 @@ function createBoxElement(
     element,
     selectionOptions.selectedRawIndexes?.has(box.rawIndex) ?? false,
   );
+  element.addEventListener("mousedown", (event) => {
+    const mouseEvent = event as MouseEvent;
+    if (!mouseEvent.shiftKey && !mouseEvent.ctrlKey) {
+      return;
+    }
+
+    mouseEvent.preventDefault();
+    mouseEvent.stopPropagation();
+  });
   element.addEventListener("click", (event) => {
     const mouseEvent = event as MouseEvent;
     if (!mouseEvent.shiftKey && !mouseEvent.ctrlKey) {
@@ -1239,7 +1648,7 @@ export function findPageElement(
 }
 
 function getReaderOverlayMountContainer(doc: Document): Element | null {
-  return getReaderScrollContainers(doc)[0] ?? doc.body ?? doc.documentElement;
+  return doc.body ?? doc.documentElement;
 }
 
 function forwardWheelToUnderlyingElement(

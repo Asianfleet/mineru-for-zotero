@@ -10,17 +10,26 @@
   pointer-events: none;
 }
 
+.mineru-copy-overlay-modifier-active .mineru-copy-page-layer {
+  pointer-events: auto;
+}
+
 .mineru-copy-box {
   position: absolute;
   box-sizing: border-box;
   border: 1px solid rgba(33, 99, 235, 0.9);
   background: transparent;
+  pointer-events: none;
+}
+
+.mineru-copy-overlay-modifier-active .mineru-copy-box {
   pointer-events: auto;
 }
 
-.mineru-copy-box:hover {
+.mineru-copy-box:hover,
+.mineru-copy-box-hovered {
   background: rgba(64, 156, 255, 0.18);
-  z-index: 10;
+  z-index: 2147483001;
 }
 
 .mineru-copy-box-selected {
@@ -35,7 +44,8 @@
   background: transparent;
 }
 
-.mineru-copy-mode-hover .mineru-copy-box:hover {
+.mineru-copy-mode-hover .mineru-copy-box:hover,
+.mineru-copy-mode-hover .mineru-copy-box-hovered {
   opacity: 1;
   border-color: rgba(33, 99, 235, 0.9);
   background: rgba(64, 156, 255, 0.18);
@@ -52,11 +62,13 @@
   display: none;
 }
 
-.mineru-copy-box:hover .mineru-copy-box-label {
+.mineru-copy-box:hover .mineru-copy-box-label,
+.mineru-copy-box-hovered .mineru-copy-box-label {
   display: block;
 }
 
-.mineru-copy-box:hover .mineru-copy-box-actions {
+.mineru-copy-box:hover .mineru-copy-box-actions,
+.mineru-copy-box-hovered .mineru-copy-box-actions {
   display: flex;
 }
 
