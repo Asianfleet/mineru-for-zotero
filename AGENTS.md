@@ -86,6 +86,12 @@ restore unrelated formatting before final verification.
   in sync with `mineru-result.json` even when the box count does not change,
   otherwise newly supported MinerU types like captions, headers, and footnotes
   can stay hidden in already-parsed PDFs.
+- For Zotero/PDF.js reader overlays, mount the overlay root on the reader
+  document `body` or `documentElement`, not on `#viewerContainer`, `.pdfViewer`,
+  or other PDF.js internal scroll containers. The internal containers may report
+  connected overlay nodes and normal page counts while still preventing
+  pointer/mouse events from reaching the overlay logic reliably. Use the PDF.js
+  containers for scroll observation and wheel forwarding only.
 
 ## Commit & Pull Request Guidelines
 

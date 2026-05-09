@@ -6,18 +6,46 @@ Zotero/PDF.js 原生文字选区或拖选视觉状态的问题。记录目标是
 
 ## 问题现象
 
-- 按住 Shift 点击 overlay box 进行多选时，会触发类似 PDF 文字选中的视觉状态。
-- Ctrl 点击没有触发同样的选择问题，但拖动时也会触发多选相关状态。
-- 用户补充的关键现象：Shift 点击一次后，如果不点击外部，似乎会持续处于
-  “选中/拖选”状态；即使鼠标左键已经松开，移动鼠标仍可选中新内容。
-- 提交 `5844a78014d537546d94f991d23ecf912741cb74` 正式引入 box 多选。
-  在此之前，box 会覆盖下层内容，不能划选底层文字。
+- 默认状态下，overlay box 不能遮挡底层 PDF 文字，鼠标应能直接拖动划选文字。
+- 按住 `Shift` 或 `Ctrl` 时，overlay box 要恢复旧逻辑，接管鼠标命中，用于
+  box 多选和复制操作。
+- 曾出现的问题是：按住 `Shift` 点击 box 后，PDF.js 仍进入类似文字拖选的视觉
+  状态，box 多选和底层文字选择互相干扰。
+- 旧提交 `f46c934c02a361cef4ca594a9c8fa07422c1617d` 中 box 直接覆盖底层文字，
+  鼠标不能划选底层文字；这个旧行为可作为 modifier 模式的参考。
 
-## 已采集到的关键证据
+## 最终结论
 
-### 1. DOM Selection 不是当前直接证据
+最终根因不是 DOM Selection、`.textLayer` CSS、`pointerdown.defaultPrevented`
+或继续扩大 capture guard，而是 overlay root 的挂载位置。
 
-多轮日志中，box 事件里的 `documentSelection` 均为：
+旧可工作逻辑把 overlay root 直接挂到 reader document 的 `body`：
+
+```ts
+doc.body?.append(root);
+```
+
+后续实现改成优先挂到 PDF.js 内部 scroll container，例如 `#viewerContainer` 或
+`.pdfViewer`。真实 Zotero/PDF.js reader 中，即使 overlay root 已渲染、已连接、
+pageCount 正常，如果 root 挂在 PDF.js 内部容器下，pointer/mouse down 仍可能不按
+预期进入我们的 overlay/window/document 处理链，导致 Shift 多选无法稳定恢复旧的
+遮挡逻辑。
+
+修复方式：
+
+- overlay root 挂载位置恢复为 `doc.body ?? doc.documentElement`。
+- `#viewerContainer` 等 scroll container 只用于滚动定位、滚轮转发等用途，不作为
+  overlay root 的首选挂载父节点。
+- 保留 modifier 状态下才启用 `.mineru-copy-box` / `.mineru-copy-page-layer`
+  `pointer-events: auto` 的行为；默认状态仍让鼠标事件穿透到底层 PDF。
+- 保留 reader window/document capture 下按坐标命中 box 的兜底选择逻辑，用于处理
+  keydown 遗漏或跨 iframe/window 的事件状态。
+
+## 已排除路径
+
+### DOM Selection
+
+多轮日志中，box 事件里的 `document.getSelection()` 基本都是：
 
 - `type: "None"`
 - `isCollapsed: true`
@@ -26,227 +54,78 @@ Zotero/PDF.js 原生文字选区或拖选视觉状态的问题。记录目标是
 - `focusNode: null`
 - `textLength: 0`
 
-这说明通过 `document.getSelection()` 观察不到真实 Range。继续只围绕
-`removeAllRanges()` 修复，证据不足。
+因此继续围绕 `removeAllRanges()` 修复证据不足。PDF.js 的视觉拖选状态不一定体现为
+普通 DOM Selection Range。
 
-### 2. CSS 注入和 `.textLayer` selector 已被验证
+### `.textLayer` CSS 和 hit-test
 
-新增 DOM 诊断后，日志证明：
+曾验证 overlay root 与 text layer 在同一个 reader document，CSS 注入正常，
+`.textLayer`、`.page`、`.pdfViewer` selector 都能命中。
 
-- overlay root 和 text layer 在同一个 reader document。
-- `styleElementPresent: true`，style 已注入到 `head`。
-- `documentElement` 存在 `mineru-copy-overlay-mounted`。
-- 多选后存在 `mineru-copy-box-selection-active`。
-- `selectorCounts` 能找到 `.textLayer`、`.textLayer *`、`.page`、
-  `.pdfViewer`。
+也尝试过对 `.textLayer` / `.textLayer *` 增加 `user-select: none` 和
+`pointer-events: none`。后续日志显示隐藏 overlay 后的 underlying 从 text layer
+span 变成 canvas，但问题仍可复现。因此 text layer hit-test 不是最终根因。
 
-早期日志里，隐藏 overlay 后的 `elementFromPoint` 显示 `underlying` 是
-`.textLayer` 下的 `span`，且：
+### box/root 局部 preventDefault
 
-- `underlyingStyle.userSelect: "none"`
-- `underlyingStyle.mozUserSelect: "none"`
-- `underlyingStyle.pointerEvents: "auto"`
+box/root 局部事件处理器确实能执行 `preventDefault()`，但这只说明事件已经到达
+overlay。若 PDF.js 在更早的窗口、document 或内部容器事件链中处理 pointer/mouse
+状态，局部处理会太晚。
 
-因此增加了 `.textLayer` / `.textLayer *` 的
-`pointer-events: none !important`。后续日志显示 `underlying` 已变成
-`canvas`，说明 text layer hit-test 已被排除为当前剩余问题。
+### 继续扩大 capture guard
 
-### 3. overlay box/root 阶段 preventDefault 太晚
+reader window/document capture guard 对阻断部分事件有帮助，也修复过 release
+事件被吞后持续处于拖选状态的问题。但最终实测显示，仅扩大 capture guard 不能解决
+“事件没有进入我们的处理链”的场景。
 
-日志证明 box 事件处理器中 `mousedown`、`mousemove`、`mouseup` 等确实执行了
-`preventDefault()`。但这只能说明事件到达 overlay box 后被处理，不能证明
-Zotero/PDF.js 在更早的 `window/document` capture 阶段没有先处理。
+这类场景应优先检查：
 
-后来加入 reader `window/document` capture guard 后，日志出现：
+- overlay root 是否真的挂到 reader document 的 `body`；
+- 是否只挂到了 PDF.js 内部 scroll container；
+- 多 pane / nested iframe 下是否渲染到了实际 PDF.js viewer document。
 
-- `captureGuard: "reader-document"`
-- `eventType: "mousedown"` 时 `defaultPrevented: true`
-- `selectedRawIndexes` 随后变为 `[122]`
+## 保留行为
 
-这说明 document 级 capture guard 确实能先于 overlay root/box 运行。
+当前应保留的关键行为：
 
-### 4. release 事件被吞的问题已单独修正
-
-一轮日志显示：`pointerup` / `mouseup` 在 document capture guard 中被
-`stopImmediatePropagation` 吞掉，之后无按键 `mousemove` 仍因
-`selectedRawIndexes: [122]` 被持续拦截。这与“松手后仍像处于拖选状态”的
-现象吻合。
-
-对应修正：
-
-- `pointerup` / `mouseup` 仍执行 `preventDefault()` 和清理 selection，但不再
-  `stopPropagation()` / `stopImmediatePropagation()`。
-- `mousemove` / `pointermove` 只有在 `buttons != 0` 时才按拖拽 guard 处理。
-  `selectedRawIndexes.size > 0` 只表示已有 box 被选中，不能单独说明鼠标仍在
-  拖拽。
-
-后续日志已验证：
-
-- release 事件出现 `allowReaderRelease: true`。
-- 松手后 `buttons: 0` 的 `mousemove` 不再刷
-  `captureGuard: "reader-document"`，且 `defaultPrevented: false`。
-
-因此，“release 被我们吞掉”已不是当前剩余问题。
-
-### 5. `pointermove` 已补入 guard，但最新日志显示多为松手移动
-
-曾发现真实复现中存在 pointer event 链，而代码只覆盖了 `mousemove`，缺少
-`pointermove`。因此已把 `pointermove` 加入：
-
-- root/box 事件日志。
-- root/box selection guard。
-- document/window capture guard。
-- `isBoxSelectionGuardEvent()` 的拖拽判断。
-
-最新日志中确实出现 `pointermove`，但多为：
-
-- `buttons: 0`
-- `defaultPrevented: false`
-- `eventPhase: 2`
-
-这类事件按当前逻辑不应被吞。需要继续区分“正常松手移动”和“真正按键拖动”。
-
-### 6. `click` capture 漏口已补
-
-最新日志显示 `click` 到达 box handler 前仍是：
-
-- `eventType: "click"`
-- `defaultPrevented: false`
-- `shiftKey: true`
-
-此前 document/window capture guard 没有监听 `click`，因此 reader/PDF.js 的
-capture click handler 仍可能先看到 Shift-click。已把 `click` 加入
-document/window capture guard，并增加回归测试覆盖。
-
-### 7. 当前最值得解释的异常：`pointerdown.defaultPrevented`
-
-最新日志里最异常的点是：
-
-- `pointerdown` 已进入 `captureGuard: "reader-document"`。
-- 但日志里的 `defaultPrevented` 仍为 `false`。
-- 同一轮 `mousedown.defaultPrevented` 为 `true`。
-
-当前代码是在 `preventDefault()` 之后记录 `defaultPrevented`，因此这不是单纯的
-日志顺序问题。已新增诊断字段：
-
-- `beforePreventDefault`
-- `afterPreventDefault`
-- `cancelBubble`
-- `eventPhase`
-- `composedPath`
-- `domState.eventComposedPath`
-
-下一轮日志需要确认 `pointerdown` 上 `preventDefault()` 是否真的未生效，还是
-事件路径/监听顺序仍让 PDF.js 更早处理了 pointerdown。
-
-## 已尝试方案与结论
-
-### CSS 禁止 text layer 选中和 hit-test
-
-做法：
-
-- overlay root、page layer、box 设置 `user-select: none`。
-- reader document 添加 `mineru-copy-overlay-mounted` 和
-  `mineru-copy-box-selection-active`。
-- 对 `.textLayer` 和 `.textLayer *` 设置 `user-select: none !important`。
-- 对 `.textLayer` 和 `.textLayer *` 设置 `pointer-events: none !important`。
-
-结论：
-
-- CSS 命中并生效。
-- `underlying` 已从 text layer span 变成 canvas。
-- 用户仍可复现，因此 text layer hit-test 不是当前剩余根因。
-
-### box/root 局部事件拦截
-
-做法：
-
-- 在 root 和 box 上捕获 `pointerdown`、`pointermove`、`mousedown`、
-  `mousemove`、`pointerup`、`mouseup`、`selectstart`。
-- 对 Shift 或 active selection 下的真实拖拽事件执行 `preventDefault()`。
-- 清理 `document.getSelection()`。
-
-结论：
-
-- 日志证明 box/root 处理器确实执行。
-- 但 reader 的 `window/document` capture handler 可能更早运行。
-- 局部拦截只能作为辅助保护。
-
-### reader window/document capture guard
-
-做法：
-
-- 对 reader `window` 和 `document` 安装 capture 阶段 guard。
-- 处理目标位于 overlay root 内的 Shift/Ctrl 或 active-selection 拖拽事件。
-- 在 `mousedown` 阶段完成 box selection，`click` 阶段只消费和去重。
-- 放行 `pointerup` / `mouseup` 给 reader。
-- `click` 也加入 document/window capture guard。
-
-结论：
-
-- `mousedown` 已能提前完成 selection。
-- release 不再被吞。
-- `click` 漏口已补。
-- 当前仍需解释 `pointerdown.defaultPrevented: false`。
-
-## 当前工作假设
-
-问题更像是 PDF.js/Zotero reader 在 pointer/mouse/click 事件序列中维护了内部
-选择或拖选状态，而不只是 DOM Range 被创建。由于 DOM Selection 一直是
-`None`，视觉状态可能来自 PDF.js 内部 selection controller 或 canvas/text layer
-相关状态。
-
-当前最有证据的下一步不是继续扩大 CSS，而是确认：
-
-- `pointerdown` 上 `preventDefault()` 前后状态是否变化。
-- `pointerdown` 的 `composedPath` 是否经过 PDF.js 关键容器。
-- 是否还有 reader/PDF.js 在我们之前处理 pointerdown。
-- 加入 `click` capture guard 后，`click` 是否出现
-  `captureGuard: "reader-document"`，并在 reader 之前被吞掉。
-
-## 建议保留的诊断字段
-
-排查期间建议保留以下日志字段，直到真实 Zotero 中确认：
-
-- `eventType`
-- `button` / `buttons`
-- `defaultPrevented`
-- `cancelable`
-- `cancelBubble`
-- `eventPhase`
-- `shiftKey` / `ctrlKey`
-- `selectedRawIndexes`
-- `captureGuard`
-- `allowReaderRelease`
-- `beforePreventDefault`
-- `afterPreventDefault`
-- `composedPath`
-- `documentSelection`
-- `domState.documentClassName`
-- `domState.eventComposedPath`
-- `domState.rootOwnerSameDocument`
-- `domState.selectorCounts`
-- `domState.elementAtPoint.underlying`
-- `domState.elementAtPoint.underlyingClosest`
-- `domState.elementAtPoint.underlyingStyle`
-
-确认修复后，应删除或降级这些高频日志，避免 reader 移动鼠标时刷屏。
+- 默认状态下 `.mineru-copy-box` 和 `.mineru-copy-page-layer` 为
+  `pointer-events: none`，允许拖选底层 PDF 文字。
+- 按住 `Shift` 或 `Ctrl` 时 root 添加
+  `mineru-copy-overlay-modifier-active`，box/layer 恢复 `pointer-events: auto`。
+- 默认 hover 通过鼠标坐标维护 `.mineru-copy-box-hovered`，避免依赖 box 自身
+  `:hover`，因为默认状态 box 不接收 pointer events。
+- reader window 和 parent window 都监听 modifier key 状态。
+- reader window/document capture 下按坐标查找 box，防止 keydown 状态遗漏时
+  modifier pointerdown 仍落到底层 reader。
+- overlay root 必须挂在 `body` 或 `documentElement`，不要优先挂到
+  `#viewerContainer`、`.pdfViewer` 等 PDF.js 内部容器。
 
 ## 回归测试要点
 
 当前已有或应保留的自动测试包括：
 
-- Shift `mousedown` 在原生选择前被 preventDefault。
-- overlay root capture 先于 box handler 时能阻止默认行为。
-- reader document capture guard 能在 overlay root handler 前阻断事件。
-- reader capture guard 在 `mousedown` 阶段就完成 Shift box selection。
-- reader capture guard 能提前拦截 Shift `click`。
-- `pointerup` / `mouseup` 不再被 document capture guard 隐藏。
-- 松手后 `buttons: 0` 的 `mousemove` 不再因 active selection 被吞。
-- active selection 下 `buttons: 1` 的 `mousemove` 会被阻断并清理 selection。
-- active selection 下 `buttons: 1` 的 `pointermove` 会被阻断并清理 selection。
-- selection 清空后 document guard class 被移除。
-- overlay root 移除时 document/window capture guard 被清理。
+- 默认 hover 控件隐藏，`.mineru-copy-box-hovered` 可触发 label/actions 显示。
+- stale injected style 会被刷新，避免热重载后旧 CSS 仍生效。
+- transient blur 不会立即清掉按住 modifier 时的 pointer-events 激活状态。
+- modifier keydown 来自 parent reader window 时，也能启用 overlay pointer events。
+- modifier keydown 遗漏时，reader window/document capture 可按坐标选中 box。
+- 鼠标移动时按坐标维护 `.mineru-copy-box-hovered`。
+- same-origin nested iframe windows 会被纳入 overlay 渲染窗口集合。
+- 即使存在 `#viewerContainer`，overlay root 也挂到 document `body`，不挂到 scroll
+  container。
+
+## 调试建议
+
+真实 Zotero 复现 overlay 事件问题时，优先临时采集以下信息：
+
+- overlay render 日志应包含 window location、document title、pageCount 和
+  `mountContainer`。这类日志只用于定位问题，修复确认后不要保留。
+- 如果 overlay 已渲染但 pointer/mouse down 没有进入处理器，先检查
+  `mountContainer` 是否为 `body`。
+- 若 root 已在 `body`，再检查跨 iframe/window 的 keydown 来源、pointer 坐标命中
+  和 selectedRawIndexes 状态。
+
+确认修复后，应删除或降级高频日志，避免 reader 切模式、移动鼠标、blur 时刷屏。
 
 ## 验证命令
 
@@ -254,16 +133,7 @@ document/window capture guard，并增加回归测试覆盖。
 
 ```powershell
 .\node_modules\.bin\tsc.CMD --noEmit
-.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish
+.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail
+npm run lint:check
 git diff --check
 ```
-
-真实 Zotero 复现时，重点观察：
-
-- `pointerdown.beforePreventDefault.defaultPrevented`。
-- `pointerdown.afterPreventDefault.defaultPrevented`。
-- `pointerdown.composedPath` / `domState.eventComposedPath`。
-- `click` 是否出现 `captureGuard: "reader-document"`。
-- `mousedown` 后 `selectedRawIndexes` 是否已经更新。
-- `documentSelection` 是否仍为 `None`。
-- 松手后 `buttons: 0` 的移动是否仍被 guard 吞掉。

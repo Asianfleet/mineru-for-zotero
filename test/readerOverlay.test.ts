@@ -251,6 +251,10 @@ describe("readerOverlay", function () {
     );
     assert.include(
       style.textContent,
+      ".mineru-copy-overlay-modifier-active .mineru-copy-page-layer",
+    );
+    assert.include(
+      style.textContent,
       ".mineru-copy-box:hover .mineru-copy-box-label",
     );
     assert.include(
@@ -259,7 +263,7 @@ describe("readerOverlay", function () {
     );
     assert.match(
       style.textContent,
-      /\.mineru-copy-box:hover\s*\{[^}]*z-index:\s*10/s,
+      /\.mineru-copy-box:hover,\n\.mineru-copy-box-hovered\s*\{[^}]*z-index:\s*2147483001/s,
     );
     assert.match(
       style.textContent,
@@ -289,6 +293,24 @@ describe("readerOverlay", function () {
       style.textContent,
       /\.mineru-copy-button\s*\{[^}]*color:\s*inherit[^}]*font-size:\s*13px[^}]*padding:\s*4px 8px/s,
     );
+  });
+
+  it("updates stale injected overlay styles after reader hot reload", function () {
+    const doc = createDocumentStub();
+    const staleStyle = createFakeElement();
+    staleStyle.textContent = ".mineru-copy-box { pointer-events: none; }";
+    doc.getElementById = (id: string) =>
+      id === "mineru-copy-overlay-styles"
+        ? (staleStyle as unknown as HTMLElement)
+        : null;
+
+    ensureReaderOverlayStyles(doc as unknown as Document);
+
+    assert.include(
+      staleStyle.textContent,
+      ".mineru-copy-overlay-modifier-active .mineru-copy-box",
+    );
+    assert.lengthOf(doc.headChildren, 0);
   });
 
   it("bridges the Zotero toolbar material variable from the parent reader window", function () {
@@ -361,6 +383,42 @@ describe("readerOverlay", function () {
 
     assert.equal(state?.mode, "off");
     assert.isNull(state?.root);
+  });
+
+  it("mounts overlay roots on the document body even when a PDF scroll container exists", async function () {
+    const doc = createDocumentStub();
+    const scrollContainer = createFakeElement();
+    doc.querySelector = (selector: string) =>
+      selector === "#viewerContainer" ? scrollContainer : null;
+    const reader = createReader({
+      instanceID: "reader-body-mount",
+      attachmentKey: "BODYMOUNT",
+      views: [createView("primary")],
+    });
+    Object.assign(reader._iframeWindow.document, doc);
+    await createStorage(getMinerUStorageRoot()).writeResult({
+      attachment: {
+        id: 1,
+        key: "BODYMOUNT",
+        libraryID: 1,
+        fileName: "a.pdf",
+        filePath: "a.pdf",
+        mtime: 1,
+      },
+      mineruTaskID: "task-body-mount",
+      rawResult: { content_list: [] },
+      markdown: "",
+      boxes: normalizedBoxes,
+    });
+
+    const state = await applyReaderOverlayMode(reader, "all");
+
+    assert.isNotNull(state?.root);
+    assert.include(doc.bodyChildren, state?.root as unknown as FakeElement);
+    assert.notInclude(
+      scrollContainer.children,
+      state?.root as unknown as FakeElement,
+    );
   });
 
   it("prefers page elements over bare page attributes", function () {
@@ -591,6 +649,448 @@ describe("readerOverlay", function () {
     assert.equal(dispatched[0].deltaY, 120);
   });
 
+  it("keeps overlay pointer events active across transient blur while a modifier is held", function () {
+    const listeners = new Map<string, EventListener[]>();
+    let blurTimeout: TimerHandler | null = null;
+    const root = createFakeElement() as unknown as HTMLDivElement;
+    const doc = {
+      querySelector() {
+        return null;
+      },
+      documentElement: null,
+      body: null,
+    } as unknown as Document;
+    const win = {
+      addEventListener(type: string, listener: EventListener) {
+        listeners.set(type, [...(listeners.get(type) ?? []), listener]);
+      },
+      removeEventListener(type: string, listener: EventListener) {
+        listeners.set(
+          type,
+          (listeners.get(type) ?? []).filter((item) => item !== listener),
+        );
+      },
+      requestAnimationFrame() {
+        return 1;
+      },
+      cancelAnimationFrame() {},
+      setTimeout(handler: TimerHandler) {
+        blurTimeout = handler;
+        return 1;
+      },
+      clearTimeout() {},
+      setInterval() {
+        return 1;
+      },
+      clearInterval() {},
+    } as unknown as Window;
+
+    const controller = createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      reposition() {},
+    });
+
+    dispatchWindowEvent(listeners, "keydown", {
+      shiftKey: true,
+      ctrlKey: false,
+    });
+    assert.include(root.className, "mineru-copy-overlay-modifier-active");
+
+    dispatchWindowEvent(listeners, "keyup", {
+      shiftKey: false,
+      ctrlKey: true,
+    });
+    assert.include(root.className, "mineru-copy-overlay-modifier-active");
+
+    dispatchWindowEvent(listeners, "keyup", {
+      shiftKey: false,
+      ctrlKey: false,
+    });
+    assert.notInclude(root.className, "mineru-copy-overlay-modifier-active");
+
+    dispatchWindowEvent(listeners, "keydown", {
+      shiftKey: false,
+      ctrlKey: true,
+    });
+    dispatchWindowEvent(listeners, "blur", {});
+    assert.include(root.className, "mineru-copy-overlay-modifier-active");
+    assert.isFunction(blurTimeout);
+    if (typeof blurTimeout === "function") {
+      blurTimeout();
+    }
+    assert.notInclude(root.className, "mineru-copy-overlay-modifier-active");
+
+    controller.cleanup();
+    assert.isEmpty(listeners.get("keydown") ?? []);
+    assert.isEmpty(listeners.get("keyup") ?? []);
+    assert.isEmpty(listeners.get("blur") ?? []);
+  });
+
+  it("selects a box from reader window capture when modifier keydown is missed", function () {
+    const winListeners = new Map<string, EventListener[]>();
+    const docListeners = new Map<string, EventListener[]>();
+    const root = createFakeElement() as unknown as HTMLDivElement;
+    const box = createFakeElement();
+    box.className = "mineru-copy-box";
+    box.dataset.rawIndex = "7";
+    box.getBoundingClientRect = () =>
+      ({ left: 10, top: 20, right: 110, bottom: 80 }) as DOMRect;
+    root.append(box);
+    const selectedRawIndexes = new Set<number>();
+    const selectionAnchor = { rawIndex: null as number | null };
+    const doc = {
+      addEventListener(type: string, listener: EventListener) {
+        docListeners.set(type, [...(docListeners.get(type) ?? []), listener]);
+      },
+      removeEventListener(type: string, listener: EventListener) {
+        docListeners.set(
+          type,
+          (docListeners.get(type) ?? []).filter((item) => item !== listener),
+        );
+      },
+      querySelector() {
+        return null;
+      },
+      documentElement: null,
+      body: null,
+    } as unknown as Document;
+    const win = createEventWindow(winListeners, null, "");
+
+    createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      selectionOptions: {
+        selectedRawIndexes,
+        selectableRawIndexes: [7],
+        getSelectionAnchorRawIndex: () => selectionAnchor.rawIndex,
+        setSelectionAnchorRawIndex: (rawIndex) => {
+          selectionAnchor.rawIndex = rawIndex;
+        },
+      },
+      reposition() {},
+    });
+
+    let prevented = false;
+    let stopped = false;
+    let stoppedImmediate = false;
+    dispatchWindowEvent(winListeners, "pointerdown", {
+      shiftKey: true,
+      ctrlKey: false,
+      clientX: 40,
+      clientY: 40,
+      button: 0,
+      buttons: 1,
+      target: {},
+      preventDefault() {
+        prevented = true;
+      },
+      stopPropagation() {
+        stopped = true;
+      },
+      stopImmediatePropagation() {
+        stoppedImmediate = true;
+      },
+    });
+
+    assert.isTrue(prevented);
+    assert.isTrue(stopped);
+    assert.isTrue(stoppedImmediate);
+    assert.deepEqual([...selectedRawIndexes], [7]);
+    assert.include(box.className, "mineru-copy-box-selected");
+    assert.equal(selectionAnchor.rawIndex, 7);
+
+    prevented = false;
+    stopped = false;
+    stoppedImmediate = false;
+    dispatchWindowEvent(docListeners, "mousedown", {
+      shiftKey: true,
+      ctrlKey: false,
+      clientX: 40,
+      clientY: 40,
+      button: 0,
+      buttons: 1,
+      target: {},
+      preventDefault() {
+        prevented = true;
+      },
+      stopPropagation() {
+        stopped = true;
+      },
+      stopImmediatePropagation() {
+        stoppedImmediate = true;
+      },
+    });
+
+    assert.isTrue(prevented);
+    assert.isTrue(stopped);
+    assert.isTrue(stoppedImmediate);
+  });
+
+  it("selects rawIndex ranges from reader window capture on shift pointerdown", function () {
+    const winListeners = new Map<string, EventListener[]>();
+    const doc = createDocumentStub();
+    const selectedRawIndexes = new Set<number>();
+    const selectionAnchor = { rawIndex: null as number | null };
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      normalizedBoxes,
+      "all",
+      {
+        selectedRawIndexes,
+        getSelectionAnchorRawIndex: () => selectionAnchor.rawIndex,
+        setSelectionAnchorRawIndex: (rawIndex) => {
+          selectionAnchor.rawIndex = rawIndex;
+        },
+      },
+    );
+    const boxes = findElementsByClass(
+      root as unknown as FakeElement,
+      "mineru-copy-box",
+    );
+    boxes[0].getBoundingClientRect = () =>
+      ({ left: 10, top: 20, right: 110, bottom: 80 }) as DOMRect;
+    boxes[1].getBoundingClientRect = () =>
+      ({ left: 120, top: 20, right: 220, bottom: 80 }) as DOMRect;
+    boxes[2].getBoundingClientRect = () =>
+      ({ left: 230, top: 20, right: 330, bottom: 80 }) as DOMRect;
+    const win = createEventWindow(winListeners, null, "");
+
+    createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      selectionOptions: {
+        selectedRawIndexes,
+        selectableRawIndexes:
+          root.dataset.selectableRawIndexes
+            ?.split(",")
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value)) ?? [],
+        getSelectionAnchorRawIndex: () => selectionAnchor.rawIndex,
+        setSelectionAnchorRawIndex: (rawIndex) => {
+          selectionAnchor.rawIndex = rawIndex;
+        },
+      },
+      reposition() {},
+    });
+
+    dispatchWindowEvent(winListeners, "pointerdown", {
+      ctrlKey: true,
+      clientX: 40,
+      clientY: 40,
+      button: 0,
+      buttons: 1,
+      target: {},
+      preventDefault() {},
+      stopPropagation() {},
+      stopImmediatePropagation() {},
+    });
+    dispatchWindowEvent(winListeners, "pointerdown", {
+      shiftKey: true,
+      clientX: 260,
+      clientY: 40,
+      button: 0,
+      buttons: 1,
+      target: {},
+      preventDefault() {},
+      stopPropagation() {},
+      stopImmediatePropagation() {},
+    });
+
+    assert.deepEqual([...selectedRawIndexes].sort(), [0, 1, 2]);
+  });
+
+  it("enables overlay box pointer events from the parent reader window before pointerdown", function () {
+    const childListeners = new Map<string, EventListener[]>();
+    const parentListeners = new Map<string, EventListener[]>();
+    const root = createFakeElement() as unknown as HTMLDivElement;
+    const doc = {
+      querySelector() {
+        return null;
+      },
+      documentElement: null,
+      body: null,
+    } as unknown as Document;
+    const parentWindow = createEventWindow(parentListeners, null, "parent");
+    const childWindow = createEventWindow(
+      childListeners,
+      parentWindow,
+      "child",
+    );
+
+    createReaderOverlayPositioningController({
+      doc,
+      win: childWindow,
+      root,
+      reposition() {},
+    });
+
+    dispatchWindowEvent(parentListeners, "keydown", {
+      shiftKey: true,
+      ctrlKey: false,
+      currentTarget: parentWindow,
+      key: "Shift",
+    });
+    assert.include(root.className, "mineru-copy-overlay-modifier-active");
+
+    dispatchWindowEvent(parentListeners, "keyup", {
+      shiftKey: false,
+      ctrlKey: false,
+      currentTarget: parentWindow,
+      key: "Shift",
+    });
+    assert.notInclude(root.className, "mineru-copy-overlay-modifier-active");
+  });
+
+  it("tracks hovered boxes from pointer position while boxes pass through mouse events", function () {
+    const listeners = new Map<string, EventListener[]>();
+    const root = createFakeElement() as unknown as HTMLDivElement;
+    const firstBox = createFakeElement();
+    firstBox.className = "mineru-copy-box";
+    firstBox.getBoundingClientRect = () =>
+      ({ left: 10, top: 20, right: 110, bottom: 80 }) as DOMRect;
+    const secondBox = createFakeElement();
+    secondBox.className = "mineru-copy-box";
+    secondBox.getBoundingClientRect = () =>
+      ({ left: 120, top: 20, right: 220, bottom: 80 }) as DOMRect;
+    root.append(firstBox, secondBox);
+    const doc = {
+      querySelector() {
+        return null;
+      },
+      documentElement: null,
+      body: null,
+    } as unknown as Document;
+    const win = {
+      addEventListener(type: string, listener: EventListener) {
+        listeners.set(type, [...(listeners.get(type) ?? []), listener]);
+      },
+      removeEventListener(type: string, listener: EventListener) {
+        listeners.set(
+          type,
+          (listeners.get(type) ?? []).filter((item) => item !== listener),
+        );
+      },
+      requestAnimationFrame() {
+        return 1;
+      },
+      cancelAnimationFrame() {},
+      setTimeout() {
+        return 1;
+      },
+      clearTimeout() {},
+      setInterval() {
+        return 1;
+      },
+      clearInterval() {},
+    } as unknown as Window;
+
+    createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      reposition() {},
+    });
+
+    dispatchWindowEvent(listeners, "mousemove", { clientX: 40, clientY: 40 });
+    assert.include(firstBox.className, "mineru-copy-box-hovered");
+    assert.notInclude(secondBox.className, "mineru-copy-box-hovered");
+
+    dispatchWindowEvent(listeners, "mousemove", { clientX: 140, clientY: 40 });
+    assert.notInclude(firstBox.className, "mineru-copy-box-hovered");
+    assert.include(secondBox.className, "mineru-copy-box-hovered");
+
+    dispatchWindowEvent(listeners, "mousemove", { clientX: 400, clientY: 40 });
+    assert.notInclude(secondBox.className, "mineru-copy-box-hovered");
+
+    dispatchWindowEvent(listeners, "mousemove", { clientX: 40, clientY: 40 });
+    dispatchWindowEvent(listeners, "blur", {});
+    assert.notInclude(firstBox.className, "mineru-copy-box-hovered");
+  });
+
+  it("keeps a box hovered while moving through the action gap", function () {
+    const listeners = new Map<string, EventListener[]>();
+    const root = createFakeElement() as unknown as HTMLDivElement;
+    const box = createFakeElement();
+    box.className = "mineru-copy-box";
+    box.getBoundingClientRect = () =>
+      ({ left: 10, top: 20, right: 110, bottom: 80 }) as DOMRect;
+    const actions = createFakeElement();
+    actions.className = "mineru-copy-box-actions";
+    actions.getBoundingClientRect = () =>
+      ({ left: 20, top: 83, right: 100, bottom: 110 }) as DOMRect;
+    box.append(actions);
+    root.append(box);
+    const doc = {
+      querySelector() {
+        return null;
+      },
+      documentElement: null,
+      body: null,
+    } as unknown as Document;
+    const win = createEventWindow(listeners, null, "");
+
+    createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      reposition() {},
+    });
+
+    dispatchWindowEvent(listeners, "mousemove", { clientX: 40, clientY: 40 });
+    assert.include(box.className, "mineru-copy-box-hovered");
+
+    dispatchWindowEvent(listeners, "mousemove", { clientX: 40, clientY: 83 });
+    assert.include(box.className, "mineru-copy-box-hovered");
+
+    dispatchWindowEvent(listeners, "mousemove", { clientX: 105, clientY: 83 });
+    assert.notInclude(box.className, "mineru-copy-box-hovered");
+  });
+
+  it("keeps the current box hovered when its actions overlap a later box", function () {
+    const listeners = new Map<string, EventListener[]>();
+    const root = createFakeElement() as unknown as HTMLDivElement;
+    const firstBox = createFakeElement();
+    firstBox.className = "mineru-copy-box";
+    firstBox.getBoundingClientRect = () =>
+      ({ left: 10, top: 20, right: 110, bottom: 80 }) as DOMRect;
+    const actions = createFakeElement();
+    actions.className = "mineru-copy-box-actions";
+    actions.getBoundingClientRect = () =>
+      ({ left: 20, top: 83, right: 100, bottom: 110 }) as DOMRect;
+    firstBox.append(actions);
+    const secondBox = createFakeElement();
+    secondBox.className = "mineru-copy-box";
+    secondBox.getBoundingClientRect = () =>
+      ({ left: 10, top: 80, right: 110, bottom: 140 }) as DOMRect;
+    root.append(firstBox, secondBox);
+    const doc = {
+      querySelector() {
+        return null;
+      },
+      documentElement: null,
+      body: null,
+    } as unknown as Document;
+    const win = createEventWindow(listeners, null, "");
+
+    createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      reposition() {},
+    });
+
+    dispatchWindowEvent(listeners, "mousemove", { clientX: 40, clientY: 40 });
+    assert.include(firstBox.className, "mineru-copy-box-hovered");
+
+    dispatchWindowEvent(listeners, "mousemove", { clientX: 40, clientY: 90 });
+    assert.include(firstBox.className, "mineru-copy-box-hovered");
+    assert.notInclude(secondBox.className, "mineru-copy-box-hovered");
+  });
+
   it("uses the reader window WheelEvent constructor when the plugin global lacks one", function () {
     const originalWheelEvent = globalThis.WheelEvent;
     Object.defineProperty(globalThis, "WheelEvent", {
@@ -771,6 +1271,32 @@ describe("readerOverlay", function () {
     assert.deepEqual(getReaderOverlayWindows(reader), [
       primary._iframeWindow,
       secondary._iframeWindow,
+    ]);
+  });
+
+  it("includes same-origin nested iframe windows from reader panes", function () {
+    const primary = createView("primary");
+    const nestedWindow = {
+      name: "nested-pdf",
+      document: createDocumentStub(),
+    } as unknown as Window;
+    const iframe = {
+      contentWindow: nestedWindow,
+    };
+    Object.assign(primary._iframeWindow.document, {
+      querySelectorAll(selector: string) {
+        return selector === "iframe, frame" ? [iframe] : [];
+      },
+    });
+    const reader = createReader({
+      instanceID: "reader-nested",
+      attachmentKey: "ABC123",
+      views: [primary],
+    });
+
+    assert.deepEqual(getReaderOverlayWindows(reader), [
+      primary._iframeWindow,
+      nestedWindow,
     ]);
   });
 
@@ -1021,6 +1547,38 @@ function createView(name: string): { _iframeWindow: Window } {
   };
 }
 
+function createEventWindow(
+  listeners: Map<string, EventListener[]>,
+  parent: Window | null,
+  name: string,
+): Window {
+  return {
+    name,
+    parent,
+    addEventListener(type: string, listener: EventListener) {
+      listeners.set(type, [...(listeners.get(type) ?? []), listener]);
+    },
+    removeEventListener(type: string, listener: EventListener) {
+      listeners.set(
+        type,
+        (listeners.get(type) ?? []).filter((item) => item !== listener),
+      );
+    },
+    requestAnimationFrame() {
+      return 1;
+    },
+    cancelAnimationFrame() {},
+    setTimeout() {
+      return 1;
+    },
+    clearTimeout() {},
+    setInterval() {
+      return 1;
+    },
+    clearInterval() {},
+  } as unknown as Window;
+}
+
 function createBox(
   rawIndex: number,
   type: string,
@@ -1088,6 +1646,7 @@ interface FakeElement {
   textContent: string;
   hidden: boolean;
   children: FakeElement[];
+  getBoundingClientRect?: () => DOMRect;
   append: (...children: FakeElement[]) => void;
   addEventListener: (_type: string, _listener: EventListener) => void;
   dispatch: (_type: string, _event: Event) => void;
@@ -1154,4 +1713,24 @@ function createClickEvent(
     preventDefault() {},
     stopPropagation() {},
   } as unknown as MouseEvent;
+}
+
+function dispatchWindowEvent(
+  listeners: Map<string, EventListener[]>,
+  type: string,
+  input: {
+    shiftKey?: boolean;
+    ctrlKey?: boolean;
+    clientX?: number;
+    clientY?: number;
+    currentTarget?: unknown;
+    key?: string;
+    preventDefault?: () => void;
+    stopPropagation?: () => void;
+    stopImmediatePropagation?: () => void;
+  },
+): void {
+  for (const listener of listeners.get(type) ?? []) {
+    listener.call(input.currentTarget ?? null, input as Event);
+  }
 }
