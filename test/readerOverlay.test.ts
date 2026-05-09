@@ -287,7 +287,7 @@ describe("readerOverlay", function () {
     );
     assert.match(
       style.textContent,
-      /\.mineru-copy-button\s*\{[^}]*color:\s*inherit[^}]*font-size:\s*13px[^}]*padding:\s*4px 8px/s,
+      /\.mineru-copy-button\s*\{[^}]*color:\s*var\(--fill-primary,\s*ButtonText\)[^}]*font-size:\s*13px[^}]*padding:\s*4px 8px/s,
     );
   });
 
@@ -300,7 +300,11 @@ describe("readerOverlay", function () {
       getComputedStyle() {
         return {
           getPropertyValue(name: string) {
-            return name === "--material-toolbar" ? "rgb(252, 252, 252)" : "";
+            const values: Record<string, string> = {
+              "--material-toolbar": "rgb(252, 252, 252)",
+              "--fill-primary": "rgb(32, 32, 32)",
+            };
+            return values[name] ?? "";
           },
         };
       },
@@ -325,7 +329,176 @@ describe("readerOverlay", function () {
     const style = doc.headChildren[0];
     assert.include(
       style.textContent,
-      ":root {\n  --material-toolbar: rgb(252, 252, 252);\n}",
+      "  --material-toolbar: rgb(252, 252, 252);",
+    );
+    assert.include(style.textContent, "  --fill-primary: rgb(32, 32, 32);");
+  });
+
+  it("refreshes bridged theme variables when Zotero color mode changes", function () {
+    const doc = createDocumentStub();
+    const parentDoc = createDocumentStub();
+    let toolbarColor = "rgb(252, 252, 252)";
+    let textColor = "rgb(32, 32, 32)";
+    const parentWindow = {
+      document: parentDoc,
+      parent: null,
+      getComputedStyle() {
+        return {
+          getPropertyValue(name: string) {
+            const values: Record<string, string> = {
+              "--material-toolbar": toolbarColor,
+              "--fill-primary": textColor,
+            };
+            return values[name] ?? "";
+          },
+        };
+      },
+    };
+    parentWindow.parent = parentWindow;
+    const childWindow = {
+      document: doc,
+      parent: parentWindow,
+      getComputedStyle() {
+        return {
+          getPropertyValue() {
+            return "";
+          },
+        };
+      },
+    };
+    Object.assign(doc, { defaultView: childWindow });
+    Object.assign(parentDoc, { defaultView: parentWindow });
+
+    ensureReaderOverlayStyles(doc as unknown as Document);
+    toolbarColor = "rgb(43, 43, 43)";
+    textColor = "rgb(238, 238, 238)";
+    ensureReaderOverlayStyles(doc as unknown as Document);
+
+    assert.lengthOf(doc.headChildren, 1);
+    assert.include(
+      doc.headChildren[0].textContent,
+      "  --material-toolbar: rgb(43, 43, 43);",
+    );
+    assert.include(
+      doc.headChildren[0].textContent,
+      "  --fill-primary: rgb(238, 238, 238);",
+    );
+    assert.notInclude(doc.headChildren[0].textContent, "rgb(252, 252, 252)");
+    assert.notInclude(doc.headChildren[0].textContent, "rgb(32, 32, 32)");
+  });
+
+  it("does not reuse stale variables injected by the overlay style", function () {
+    const doc = createDocumentStub();
+    const parentDoc = createDocumentStub();
+    let toolbarColor = "rgb(252, 252, 252)";
+    let textColor = "rgb(32, 32, 32)";
+    const parentWindow = {
+      document: parentDoc,
+      parent: null,
+      getComputedStyle() {
+        return {
+          getPropertyValue(name: string) {
+            const values: Record<string, string> = {
+              "--material-toolbar": toolbarColor,
+              "--fill-primary": textColor,
+            };
+            return values[name] ?? "";
+          },
+        };
+      },
+    };
+    parentWindow.parent = parentWindow;
+    const childWindow = {
+      document: doc,
+      parent: parentWindow,
+      getComputedStyle() {
+        return {
+          getPropertyValue(name: string) {
+            return readInjectedCssVariable(doc, name);
+          },
+        };
+      },
+    };
+    Object.assign(doc, { defaultView: childWindow });
+    Object.assign(parentDoc, { defaultView: parentWindow });
+
+    ensureReaderOverlayStyles(doc as unknown as Document);
+    toolbarColor = "rgb(43, 43, 43)";
+    textColor = "rgb(238, 238, 238)";
+    ensureReaderOverlayStyles(doc as unknown as Document);
+
+    assert.include(
+      doc.headChildren[0].textContent,
+      "  --material-toolbar: rgb(43, 43, 43);",
+    );
+    assert.include(
+      doc.headChildren[0].textContent,
+      "  --fill-primary: rgb(238, 238, 238);",
+    );
+    assert.notInclude(doc.headChildren[0].textContent, "rgb(252, 252, 252)");
+    assert.notInclude(doc.headChildren[0].textContent, "rgb(32, 32, 32)");
+  });
+
+  it("refreshes overlay theme styles during positioning ticks", function () {
+    const doc = createDocumentStub();
+    const parentDoc = createDocumentStub();
+    let intervalCallback: (() => void) | null = null;
+    let toolbarColor = "rgb(252, 252, 252)";
+    const parentWindow = {
+      document: parentDoc,
+      parent: null,
+      getComputedStyle() {
+        return {
+          getPropertyValue(name: string) {
+            return name === "--material-toolbar" ? toolbarColor : "";
+          },
+        };
+      },
+    };
+    parentWindow.parent = parentWindow;
+    const win = {
+      document: doc,
+      parent: parentWindow,
+      getComputedStyle() {
+        return {
+          getPropertyValue() {
+            return "";
+          },
+        };
+      },
+      addEventListener() {},
+      removeEventListener() {},
+      requestAnimationFrame(callback: FrameRequestCallback) {
+        callback(0);
+        return 1;
+      },
+      cancelAnimationFrame() {},
+      setTimeout() {
+        return 1;
+      },
+      clearTimeout() {},
+      setInterval(callback: () => void) {
+        intervalCallback = callback;
+        return 1;
+      },
+      clearInterval() {},
+    };
+    Object.assign(doc, { defaultView: win });
+    Object.assign(parentDoc, { defaultView: parentWindow });
+    ensureReaderOverlayStyles(doc as unknown as Document);
+    toolbarColor = "rgb(43, 43, 43)";
+
+    createReaderOverlayPositioningController({
+      doc: doc as unknown as Document,
+      win: win as unknown as Window,
+      root: createFakeElement() as unknown as HTMLDivElement,
+      reposition() {},
+    });
+    intervalCallback?.();
+
+    assert.include(
+      doc.headChildren[0].textContent,
+      "  --material-toolbar: rgb(43, 43, 43);",
     );
   });
 
@@ -1064,8 +1237,12 @@ function createDocumentStub(): Document & {
     createElement(_tagName: string) {
       return createFakeElement();
     },
-    getElementById() {
-      return null;
+    getElementById(id: string) {
+      return (
+        [...rootChildren, ...bodyChildren].find(
+          (element) => element.id === id,
+        ) ?? null
+      );
     },
     querySelector() {
       return null;
@@ -1082,6 +1259,7 @@ function createDocumentStub(): Document & {
 }
 
 interface FakeElement {
+  id: string;
   className: string;
   dataset: Record<string, string>;
   style: Record<string, string>;
@@ -1098,6 +1276,7 @@ interface FakeElement {
 function createFakeElement(): FakeElement {
   const listeners = new Map<string, EventListener[]>();
   return {
+    id: "",
     className: "",
     dataset: {},
     style: {},
@@ -1140,6 +1319,16 @@ function findElementsByClass(
   };
   visit(root);
   return matches;
+}
+
+function readInjectedCssVariable(
+  doc: { headChildren: FakeElement[] },
+  name: string,
+): string {
+  const cssText = doc.headChildren[0]?.textContent ?? "";
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = new RegExp(`${escapedName}:\\s*([^;]+);`).exec(cssText);
+  return match?.[1]?.trim() ?? "";
 }
 
 function createClickEvent(

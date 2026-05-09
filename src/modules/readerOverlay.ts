@@ -61,7 +61,10 @@ interface PageRect {
 
 const fallbackStates = new Map<ReaderOverlayKey, ReaderOverlayState>();
 const READER_OVERLAY_STYLE_ID = "mineru-copy-overlay-styles";
-const READER_OVERLAY_THEME_VARIABLES = ["--material-toolbar"] as const;
+const READER_OVERLAY_THEME_VARIABLES = [
+  "--material-toolbar",
+  "--fill-primary",
+] as const;
 const READER_OVERLAY_CSS = `
 .mineru-copy-overlay-root {
   position: fixed;
@@ -157,7 +160,7 @@ const READER_OVERLAY_CSS = `
   box-shadow:
     0 0 3px 0 rgba(0, 0, 0, 0.35),
     0 2px 8px 0 rgba(0, 0, 0, 0.22);
-  color: inherit;
+  color: var(--fill-primary, ButtonText);
   font-size: 13px;
   line-height: 1.35;
   padding: 4px 8px;
@@ -554,6 +557,7 @@ export function createReaderOverlayPositioningController(
       scheduledHandle = requestFrame.call(options.win, () => {
         scheduledHandle = null;
         if (!cleaned) {
+          ensureReaderOverlayStyles(options.doc);
           options.reposition();
         }
       });
@@ -563,6 +567,7 @@ export function createReaderOverlayPositioningController(
     scheduledHandle = options.win.setTimeout(() => {
       scheduledHandle = null;
       if (!cleaned) {
+        ensureReaderOverlayStyles(options.doc);
         options.reposition();
       }
     }, 16);
@@ -758,13 +763,16 @@ function getPrimaryScrollContainer(doc: Document): Element | null {
 }
 
 export function ensureReaderOverlayStyles(doc: Document): void {
-  if (doc.getElementById(READER_OVERLAY_STYLE_ID)) {
+  const textContent = `${createReaderOverlayThemeCss(doc)}${READER_OVERLAY_CSS}`;
+  const existing = doc.getElementById(READER_OVERLAY_STYLE_ID);
+  if (existing) {
+    existing.textContent = textContent;
     return;
   }
 
   const style = doc.createElement("style");
   style.id = READER_OVERLAY_STYLE_ID;
-  style.textContent = `${createReaderOverlayThemeCss(doc)}${READER_OVERLAY_CSS}`;
+  style.textContent = textContent;
   doc.head?.append(style);
 }
 
@@ -782,12 +790,9 @@ function resolveCssVariableFromWindowTree(
   doc: Document,
   name: string,
 ): string | null {
-  const firstValue = readCssVariable(doc, name);
-  if (firstValue) {
-    return firstValue;
-  }
-
-  let win = doc.defaultView ?? null;
+  const ownWindow = doc.defaultView ?? null;
+  const parentWindow = ownWindow ? getParentWindow(ownWindow) : null;
+  let win = parentWindow && parentWindow !== ownWindow ? parentWindow : null;
   const seen = new Set<Window>();
   while (win && !seen.has(win)) {
     seen.add(win);
@@ -803,7 +808,8 @@ function resolveCssVariableFromWindowTree(
     }
     win = parent;
   }
-  return null;
+
+  return readCssVariable(doc, name);
 }
 
 function readCssVariable(doc: Document, name: string): string | null {

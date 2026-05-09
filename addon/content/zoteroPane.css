@@ -90,7 +90,7 @@
   box-shadow:
     0 0 3px 0 rgba(0, 0, 0, 0.35),
     0 2px 8px 0 rgba(0, 0, 0, 0.22);
-  color: inherit;
+  color: var(--fill-primary, ButtonText);
   font-size: 13px;
   line-height: 1.35;
   padding: 4px 8px;
