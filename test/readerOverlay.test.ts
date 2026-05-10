@@ -287,6 +287,10 @@ describe("readerOverlay", function () {
     );
     assert.match(
       style.textContent,
+      /\.mineru-copy-box-selected\s+\.mineru-copy-box-label\s*\{[^}]*background:\s*rgba\(217,\s*119,\s*6,\s*0\.95\)/s,
+    );
+    assert.match(
+      style.textContent,
       /\.mineru-copy-button\s*\{[^}]*border:\s*0[^}]*background:\s*var\(--material-toolbar,\s*ButtonFace\)[^}]*box-shadow:/s,
     );
     assert.match(

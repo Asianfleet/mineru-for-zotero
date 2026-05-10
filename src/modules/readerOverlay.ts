@@ -157,6 +157,11 @@ const READER_OVERLAY_CSS = `
   pointer-events: none;
 }
 
+.mineru-copy-box-selected .mineru-copy-box-label,
+.mineru-copy-mode-hover .mineru-copy-box-selected .mineru-copy-box-label {
+  background: rgba(217, 119, 6, 0.95);
+}
+
 .mineru-copy-box-actions {
   position: absolute;
   left: 50%;

@@ -46,6 +46,10 @@ After code changes, run the full scaffold test suite with
 `zotero-plugin test --exit-on-finish` so the scaffold test Zotero process exits
 automatically after the suite completes.
 
+This project does not use Vitest. On Windows, prefer the local scaffold binary
+`.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish` for final
+verification instead of looking for `.\node_modules\.bin\vitest.cmd`.
+
 For small edits to existing XHTML files such as `addon/content/preferences.xhtml`,
 avoid running `prettier --write` unless formatting is part of the task. It can
 reflow unrelated long tags and expand the diff; if it happens during validation,
