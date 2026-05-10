@@ -732,6 +732,7 @@ function createReaderToolbarSelectionLabel(
 
   const text = doc.createElement("span");
   text.textContent = label;
+  text.style.paddingBottom = "3px";
 
   const badge = doc.createElement("span");
   badge.className = "mineru-reader-toolbar-badge";
