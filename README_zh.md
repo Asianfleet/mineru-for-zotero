@@ -13,6 +13,8 @@ MinerU for Zotero 是一个 Zotero 7 插件，用于把 PDF 提交给 MinerU 官
 
 ## 功能
 
+<video src="assets/demo.mp4" controls></video>
+
 - 在 Zotero 条目或 PDF attachment 右键菜单中提交 MinerU 解析。
 - 普通条目右键菜单会列出该条目下的 PDF attachment，并支持一键解析所有 PDF。
 - 在 PDF Reader 工具栏中切换 MinerU box overlay。

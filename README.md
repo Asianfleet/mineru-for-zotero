@@ -13,6 +13,8 @@ MinerU for Zotero is a Zotero 7 plugin that submits PDFs to the official MinerU 
 
 ## Features
 
+<video src="assets/demo.mp4" controls></video>
+
 - Submit MinerU parsing from the context menu of a Zotero item or PDF attachment.
 - List PDF attachments under a regular item and parse all PDFs with one command.
 - Toggle the MinerU box overlay from the PDF Reader toolbar.
