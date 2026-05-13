@@ -7,7 +7,7 @@
     <img src="assets/cover.png" alt="cover" width=100%/>
 </p>
 
-MinerU for Zotero 是一个 Zotero 7 插件，用于把 PDF 提交给 MinerU 官方 API 解析，并在 Zotero PDF Reader 中基于 MinerU 的 box 信息快速复制结构化内容。
+MinerU for Zotero 是一个 Zotero 插件，用于把 PDF 提交给 MinerU 官方 API 解析，并在 Zotero PDF Reader 中基于 MinerU 的 box 信息快速复制结构化内容。
 
 [English Document](README.md)
 
@@ -125,14 +125,6 @@ npm test
 npm run lint:check
 npm run build
 ```
-
-发布：
-
-```shell
-npm run release
-```
-
-`npm run release` 会走 `zotero-plugin-scaffold` 的发布流程。GitHub Action 会在 tag 推送后构建插件，并发布 `.xpi`、`update.json` 和 `update-beta.json`。
 
 ## License
 

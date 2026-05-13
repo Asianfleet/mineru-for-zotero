@@ -7,9 +7,9 @@
     <img src="assets/cover.png" alt="cover" width=100%/>
 </p>
 
-[Chinese Document](README_zh.md)
+[中文文档](README_zh.md)
 
-MinerU for Zotero is a Zotero 7 plugin that submits PDFs to the official MinerU API for parsing and lets you quickly copy structured content from MinerU boxes in the Zotero PDF Reader.
+MinerU for Zotero is a Zotero plugin that submits PDFs to the official MinerU API for parsing and lets you quickly copy structured content from MinerU boxes in the Zotero PDF Reader.
 
 ## Features
 
@@ -126,14 +126,6 @@ npm test
 npm run lint:check
 npm run build
 ```
-
-Release:
-
-```shell
-npm run release
-```
-
-`npm run release` uses the `zotero-plugin-scaffold` release flow. The GitHub Action builds the plugin after a tag is pushed and publishes the `.xpi`, `update.json`, and `update-beta.json`.
 
 ## License
 
