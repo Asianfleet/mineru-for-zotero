@@ -33,6 +33,8 @@ This project does not use Vitest. Do not look for or run `.\node_modules\.bin\vi
 
 For small edits to existing XHTML files such as `addon/content/preferences.xhtml`, avoid running `prettier --write` unless formatting is part of the task. It can reflow unrelated long tags and expand the diff; if it happens during validation, restore unrelated formatting before final verification.
 
+For user-facing Markdown documents such as `README.md` and `README_zh.md`, do not manually hard-wrap paragraphs or list items to 80 columns unless the surrounding document already uses that style. Preserve natural single-line sentences so later content edits stay readable and diffs stay focused.
+
 ## Project Notes
 
 - The official MinerU API flow is v4 batch extraction: request `/api/v4/file-urls/batch`, upload the PDF to the returned presigned URL, poll `/api/v4/extract-results/batch/{batch_id}`, then download `full_zip_url` or fall back to `md_url` where necessary.

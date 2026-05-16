@@ -9,81 +9,70 @@
 
 [中文文档](README_zh.md)
 
-MinerU for Zotero is a Zotero plugin that submits PDFs to the official MinerU API for parsing and lets you quickly copy structured content from MinerU boxes in the Zotero PDF Reader.
+MinerU for Zotero helps you parse Zotero PDF attachments with MinerU and copy layout-aware content directly from the Zotero PDF Reader.
 
-## Features
+## What You Can Do
 
 <video src="assets/demo.mp4" controls></video>
 
-- Submit MinerU parsing from the context menu of a Zotero item or PDF attachment.
-- List PDF attachments under a regular item and parse all PDFs with one command.
-- Toggle the MinerU box overlay from the PDF Reader toolbar.
-- Switch between showing all boxes, showing only the hovered box, and disabling the plugin overlay.
-- Copy a single box or multiple selected boxes.
-- Merge multi-box copies into Markdown in the original MinerU box order.
-- Copy formula boxes with or without `$` delimiters.
-- Store parsing results per attachment so external programs can read the raw JSON, Markdown, and normalized box data.
+- Parse one or more selected PDF attachments from the Zotero item list.
+- Reuse an existing parse result, or reparse and replace it when needed.
+- Show MinerU boxes in the Zotero PDF Reader.
+- Switch between all boxes, hovered boxes, and off mode.
+- Copy a single text, title, list, table, image caption, reference, formula, or other recognized box.
+- Select multiple boxes with `Shift` or `Ctrl`, then copy them together in reading order.
+- Copy the full parsed Markdown from the reader toolbar when no boxes are selected.
+- Optionally save images from MinerU results into the local result folder.
 
-## Configuration
+## Requirements
 
-1. In Zotero, open `Edit` -> `Settings` -> `MinerU for Zotero`.
-2. Enter your MinerU API Key.
-3. The API Key is stored only in local Zotero preferences and is used to call the MinerU API.
+- Zotero 8 or 9.
+- A MinerU API Key.
+- PDF attachments that are available on this computer.
 
-## Usage
+## Setup
 
-### Parse PDFs
+1. Install the plugin in Zotero.
+2. Open `Edit` -> `Settings` -> `MinerU for Zotero`.
+3. Enter your MinerU API Key.
+4. Optional: enable `Save parsed result images` if you want images from MinerU results to be saved locally.
 
-1. In the Zotero item list, select a PDF attachment or a regular item that has PDF attachments.
-2. Right-click `Parse PDF with MinerU`.
-3. If the selected item is a PDF attachment, the plugin parses that PDF directly.
-4. If the selected item is a regular item, the plugin opens a submenu with the MinerU icon:
-   - `Parse all PDFs`: parse every PDF attachment under the item.
-   - A single PDF filename: parse only that PDF attachment.
-5. Wait for upload, parsing, download, and local writing to finish.
-   - If the target PDF already has parsing results, the plugin asks you to choose:
-     - `Use existing result`: keep the existing result and use it directly in the Reader.
-     - `Re-parse and overwrite`: submit the PDF to MinerU again and replace the old result after success. If parsing fails, the old result is kept.
-   - During batch parsing, if some PDFs already have usable results, choosing `Use existing result` skips those PDFs and continues with the remaining unfinished PDFs. Choosing `Re-parse and overwrite` resubmits all target PDFs.
+The API Key is stored only in local Zotero preferences.
 
-### Copy Content in the Reader
+## Parse a PDF
+
+1. In the Zotero item list, select one or more PDF attachments.
+2. Right-click the selection and choose `Parse PDF with MinerU`.
+3. Wait until Zotero shows `MinerU parsing finished`.
+4. Open the parsed PDF in the Zotero PDF Reader.
+
+If a selected PDF already has a parse result, choose one of these options:
+
+- `Use existing result`: keep the current result and use it in the reader.
+- `Reparse and overwrite`: submit the PDF again and replace the result after parsing succeeds.
+
+If parsing fails during replacement, the existing usable result is kept.
+
+## Copy in the Reader
 
 1. Open a parsed PDF.
-2. Click the `MinerU box` button in the PDF Reader toolbar.
-3. Choose an overlay mode:
+2. Click the `MinerU boxes` button in the PDF Reader toolbar.
+3. Choose a mode:
    - `Show all boxes`
-   - `Show hovered box only`
+   - `Show only hovered box`
    - `Disable plugin features`
-4. Hover over a box and use its copy button.
-5. Use `Shift` or `Ctrl` to click multiple boxes, then copy the selected boxes from the toolbar menu.
+4. Hover over a box and click `Copy`.
+5. For formulas, choose `Copy with $` or `Copy without $`.
 
-## Data Files
+For multi-box copying, hold `Shift` or `Ctrl` while clicking boxes. Then use the toolbar menu to copy the selected content or clear the selection. If no boxes are selected, the same copy button copies the full parsed Markdown.
 
-The plugin stores parsing results in the Zotero plugin data directory. You can open it from the settings page by clicking `Open data folder`.
+## Local Results
 
-Directory structure:
+Open `Edit` -> `Settings` -> `MinerU for Zotero` and click `Open Data Folder` to view local parse results. The settings page also shows how many PDFs currently have usable results.
 
-```text
-mineru-copy/
-  attachments/
-    <libraryID>-<attachmentKey>/
-      manifest.json
-      mineru-result.json
-      content.md
-      boxes.normalized.json
-```
+The result folder contains the parsed Markdown, box data used by the reader, and optional images. External tools may read these files, but editing them is not recommended.
 
-File descriptions:
-
-- `manifest.json`: attachment metadata, PDF modification time, parsing time, MinerU task id, and status.
-- `mineru-result.json`: the raw MinerU result for diagnostics and external reading.
-- `content.md`: the full Markdown output from MinerU.
-- `boxes.normalized.json`: the stable box data structure used by the plugin.
-
-External programs may read these files, but writing to them is not recommended.
-The plugin only provides compatibility guarantees for data structures written by the plugin itself.
-
-## FAQ
+## Troubleshooting
 
 ### API Key Not Configured
 
@@ -91,19 +80,19 @@ Open the plugin settings page, enter your MinerU API Key, and try again.
 
 ### File Access Failed
 
-Make sure the PDF attachment is available locally. For attachments that exist only in the cloud or have not finished syncing, open or download the PDF in Zotero first.
+Make sure the PDF is available locally. If the attachment is cloud-only or still syncing, open or download it in Zotero first.
 
-### Parsing Result Is Missing Box Information
+### The Reader Says No Parse Result Is Available
 
-The plugin saves the raw MinerU result but does not enable the overlay. Keep `mineru-result.json` for diagnostics and re-parse if needed.
+Parse the PDF first. If you already parsed it, open the data folder from the settings page and confirm that the parsed result still exists.
 
-### Boxes Are Not Visible in the Reader
+### Boxes Are Not Visible
 
-First confirm that the PDF was parsed successfully. If it was parsed but boxes still do not appear, open the data folder from the settings page and check whether `boxes.normalized.json` exists under the corresponding attachment directory.
+Confirm that the toolbar mode is not set to `Disable plugin features`. If the PDF was parsed but still has no boxes, reparse it.
 
 ### Result Download Failed
 
-The download URL returned by MinerU, or the network path to it, may be temporarily unavailable. Try again later or re-parse the PDF.
+The MinerU result download may be temporarily unavailable. Try again later or reparse the PDF.
 
 ## Development
 
