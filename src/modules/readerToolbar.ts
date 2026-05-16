@@ -18,6 +18,7 @@ type ReaderMessageId =
   | "reader-copy-selected-boxes"
   | "reader-disable-plugin"
   | "reader-mode-group-label"
+  | "reader-selected-boxes-label"
   | "reader-show-all-boxes"
   | "reader-show-hover-box"
   | "reader-toolbar-label";
@@ -658,6 +659,7 @@ function updateMenu(
   const commandGroup = doc.createElement("div");
   commandGroup.className = "group";
   createReaderToolbarActionRow(doc, commandGroup, {
+    selectionLabel: readerString("reader-selected-boxes-label"),
     copyLabel: readerString("reader-copy-selected-boxes"),
     selectedCount: getReaderSelectedBoxCount(reader),
     copyIconSVG: readerToolbarCopySelectionSVG,
@@ -688,6 +690,7 @@ export function createReaderToolbarActionRow(
   doc: Document,
   group: HTMLDivElement,
   options: {
+    selectionLabel: string;
     copyLabel: string;
     selectedCount: number;
     copyIconSVG: string;
@@ -708,7 +711,7 @@ export function createReaderToolbarActionRow(
   row.append(
     createReaderToolbarSelectionLabel(
       doc,
-      options.copyLabel,
+      options.selectionLabel,
       options.selectedCount,
     ),
     createReaderToolbarActionButtons(doc, options),

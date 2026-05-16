@@ -237,6 +237,7 @@ describe("readerToolbar", function () {
     } as unknown as HTMLDivElement;
 
     createReaderToolbarActionRow(doc, group, {
+      selectionLabel: "已选内容",
       copyLabel: "复制已选内容",
       selectedCount: 3,
       copyIconSVG:
@@ -260,7 +261,7 @@ describe("readerToolbar", function () {
       children: HTMLElement[];
     };
     assert.equal(label.className, "mineru-reader-toolbar-selection-label");
-    assert.equal(label.children[0].textContent, "复制已选内容");
+    assert.equal(label.children[0].textContent, "已选内容");
     assert.equal(label.children[1].className, "mineru-reader-toolbar-badge");
     assert.equal(label.children[1].textContent, "3");
 

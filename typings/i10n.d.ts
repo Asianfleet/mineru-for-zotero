@@ -63,6 +63,7 @@ export type FluentMessageId =
   | 'reader-disable-plugin'
   | 'reader-mode-group-label'
   | 'reader-overlay-missing-result'
+  | 'reader-selected-boxes-label'
   | 'reader-show-all-boxes'
   | 'reader-show-hover-box'
   | 'reader-toolbar-label'
