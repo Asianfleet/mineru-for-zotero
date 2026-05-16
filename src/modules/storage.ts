@@ -12,6 +12,7 @@ export interface StorageAdapter {
   getAttachmentDir(ref: AttachmentKeyRef): string;
   hasReadyResult(ref: AttachmentKeyRef): Promise<boolean>;
   readManifest(ref: AttachmentKeyRef): Promise<ParseManifest>;
+  readMarkdown(ref: AttachmentKeyRef): Promise<string>;
   readBoxes(ref: AttachmentKeyRef): Promise<NormalizedBox[]>;
   writeResult(input: {
     attachment: AttachmentRef;
@@ -59,6 +60,15 @@ export function createStorage(rootDir: string): StorageAdapter {
 
     async readManifest(ref) {
       return readManifestFile(getAttachmentDir(fsRoot, ref));
+    },
+
+    async readMarkdown(ref) {
+      const dir = getAttachmentDir(fsRoot, ref);
+      const manifest = await readManifestFile(dir);
+      if (manifest.status !== "ready") {
+        throw new Error(`MinerU result is not ready: ${manifest.status}`);
+      }
+      return readText(joinPath(dir, CONTENT_FILE));
     },
 
     async readBoxes(ref) {

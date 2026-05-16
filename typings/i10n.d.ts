@@ -59,6 +59,7 @@ export type FluentMessageId =
   | 'reader-copy-box'
   | 'reader-copy-formula-with-dollar'
   | 'reader-copy-formula-without-dollar'
+  | 'reader-copy-full-markdown'
   | 'reader-copy-selected-boxes'
   | 'reader-disable-plugin'
   | 'reader-mode-group-label'

@@ -238,7 +238,8 @@ describe("readerToolbar", function () {
 
     createReaderToolbarActionRow(doc, group, {
       selectionLabel: "已选内容",
-      copyLabel: "复制已选内容",
+      copySelectedLabel: "复制已选内容",
+      copyFullMarkdownLabel: "复制全文 markdown",
       selectedCount: 3,
       copyIconSVG:
         '<svg xmlns="http://www.w3.org/2000/svg"><path fill="#333333"></path></svg>',
@@ -287,6 +288,62 @@ describe("readerToolbar", function () {
     assert.equal(clearButton.style.padding, "0");
     assert.equal(clearButton.style.color, "var(--fill-secondary)");
     assert.equal(clearButton.title, "清空选择");
+  });
+
+  it("uses full markdown copy text when no boxes are selected", function () {
+    const children: unknown[] = [];
+    const doc = {
+      createElement(tagName: string) {
+        return {
+          tagName,
+          className: "",
+          textContent: "",
+          innerHTML: "",
+          style: { backgroundColor: "" },
+          children: [] as unknown[],
+          append(...nodes: unknown[]) {
+            this.children.push(...nodes);
+          },
+          replaceChildren(...nodes: unknown[]) {
+            this.children.splice(0, this.children.length, ...nodes);
+          },
+          setAttribute(name: string, value: string) {
+            this[name] = value;
+          },
+          addEventListener() {},
+        } as unknown as HTMLElement;
+      },
+    } as unknown as Document;
+    const group = {
+      className: "group",
+      style: {},
+      append(...nodes: unknown[]) {
+        children.push(...nodes);
+      },
+    } as unknown as HTMLDivElement;
+
+    createReaderToolbarActionRow(doc, group, {
+      selectionLabel: "已选内容",
+      copySelectedLabel: "复制已选内容",
+      copyFullMarkdownLabel: "复制全文 markdown",
+      selectedCount: 0,
+      copyIconSVG:
+        '<svg xmlns="http://www.w3.org/2000/svg"><path fill="#333333"></path></svg>',
+      clearLabel: "清空选择",
+      clearIconSVG:
+        '<svg xmlns="http://www.w3.org/2000/svg"><path fill="#333333"></path></svg>',
+      onCopy() {},
+      onClear() {},
+    });
+
+    const row = children[0] as HTMLDivElement & { children: HTMLElement[] };
+    const actions = row.children[1] as HTMLDivElement & {
+      children: Array<HTMLButtonElement & { "aria-label"?: string }>;
+    };
+    const copyButton = actions.children[0];
+
+    assert.equal(copyButton.title, "复制全文 markdown");
+    assert.equal(copyButton["aria-label"], "复制全文 markdown");
   });
 
   it("creates active icon buttons for reader toolbar modes", function () {

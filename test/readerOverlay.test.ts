@@ -1496,6 +1496,57 @@ describe("readerOverlay", function () {
     assert.equal(getReaderSelectedBoxCount(reader), 2);
   });
 
+  it("copies full markdown when no boxes are selected", async function () {
+    const copied: string[] = [];
+    const globals = globalThis as typeof globalThis & {
+      ztoolkit?: unknown;
+    };
+    const originalZtoolkit = globals.ztoolkit;
+    globals.ztoolkit = {
+      Clipboard: class {
+        private text = "";
+
+        addText(text: string) {
+          this.text = text;
+          return this;
+        }
+
+        copy() {
+          copied.push(this.text);
+        }
+      },
+    };
+    const reader = createReader({
+      instanceID: "reader-copy-full-markdown",
+      attachmentKey: "COPYFULL",
+      views: [createView("primary")],
+    });
+    setReaderOverlayModeForReader(reader, "all");
+    await createStorage(getMinerUStorageRoot()).writeResult({
+      attachment: {
+        id: 1,
+        key: "COPYFULL",
+        libraryID: 1,
+        fileName: "a.pdf",
+        filePath: "a.pdf",
+        mtime: 1,
+      },
+      mineruTaskID: "task-copy-full",
+      rawResult: { content_list: [] },
+      markdown: "# Full\n\nBody",
+      boxes: normalizedBoxes,
+    });
+
+    try {
+      const text = await readerOverlay.copySelectedBoxesForReader(reader);
+
+      assert.equal(text, "# Full\n\nBody");
+      assert.deepEqual(copied, ["# Full\n\nBody"]);
+    } finally {
+      globals.ztoolkit = originalZtoolkit;
+    }
+  });
+
   it("clears selected box classes across rendered split roots", function () {
     const reader = createReader({
       instanceID: "reader-clear-selection",

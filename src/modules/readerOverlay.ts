@@ -377,14 +377,18 @@ export async function copySelectedBoxesForReader(
 ): Promise<string | null> {
   const state = getReaderOverlayStateForReader(reader);
   const attachment = getReaderAttachmentRef(reader);
-  if (!state || !attachment || state.selectedRawIndexes.size === 0) {
+  if (!state || !attachment) {
     return null;
   }
 
-  const boxes = await createStorage(getMinerUStorageRoot()).readBoxes(
-    attachment,
-  );
-  const text = formatSelectedBoxesForCopy(boxes, state.selectedRawIndexes);
+  const storage = createStorage(getMinerUStorageRoot());
+  const text =
+    state.selectedRawIndexes.size === 0
+      ? await storage.readMarkdown(attachment)
+      : formatSelectedBoxesForCopy(
+          await storage.readBoxes(attachment),
+          state.selectedRawIndexes,
+        );
   copyText(text);
   return text || null;
 }

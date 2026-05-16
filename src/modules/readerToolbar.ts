@@ -15,6 +15,7 @@ type ReaderOverlayMode = "all" | "hover" | "off";
 
 type ReaderMessageId =
   | "reader-clear-selection"
+  | "reader-copy-full-markdown"
   | "reader-copy-selected-boxes"
   | "reader-disable-plugin"
   | "reader-mode-group-label"
@@ -660,7 +661,8 @@ function updateMenu(
   commandGroup.className = "group";
   createReaderToolbarActionRow(doc, commandGroup, {
     selectionLabel: readerString("reader-selected-boxes-label"),
-    copyLabel: readerString("reader-copy-selected-boxes"),
+    copySelectedLabel: readerString("reader-copy-selected-boxes"),
+    copyFullMarkdownLabel: readerString("reader-copy-full-markdown"),
     selectedCount: getReaderSelectedBoxCount(reader),
     copyIconSVG: readerToolbarCopySelectionSVG,
     clearLabel: readerString("reader-clear-selection"),
@@ -691,7 +693,8 @@ export function createReaderToolbarActionRow(
   group: HTMLDivElement,
   options: {
     selectionLabel: string;
-    copyLabel: string;
+    copySelectedLabel: string;
+    copyFullMarkdownLabel: string;
     selectedCount: number;
     copyIconSVG: string;
     clearLabel: string;
@@ -759,7 +762,9 @@ function createReaderToolbarSelectionLabel(
 function createReaderToolbarActionButtons(
   doc: Document,
   options: {
-    copyLabel: string;
+    copySelectedLabel: string;
+    copyFullMarkdownLabel: string;
+    selectedCount: number;
     copyIconSVG: string;
     clearLabel: string;
     clearIconSVG: string;
@@ -775,7 +780,7 @@ function createReaderToolbarActionButtons(
   actions.append(
     createReaderToolbarIconCommandButton(
       doc,
-      options.copyLabel,
+      getReaderToolbarCopyLabel(options),
       options.copyIconSVG,
       options.onCopy,
     ),
@@ -787,6 +792,16 @@ function createReaderToolbarActionButtons(
     ),
   );
   return actions;
+}
+
+function getReaderToolbarCopyLabel(options: {
+  copySelectedLabel: string;
+  copyFullMarkdownLabel: string;
+  selectedCount: number;
+}): string {
+  return options.selectedCount > 0
+    ? options.copySelectedLabel
+    : options.copyFullMarkdownLabel;
 }
 
 function createReaderToolbarIconCommandButton(
