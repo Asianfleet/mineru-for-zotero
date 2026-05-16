@@ -43,3 +43,12 @@ export function getApiKey(): string {
 export function setApiKey(value: string) {
   return setPref("apiKey", value);
 }
+
+export function getSaveImages(): boolean {
+  const value = getPref("saveImages");
+  return value !== false;
+}
+
+export function setSaveImages(value: boolean) {
+  return setPref("saveImages", value);
+}

@@ -1,6 +1,8 @@
 pref-title = MinerU for Zotero
 pref-api-key = MinerU API Key
 pref-api-key-help = The API Key is stored only in local Zotero preferences and used to call the MinerU API.
+pref-save-images = Save parsed result images
+pref-save-images-help = Save files from the MinerU result package images directory into the local parse result folder.
 pref-data-folder-title = Data Folder
 pref-open-data-folder = Open Data Folder
 pref-parsed-count = Parsed PDFs: { $count }

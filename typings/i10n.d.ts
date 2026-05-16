@@ -35,6 +35,8 @@ export type FluentMessageId =
   | 'pref-open-data-folder'
   | 'pref-parsed-count'
   | 'pref-parsed-count-error'
+  | 'pref-save-images'
+  | 'pref-save-images-help'
   | 'pref-title'
   | 'prefs-table-detail'
   | 'prefs-table-title'

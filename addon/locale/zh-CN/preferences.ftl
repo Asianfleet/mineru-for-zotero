@@ -1,6 +1,8 @@
 pref-title = MinerU for Zotero
 pref-api-key = MinerU API Key
 pref-api-key-help = API Key 仅保存在本机 Zotero 首选项中，用于调用 MinerU API。
+pref-save-images = 保存解析结果图片
+pref-save-images-help = 开启后会把 MinerU 结果包中 images 目录下的图片保存到本地解析结果目录。
 pref-data-folder-title = 数据目录
 pref-open-data-folder = 打开数据文件夹
 pref-parsed-count = 已解析 PDF：{ $count }

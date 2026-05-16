@@ -10,7 +10,7 @@ import {
 } from "./mineruClient";
 import { createStorage, type StorageAdapter } from "./storage";
 import { getString } from "../utils/locale";
-import { getApiKey } from "../utils/prefs";
+import { getApiKey, getSaveImages } from "../utils/prefs";
 import { getMinerUStorageRoot } from "./preferenceScript";
 
 const POLL_INTERVAL_MS = 3000;
@@ -20,6 +20,7 @@ export type ReparseChoice = "use-existing" | "reparse";
 
 export interface ParseManagerDependencies {
   getApiKey: () => string;
+  getSaveImages?: () => boolean;
   storage?: StorageAdapter;
   createStorage?: () => StorageAdapter;
   client?: MinerUClient;
@@ -274,6 +275,9 @@ async function parseAttachmentWithDependencies(
       rawResult: result.rawResult,
       markdown: result.markdown,
       boxes,
+      images: dependencies.getSaveImages?.() !== false
+        ? result.images
+        : undefined,
     });
     dependencies.showMessage("parse-finished");
   } catch (error) {
@@ -428,6 +432,7 @@ function showMessage(id: FluentMessageId, args?: Record<string, string>): void {
 function createDefaultDependencies(): ParseManagerDependencies {
   return {
     getApiKey,
+    getSaveImages,
     createStorage: () => createStorage(getMinerUStorageRoot()),
     createClient: (apiKey) => createMinerUClient({ apiKey }),
     showMessage,

@@ -312,6 +312,90 @@ describe("parseManager", function () {
     assert.include(messages, "parse-error-empty-boxes");
   });
 
+  it("passes downloaded images to storage when the preference is enabled", async function () {
+    const messages: string[] = [];
+    let savedImages:
+      | Array<{ path: string; bytes: Uint8Array }>
+      | undefined;
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getSaveImages: () => true,
+      storage: {
+        ...baseStorage(),
+        writeResult: async (input) => {
+          savedImages = input.images;
+        },
+      },
+      client: {
+        submitPdf: async () => ({ taskID: "task-images" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({
+          rawResult: {
+            pages: [
+              {
+                pageNo: 1,
+                width: 1000,
+                height: 1000,
+                blocks: [
+                  { type: "text", bbox: [0, 0, 100, 100], markdown: "A" },
+                ],
+              },
+            ],
+          },
+          markdown: "A",
+          images: [{ path: "a.png", bytes: new Uint8Array([1, 2, 3]) }],
+        }),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.deepEqual(savedImages, [
+      { path: "a.png", bytes: new Uint8Array([1, 2, 3]) },
+    ]);
+  });
+
+  it("does not pass downloaded images to storage when the preference is disabled", async function () {
+    const messages: string[] = [];
+    let savedImages:
+      | Array<{ path: string; bytes: Uint8Array }>
+      | undefined;
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getSaveImages: () => false,
+      storage: {
+        ...baseStorage(),
+        writeResult: async (input) => {
+          savedImages = input.images;
+        },
+      },
+      client: {
+        submitPdf: async () => ({ taskID: "task-images" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({
+          rawResult: {
+            pages: [
+              {
+                pageNo: 1,
+                width: 1000,
+                height: 1000,
+                blocks: [
+                  { type: "text", bbox: [0, 0, 100, 100], markdown: "A" },
+                ],
+              },
+            ],
+          },
+          markdown: "A",
+          images: [{ path: "a.png", bytes: new Uint8Array([1, 2, 3]) }],
+        }),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.isUndefined(savedImages);
+  });
+
   it("replaces an existing ready result with a failed result when reparse has no boxes", async function () {
     const messages: string[] = [];
     let failedRawResult: unknown;

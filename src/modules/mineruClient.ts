@@ -11,6 +11,8 @@
  * 4. Result download URLs are returned in extract_result[].full_zip_url.
  */
 
+import type { MinerUImageFile } from "./domain";
+
 export interface MinerUClient {
   submitPdf(filePath: string): Promise<{ taskID: string }>;
   pollTask(
@@ -19,6 +21,7 @@ export interface MinerUClient {
   downloadResult(taskID: string): Promise<{
     rawResult: unknown;
     markdown: string;
+    images?: MinerUImageFile[];
   }>;
 }
 
@@ -31,7 +34,7 @@ interface MinerUClientOptions {
   downloadBinary?: (url: string) => Promise<Response>;
   downloadFileBytes?: (
     url: string,
-  ) => Promise<Uint8Array | Map<string, string>>;
+  ) => Promise<Uint8Array | ZipEntries>;
   downloadRetryDelayMs?: number;
   maxDownloadAttempts?: number;
 }
@@ -208,7 +211,10 @@ export function createMinerUClient(options: MinerUClientOptions): MinerUClient {
         );
         return {
           rawResult: readRawResultFromZip(zip) ?? response,
-          markdown: zip.get("full.md") ?? "",
+          markdown: zip.has("full.md")
+            ? decodeText(zip.get("full.md")?.bytes ?? new Uint8Array())
+            : "",
+          images: readImagesFromZip(zip),
         };
       }
 
@@ -244,14 +250,21 @@ async function readPdfBytes(
   }
 }
 
+type ZipEntry = {
+  name: string;
+  bytes: Uint8Array;
+};
+
+type ZipEntries = Map<string, ZipEntry>;
+
 async function readZipOrFallback(
   zipBuffer: ArrayBuffer,
   rawResult: ExtractResultsBatchResponse,
   zipURL: string | undefined,
   markdownURL: string | undefined,
   downloadBinary: (url: string) => Promise<Response>,
-  downloadFileBytes: (url: string) => Promise<Uint8Array | Map<string, string>>,
-): Promise<Map<string, string>> {
+  downloadFileBytes: (url: string) => Promise<Uint8Array | ZipEntries>,
+): Promise<ZipEntries> {
   const diagnostics: string[] = [];
   try {
     return await readZip(zipBuffer);
@@ -285,10 +298,12 @@ async function readZipOrFallback(
       "download",
       { method: "GET" },
     );
-    return new Map([
-      ["full.md", await markdownResponse.text()],
-      ["mineru-result.json", JSON.stringify(rawResult)],
-    ]);
+    return textMapToZipEntries(
+      new Map([
+        ["full.md", await markdownResponse.text()],
+        ["mineru-result.json", JSON.stringify(rawResult)],
+      ]),
+    );
   }
 }
 
@@ -315,10 +330,10 @@ async function retryDownloadZip(
     result: ReturnType<typeof firstExtractResult>;
   },
   downloadBinary: (url: string) => Promise<Response>,
-  downloadFileBytes: (url: string) => Promise<Uint8Array | Map<string, string>>,
+  downloadFileBytes: (url: string) => Promise<Uint8Array | ZipEntries>,
   maxAttempts: number,
   retryDelayMs: number,
-): Promise<Map<string, string>> {
+): Promise<ZipEntries> {
   let current = initial;
   let lastError: unknown;
 
@@ -505,7 +520,7 @@ function xhrDownloadBinary(url: string): Promise<Response> {
 
 async function zoteroDownloadFileBytes(
   url: string,
-): Promise<Uint8Array | Map<string, string>> {
+): Promise<Uint8Array | ZipEntries> {
   const path = await createTemporaryPath("mineru-result.zip");
   try {
     const curlResult = await downloadWithCurl(url, path);
@@ -932,7 +947,7 @@ async function removeFileIfExists(path: string): Promise<void> {
   }
 }
 
-function readZipFile(path: string): Map<string, string> | null {
+function readZipFile(path: string): ZipEntries | null {
   const xpcom = globalThis as typeof globalThis & {
     Components?: typeof Components;
   };
@@ -951,7 +966,7 @@ function readZipFile(path: string): Map<string, string> | null {
   const reader = classMap["@mozilla.org/libjar/zip-reader;1"].createInstance(
     interfaces.nsIZipReader,
   ) as nsIZipReader;
-  const entries = new Map<string, string>();
+  const entries: ZipEntries = new Map();
   try {
     reader.open(file);
     const names = reader.findEntries("*");
@@ -960,8 +975,11 @@ function readZipFile(path: string): Map<string, string> | null {
       if (reader.getEntry(name).isDirectory) {
         continue;
       }
-      if (name === "full.md" || name.endsWith(".json")) {
-        entries.set(name, readZipEntryText(reader, name));
+      if (shouldKeepZipEntry(name)) {
+        entries.set(name, {
+          name,
+          bytes: readZipEntryBytes(reader, name),
+        });
       }
     }
   } finally {
@@ -970,7 +988,7 @@ function readZipFile(path: string): Map<string, string> | null {
   return entries.size > 0 ? entries : null;
 }
 
-function readZipEntryText(reader: nsIZipReader, name: string): string {
+function readZipEntryBytes(reader: nsIZipReader, name: string): Uint8Array {
   const input = reader.getInputStream(name);
   const classMap = Components.classes as typeof Components.classes &
     Record<string, { createInstance: (iid: unknown) => nsISupports }>;
@@ -980,16 +998,15 @@ function readZipEntryText(reader: nsIZipReader, name: string): string {
   try {
     binary.setInputStream(input);
     const entry = reader.getEntry(name);
-    const bytes = new Uint8Array(binary.readByteArray(entry.realSize));
-    return new TextDecoder().decode(bytes);
+    return new Uint8Array(binary.readByteArray(entry.realSize));
   } finally {
     input.close();
   }
 }
 
-async function readZip(buffer: ArrayBuffer): Promise<Map<string, string>> {
+async function readZip(buffer: ArrayBuffer): Promise<ZipEntries> {
   const bytes = new Uint8Array(buffer);
-  const entries = new Map<string, string>();
+  const entries: ZipEntries = new Map();
   const centralOffset = findCentralDirectoryOffset(bytes);
   const decoder = new TextDecoder();
   let offset = centralOffset;
@@ -1012,7 +1029,9 @@ async function readZip(buffer: ArrayBuffer): Promise<Map<string, string>> {
       compressedSize,
       uncompressedSize,
     );
-    entries.set(name, decoder.decode(content));
+    if (shouldKeepZipEntry(name)) {
+      entries.set(name, { name, bytes: content });
+    }
     offset += 46 + nameLength + extraLength + commentLength;
   }
 
@@ -1070,10 +1089,10 @@ async function inflateRaw(
   return result;
 }
 
-function readRawResultFromZip(zip: Map<string, string>): unknown | null {
+function readRawResultFromZip(zip: ZipEntries): unknown | null {
   let firstJson: unknown | null = null;
 
-  for (const [name, value] of zip) {
+  for (const [name, entry] of zip) {
     if (name === "full.md") {
       continue;
     }
@@ -1081,7 +1100,7 @@ function readRawResultFromZip(zip: Map<string, string>): unknown | null {
       continue;
     }
     try {
-      const parsed = JSON.parse(value) as unknown;
+      const parsed = JSON.parse(decodeText(entry.bytes)) as unknown;
       firstJson ??= parsed;
       if (hasPageBoxData(parsed)) {
         return parsed;
@@ -1092,6 +1111,59 @@ function readRawResultFromZip(zip: Map<string, string>): unknown | null {
   }
 
   return firstJson;
+}
+
+function readImagesFromZip(zip: ZipEntries): MinerUImageFile[] | undefined {
+  const images: MinerUImageFile[] = [];
+  for (const [name, entry] of zip) {
+    const imagePath = getZipImagePath(name);
+    if (!imagePath) {
+      continue;
+    }
+    images.push({ path: imagePath, bytes: entry.bytes });
+  }
+  return images.length > 0 ? images : undefined;
+}
+
+function shouldKeepZipEntry(name: string): boolean {
+  return name === "full.md" || name.endsWith(".json") || isZipImageEntry(name);
+}
+
+function isZipImageEntry(name: string): boolean {
+  return Boolean(getZipImagePath(name));
+}
+
+function getZipImagePath(name: string): string | null {
+  const normalized = name.replace(/\\/g, "/");
+  if (!normalized.startsWith("images/")) {
+    return null;
+  }
+  const relative = normalized.slice("images/".length);
+  if (!isSafeRelativePath(relative)) {
+    return null;
+  }
+  return relative;
+}
+
+function isSafeRelativePath(path: string): boolean {
+  if (!path || path.startsWith("/") || /^[a-z]:/i.test(path)) {
+    return false;
+  }
+  return path.split("/").every((part) => part && part !== "." && part !== "..");
+}
+
+function textMapToZipEntries(entries: Map<string, string>): ZipEntries {
+  const encoder = new TextEncoder();
+  return new Map(
+    [...entries].map(([name, value]) => [
+      name,
+      { name, bytes: encoder.encode(value) },
+    ]),
+  );
+}
+
+function decodeText(bytes: Uint8Array): string {
+  return new TextDecoder().decode(bytes);
 }
 
 function hasPageBoxData(value: unknown): boolean {

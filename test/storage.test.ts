@@ -54,6 +54,42 @@ describe("storage", function () {
     );
   });
 
+  it("writes MinerU images under the attachment images directory", async function () {
+    const storage = createStorage(rootDir);
+    const attachment = {
+      id: 1,
+      key: "IMAGES",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+
+    await writeResultOrFail(storage, {
+      attachment,
+      mineruTaskID: "task-images",
+      rawResult: { ok: true },
+      markdown: "![A](images/a.png)",
+      boxes: normalizedBoxes,
+      images: [
+        { path: "a.png", bytes: new Uint8Array([137, 80, 78, 71]) },
+        { path: "nested/b.jpg", bytes: new Uint8Array([255, 216, 255]) },
+        { path: "../escape.png", bytes: new Uint8Array([1, 2, 3]) },
+      ],
+    });
+
+    const dir = resolveTmpPath(storage.getAttachmentDir(attachment));
+    assert.deepEqual(
+      Array.from(await readBytes(joinPath(dir, "images", "a.png"))),
+      [137, 80, 78, 71],
+    );
+    assert.deepEqual(
+      Array.from(await readBytes(joinPath(dir, "images", "nested", "b.jpg"))),
+      [255, 216, 255],
+    );
+    assert.isFalse(await exists(joinPath(dir, "escape.png")));
+  });
+
   it("reports missing or non-ready results as not ready", async function () {
     const storage = createStorage(rootDir);
 
@@ -453,6 +489,17 @@ async function readText(path: string): Promise<string> {
     : new TextDecoder().decode(value as BufferSource);
 }
 
+async function readBytes(path: string): Promise<Uint8Array> {
+  if (typeof IOUtils !== "undefined") {
+    return IOUtils.read(path);
+  }
+  const runtime = globalThis as typeof globalThis & { OS?: typeof OS };
+  if (!runtime.OS) {
+    throw new Error("No binary file reader is available");
+  }
+  return runtime.OS.File.read(path) as Promise<Uint8Array>;
+}
+
 async function writeText(path: string, value: string): Promise<void> {
   const dir = dirname(path);
   if (typeof IOUtils !== "undefined") {
@@ -472,6 +519,17 @@ async function writeText(path: string, value: string): Promise<void> {
     encoding: "utf-8",
     tmpPath: `${path}.tmp`,
   });
+}
+
+async function exists(path: string): Promise<boolean> {
+  if (typeof IOUtils !== "undefined") {
+    return IOUtils.exists(path);
+  }
+  const runtime = globalThis as typeof globalThis & { OS?: typeof OS };
+  if (!runtime.OS) {
+    throw new Error("No file existence checker is available");
+  }
+  return Boolean(await runtime.OS.File.exists(path));
 }
 
 function resolveTmpPath(path: string): string {

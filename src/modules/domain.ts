@@ -23,6 +23,11 @@ export interface NormalizedBox {
   formula: string | null;
 }
 
+export interface MinerUImageFile {
+  path: string;
+  bytes: Uint8Array;
+}
+
 export interface ParseManifest {
   attachmentID: number;
   attachmentKey: string;

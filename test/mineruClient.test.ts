@@ -294,6 +294,41 @@ describe("mineruClient", function () {
     assert.deepEqual(result.rawResult, { pages: [{ pageNo: 1 }] });
   });
 
+  it("extracts files from the zip images directory", async function () {
+    const client = createMinerUClient({
+      apiKey: "secret-token",
+      fetch: async (url) => {
+        if (String(url).includes("/extract-results/")) {
+          return jsonResponse({
+            code: 0,
+            data: {
+              extract_result: [
+                {
+                  state: "done",
+                  full_zip_url: "https://download.example/full.zip",
+                },
+              ],
+            },
+          });
+        }
+        return new Response(
+          createStoredZipBytes({
+            "full.md": "# Title\n![A](images/a.png)",
+            "layout.json": JSON.stringify({ pages: [{ pageNo: 1 }] }),
+            "images/a.png": new Uint8Array([137, 80, 78, 71]),
+            "not-images/b.png": new Uint8Array([1, 2, 3]),
+          }),
+        );
+      },
+    });
+
+    const result = await client.downloadResult("batch-1");
+
+    assert.deepEqual(result.images, [
+      { path: "a.png", bytes: new Uint8Array([137, 80, 78, 71]) },
+    ]);
+  });
+
   it("prefers the zip json that contains page box data", async function () {
     const client = createMinerUClient({
       apiKey: "secret-token",
@@ -658,7 +693,9 @@ function xhrResponse(value: unknown, status = 200): XMLHttpRequest {
   } as XMLHttpRequest;
 }
 
-function createStoredZipBytes(files: Record<string, string>): Uint8Array {
+function createStoredZipBytes(
+  files: Record<string, string | Uint8Array>,
+): Uint8Array {
   const encoder = new TextEncoder();
   const localParts: Uint8Array[] = [];
   const centralParts: Uint8Array[] = [];
@@ -666,7 +703,8 @@ function createStoredZipBytes(files: Record<string, string>): Uint8Array {
 
   for (const [name, content] of Object.entries(files)) {
     const nameBytes = encoder.encode(name);
-    const contentBytes = encoder.encode(content);
+    const contentBytes =
+      typeof content === "string" ? encoder.encode(content) : content;
     const crc = crc32(contentBytes);
     const localHeader = new Uint8Array(30 + nameBytes.length);
     const local = new DataView(localHeader.buffer);

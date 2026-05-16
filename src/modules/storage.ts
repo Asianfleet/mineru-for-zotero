@@ -1,4 +1,9 @@
-import type { AttachmentRef, NormalizedBox, ParseManifest } from "./domain";
+import type {
+  AttachmentRef,
+  MinerUImageFile,
+  NormalizedBox,
+  ParseManifest,
+} from "./domain";
 import { normalizeMinerUBoxes } from "./boxNormalizer";
 
 type AttachmentKeyRef = Pick<AttachmentRef, "libraryID" | "key">;
@@ -14,6 +19,7 @@ export interface StorageAdapter {
     rawResult: unknown;
     markdown: string;
     boxes: NormalizedBox[];
+    images?: MinerUImageFile[];
   }): Promise<void>;
   writeFailedResult(input: {
     attachment: AttachmentRef;
@@ -31,6 +37,7 @@ const MANIFEST_FILE = "manifest.json";
 const RAW_RESULT_FILE = "mineru-result.json";
 const CONTENT_FILE = "content.md";
 const BOXES_FILE = "boxes.normalized.json";
+const IMAGES_DIR = "images";
 
 export function createStorage(rootDir: string): StorageAdapter {
   const root = normalizePath(rootDir);
@@ -85,6 +92,7 @@ export function createStorage(rootDir: string): StorageAdapter {
         rawResult: input.rawResult,
         markdown: input.markdown,
         boxes: input.boxes,
+        images: input.images,
         validate: validateReadyDir,
       });
     },
@@ -152,6 +160,7 @@ async function writeAttachmentResultDir(
     rawResult: unknown;
     markdown: string;
     boxes: NormalizedBox[];
+    images?: MinerUImageFile[];
     validate?: (dir: string) => Promise<void>;
   },
 ): Promise<void> {
@@ -167,6 +176,7 @@ async function writeAttachmentResultDir(
     await writeJson(joinPath(tempDir, RAW_RESULT_FILE), input.rawResult);
     await writeText(joinPath(tempDir, CONTENT_FILE), input.markdown);
     await writeJson(joinPath(tempDir, BOXES_FILE), input.boxes);
+    await writeImages(joinPath(tempDir, IMAGES_DIR), input.images ?? []);
     await input.validate?.(tempDir);
   } catch (error) {
     await removePath(tempDir);
@@ -280,6 +290,32 @@ async function writeText(path: string, value: string): Promise<void> {
   });
 }
 
+async function writeImages(
+  imagesDir: string,
+  images: MinerUImageFile[],
+): Promise<void> {
+  for (const image of images) {
+    const safePath = normalizeSafeRelativePath(image.path);
+    if (!safePath) {
+      continue;
+    }
+    await writeBytes(joinPath(imagesDir, safePath), image.bytes);
+  }
+}
+
+async function writeBytes(path: string, value: Uint8Array): Promise<void> {
+  await makeDir(dirname(path));
+  if (hasIOUtils()) {
+    await IOUtils.write(toNativePath(path), value, {
+      tmpPath: toNativePath(`${path}.tmp`),
+    });
+    return;
+  }
+  await OS.File.writeAtomic(toNativePath(path), value, {
+    tmpPath: toNativePath(`${path}.tmp`),
+  });
+}
+
 async function makeDir(path: string): Promise<void> {
   if (hasIOUtils()) {
     await IOUtils.makeDirectory(toNativePath(path), {
@@ -387,6 +423,18 @@ function joinPath(...parts: string[]): string {
 
 function normalizePath(path: string): string {
   return path.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/, "");
+}
+
+function normalizeSafeRelativePath(path: string): string | null {
+  const normalized = normalizePath(path);
+  if (!normalized || normalized.startsWith("/") || /^[a-z]:/i.test(normalized)) {
+    return null;
+  }
+  const parts = normalized.split("/");
+  if (parts.some((part) => !part || part === "." || part === "..")) {
+    return null;
+  }
+  return parts.join("/");
 }
 
 function toNativePath(path: string): string {
