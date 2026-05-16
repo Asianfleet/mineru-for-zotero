@@ -23,6 +23,7 @@ export type FluentMessageId =
   | 'parse-error-upload'
   | 'parse-finished'
   | 'parse-menuitem-label'
+  | 'parse-pdf-menuitem'
   | 'parse-started'
   | 'parse-use-existing-result'
   | 'pref-about-title'

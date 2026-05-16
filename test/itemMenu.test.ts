@@ -1,0 +1,70 @@
+import { assert } from "chai";
+import * as itemMenu from "../src/modules/itemMenu";
+import { config } from "../package.json";
+
+const { createParsePdfMenuRegistration, shouldShowParsePdfMenu } = itemMenu;
+
+describe("itemMenu", function () {
+  it("shows the parse command only when every selected item is a PDF attachment", function () {
+    assert.isTrue(shouldShowParsePdfMenu([pdfAttachment()]));
+    assert.isTrue(shouldShowParsePdfMenu([pdfAttachment(), pdfAttachment()]));
+    assert.isFalse(shouldShowParsePdfMenu([]));
+    assert.isFalse(shouldShowParsePdfMenu([regularItem()]));
+    assert.isFalse(shouldShowParsePdfMenu([pdfAttachment(), regularItem()]));
+    assert.isFalse(shouldShowParsePdfMenu([nonPdfAttachment()]));
+    assert.isFalse(shouldShowParsePdfMenu([{} as Zotero.Item]));
+  });
+
+  it("registers a PDF attachment item-menu command through Zotero MenuManager", function () {
+    const registration = createParsePdfMenuRegistration();
+    const menu = registration.menus[0];
+
+    assert.equal(registration.menuID, `${config.addonRef}-parse-pdf`);
+    assert.equal(registration.pluginID, config.addonID);
+    assert.equal(registration.target, "main/library/item");
+    assert.equal(menu.menuType, "menuitem");
+    assert.equal(menu.l10nID, `${config.addonRef}-parse-pdf-menuitem`);
+    assert.equal(menu.icon, `chrome://${config.addonRef}/content/mineru.svg`);
+  });
+
+  it("does not expose a separate MenuManager unregister path", function () {
+    assert.notProperty(itemMenu, "unregisterItemMenu");
+  });
+
+  it("hides the MenuManager command for mixed or regular-item selections", function () {
+    const menu = createParsePdfMenuRegistration().menus[0];
+    const visibleStates: boolean[] = [];
+
+    menu.onShowing(new Event("popupshowing"), {
+      items: [pdfAttachment(), regularItem()],
+      setVisible: (visible) => visibleStates.push(visible),
+    });
+    menu.onShowing(new Event("popupshowing"), {
+      items: [pdfAttachment()],
+      setVisible: (visible) => visibleStates.push(visible),
+    });
+
+    assert.deepEqual(visibleStates, [false, true]);
+  });
+});
+
+function pdfAttachment(): Zotero.Item {
+  return {
+    isAttachment: () => true,
+    isPDFAttachment: () => true,
+  } as unknown as Zotero.Item;
+}
+
+function nonPdfAttachment(): Zotero.Item {
+  return {
+    isAttachment: () => true,
+    isPDFAttachment: () => false,
+  } as unknown as Zotero.Item;
+}
+
+function regularItem(): Zotero.Item {
+  return {
+    isAttachment: () => false,
+    isPDFAttachment: () => false,
+  } as unknown as Zotero.Item;
+}

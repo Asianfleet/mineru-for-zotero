@@ -6,6 +6,7 @@ import {
   parseSelectedAttachment,
   type ItemParseContext,
 } from "./modules/parseManager";
+import { registerItemMenu } from "./modules/itemMenu";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { destroyAllReaderOverlays } from "./modules/readerOverlay";
 import {
@@ -38,6 +39,23 @@ async function onStartup() {
 }
 
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
+  await new Promise((resolve) => {
+    if (win.document.readyState !== "complete") {
+      win.document.addEventListener("readystatechange", () => {
+        if (win.document.readyState === "complete") {
+          resolve(void 0);
+        }
+      });
+    }
+    resolve(void 0);
+  });
+
+  await Promise.all([
+    Zotero.initializationPromise,
+    Zotero.unlockPromise,
+    Zotero.uiReadyPromise,
+  ]);
+
   // Create ztoolkit for every window
   addon.data.ztoolkit = createZToolkit();
 
@@ -45,7 +63,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
     `${addon.data.config.addonRef}-mainWindow.ftl`,
   );
 
-  registerItemMenu(win);
+  registerItemMenu();
   await registerReaderToolbar(win);
 }
 
@@ -58,7 +76,7 @@ function registerPreferencePane(): void {
   });
 }
 
-function registerItemMenu(win: _ZoteroTypes.MainWindow): void {
+function registerLegacyItemMenu(win: _ZoteroTypes.MainWindow): void {
   const doc = win.document;
   const menu = doc.getElementById("zotero-itemmenu");
   if (!menu || doc.getElementById(PARSE_MENU_ID)) {
@@ -221,12 +239,16 @@ function getAttachmentMenuLabel(attachment: Zotero.Item): string {
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
+  removeMainWindowFTL(win);
   unregisterReaderToolbar(win);
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
 }
 
 function onShutdown(): void {
+  Zotero.getMainWindows().forEach((win) => {
+    removeMainWindowFTL(win);
+  });
   unregisterReaderToolbar();
   destroyAllReaderOverlays();
   ztoolkit.unregisterAll();
@@ -235,6 +257,12 @@ function onShutdown(): void {
   addon.data.alive = false;
   // @ts-expect-error - Plugin instance is not typed
   delete Zotero[addon.data.config.addonInstance];
+}
+
+function removeMainWindowFTL(win: Window): void {
+  win.document
+    .querySelector(`[href="${addon.data.config.addonRef}-mainWindow.ftl"]`)
+    ?.remove();
 }
 
 /**

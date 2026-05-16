@@ -1,4 +1,6 @@
 parse-menuitem-label = Parse PDF with MinerU
+parse-pdf-menuitem =
+    .label = Parse PDF with MinerU
 parse-all-menuitem-label = Parse all PDFs
 parse-error-not-pdf = Only PDF attachments are supported
 parse-error-file-access = File access failed

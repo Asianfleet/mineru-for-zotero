@@ -1,4 +1,6 @@
 parse-menuitem-label = 使用 MinerU 解析 PDF
+parse-pdf-menuitem =
+    .label = 使用 MinerU 解析 PDF
 parse-all-menuitem-label = 解析所有 PDF
 parse-error-not-pdf = 仅支持 PDF attachment
 parse-error-file-access = 文件访问失败
