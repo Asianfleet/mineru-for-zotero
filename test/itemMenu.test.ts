@@ -46,6 +46,32 @@ describe("itemMenu", function () {
 
     assert.deepEqual(visibleStates, [false, true]);
   });
+
+  it("hides the trailing custom-menu separator when the command is hidden", function () {
+    const doc = document.implementation.createHTMLDocument("");
+    const popup = doc.createElement("menupopup");
+    const separator = doc.createElement("menuseparator");
+    const menuElem = doc.createElement("menuitem");
+    const menu = createParsePdfMenuRegistration().menus[0];
+
+    separator.classList.add(
+      "zotero-custom-menu-item",
+      "zotero-custom-menu-group-separator",
+    );
+    menuElem.classList.add("zotero-custom-menu-item");
+    popup.append(separator, menuElem);
+
+    menu.onShowing(new Event("popupshowing"), {
+      items: [regularItem()],
+      menuElem,
+      setVisible: (visible) => {
+        menuElem.hidden = !visible;
+      },
+    } as Parameters<typeof menu.onShowing>[1]);
+
+    assert.isTrue(menuElem.hidden);
+    assert.isTrue(separator.hidden);
+  });
 });
 
 function pdfAttachment(): Zotero.Item {
