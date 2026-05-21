@@ -10,7 +10,7 @@
 
 ---
 
-## Execution Rules
+## Execution Rules (must be followed)
 
 - Work in the current workspace unless the user explicitly approves a git worktree. The project AGENTS.md requires asking before using `git worktree`.
 - Do not continue past a checkpoint until the user manually accepts that checkpoint.
@@ -18,6 +18,7 @@
 - Do not run Vitest. This project uses `zotero-plugin test`.
 - Do not edit generated `.scaffold/build/` output.
 - Do not preserve line-count limits by compressing formatting. If a file approaches 500 lines, split it by responsibility.
+- During refactoring, add a docstring to every function explaining its purpose.
 - Keep existing external imports working, including `from "./modules/readerOverlay"` and `from "../src/modules/mineruClient"`.
 
 ## Target File Structure
