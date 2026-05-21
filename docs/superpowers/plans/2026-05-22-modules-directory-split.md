@@ -74,7 +74,7 @@
 - Read: `src/modules/readerToolbar.ts`
 - Read: `src/modules/readerOverlay.ts`
 
-- [ ] **Step 0.1: Confirm clean workspace**
+- [x] **Step 0.1: Confirm clean workspace**
 
 Run:
 
@@ -84,7 +84,7 @@ git status --short
 
 Expected: no output.
 
-- [ ] **Step 0.2: Record current oversized files**
+- [x] **Step 0.2: Record current oversized files**
 
 Run:
 
@@ -94,7 +94,7 @@ Get-ChildItem -LiteralPath 'src\modules' -File -Recurse | Where-Object { $_.Exte
 
 Expected: `readerOverlay.ts`, `mineruClient.ts`, and `readerToolbar.ts` are above 1000 lines before implementation.
 
-- [ ] **Step 0.3: Run baseline type check**
+- [x] **Step 0.3: Run baseline type check**
 
 Run:
 
@@ -110,6 +110,8 @@ Expected: exits with code 0. If it fails before edits, stop and report the basel
 
 Stop after Task 4 and wait for user acceptance before starting Checkpoint 2.
 
+**Implementation status:** Completed and manually accepted. The split was committed as `d50dcbe refactor(mineru): split client module`, then followed by `b774950 docs(mineru): add client function docstrings`. Manual plugin testing passed with no observed functional impact. Current `mineruClient` line counts remain within limits after docstrings: `download.ts` 356, `http.ts` 279, `zip.ts` 218, `index.ts` 186, `api.ts` 103, `result.ts` 99, `path.ts` 61, `errors.ts` 54, `types.ts` 51, `file.ts` 25.
+
 ### Task 1: Move `mineruClient` To A Directory Entrypoint
 
 **Files:**
@@ -117,7 +119,7 @@ Stop after Task 4 and wait for user acceptance before starting Checkpoint 2.
 - Delete: `src/modules/mineruClient.ts`
 - Modify: imports inside the moved file
 
-- [ ] **Step 1.1: Create the target directory**
+- [x] **Step 1.1: Create the target directory**
 
 Run:
 
@@ -127,7 +129,7 @@ New-Item -ItemType Directory -Force -Path 'src\modules\mineruClient'
 
 Expected: directory exists.
 
-- [ ] **Step 1.2: Move the current implementation**
+- [x] **Step 1.2: Move the current implementation**
 
 Run:
 
@@ -137,7 +139,7 @@ git mv src\modules\mineruClient.ts src\modules\mineruClient\index.ts
 
 Expected: `git status --short` shows a rename from `src/modules/mineruClient.ts` to `src/modules/mineruClient/index.ts`.
 
-- [ ] **Step 1.3: Fix the domain import in `index.ts`**
+- [x] **Step 1.3: Fix the domain import in `index.ts`**
 
 Change this import:
 
@@ -151,7 +153,7 @@ to:
 import type { MinerUImageFile } from "../domain";
 ```
 
-- [ ] **Step 1.4: Verify directory import resolution**
+- [x] **Step 1.4: Verify directory import resolution**
 
 Run:
 
@@ -170,7 +172,7 @@ Expected: exits with code 0. This proves `from "./mineruClient"` and `from "../s
 - Create: `src/modules/mineruClient/path.ts`
 - Modify: `src/modules/mineruClient/index.ts`
 
-- [ ] **Step 2.1: Move public and internal types to `types.ts`**
+- [x] **Step 2.1: Move public and internal types to `types.ts`**
 
 Move these declarations from `index.ts` to `types.ts`, preserving their names:
 
@@ -206,11 +208,11 @@ export type FetchLike = typeof fetch;
 
 Also move `FileUrlsBatchResponse`, `ExtractResultsBatchResponse`, `ZipEntry`, and `ZipEntries` into `types.ts` and export them.
 
-- [ ] **Step 2.2: Move error classes to `errors.ts`**
+- [x] **Step 2.2: Move error classes to `errors.ts`**
 
 Move `MinerURequestError`, `MinerUFileAccessError`, and `MinerUTaskError` unchanged into `errors.ts`, and export all three classes.
 
-- [ ] **Step 2.3: Move MinerU API helpers to `api.ts`**
+- [x] **Step 2.3: Move MinerU API helpers to `api.ts`**
 
 Move these functions to `api.ts` and export them:
 
@@ -233,7 +235,7 @@ import type { ExtractResultsBatchResponse, FetchLike } from "./types";
 import { errorMessage, responseErrorDetail } from "./http";
 ```
 
-- [ ] **Step 2.4: Move path and summary helpers to `path.ts`**
+- [x] **Step 2.4: Move path and summary helpers to `path.ts`**
 
 Move these functions to `path.ts` and export them:
 
@@ -246,7 +248,7 @@ summarizeBytes
 isSafeRelativePath
 ```
 
-- [ ] **Step 2.5: Update `index.ts` imports and public re-exports**
+- [x] **Step 2.5: Update `index.ts` imports and public re-exports**
 
 Add these imports and exports in `index.ts`:
 
@@ -274,7 +276,7 @@ export {
 export type { MinerUClient } from "./types";
 ```
 
-- [ ] **Step 2.6: Run type check**
+- [x] **Step 2.6: Run type check**
 
 Run:
 
@@ -295,7 +297,7 @@ Expected: exits with code 0.
 - Modify: `src/modules/mineruClient/api.ts`
 - Modify: `src/modules/mineruClient/path.ts`
 
-- [ ] **Step 3.1: Move HTTP adapters to `http.ts`**
+- [x] **Step 3.1: Move HTTP adapters to `http.ts`**
 
 Move these functions to `http.ts` and export the functions consumed by other modules:
 
@@ -327,7 +329,7 @@ sanitizeErrorDetail
 
 Keep `responseErrorDetail` exported because `api.ts` uses it.
 
-- [ ] **Step 3.2: Move download fallback logic to `download.ts`**
+- [x] **Step 3.2: Move download fallback logic to `download.ts`**
 
 Move these functions to `download.ts` and export `retryDownloadZip`, `zoteroDownloadFileBytes`, and `readZipOrFallback`:
 
@@ -350,7 +352,7 @@ removeFileIfExists
 
 Import ZIP parsing from `./zip`, error types from `./errors`, HTTP helpers from `./http`, and URL/path helpers from `./path`.
 
-- [ ] **Step 3.3: Move ZIP parsing to `zip.ts`**
+- [x] **Step 3.3: Move ZIP parsing to `zip.ts`**
 
 Move these functions to `zip.ts` and export the functions used outside the file:
 
@@ -369,7 +371,7 @@ readUint32
 
 Keep `readZip`, `readZipFile`, `textMapToZipEntries`, and `decodeText` exported.
 
-- [ ] **Step 3.4: Move result extraction to `result.ts`**
+- [x] **Step 3.4: Move result extraction to `result.ts`**
 
 Move these functions to `result.ts` and export them:
 
@@ -385,7 +387,7 @@ hasBlockGeometry
 
 Import `MinerUImageFile` from `../domain`, `ZipEntries` from `./types`, and `decodeText` from `./zip`.
 
-- [ ] **Step 3.5: Keep `index.ts` focused on `createMinerUClient`**
+- [x] **Step 3.5: Keep `index.ts` focused on `createMinerUClient`**
 
 After extraction, `index.ts` should contain:
 
@@ -398,7 +400,7 @@ public re-exports
 
 If `index.ts` remains above 300 lines, move `readPdfBytes` and `readFileBytes` to `file.ts` and import them from `index.ts`.
 
-- [ ] **Step 3.6: Verify type check after extraction**
+- [x] **Step 3.6: Verify type check after extraction**
 
 Run:
 
@@ -415,7 +417,7 @@ Expected: exits with code 0.
 - Verify: `test/mineruClient.test.ts`
 - Verify: `test/parseManager.test.ts`
 
-- [ ] **Step 4.1: Verify file line counts**
+- [x] **Step 4.1: Verify file line counts**
 
 Run:
 
@@ -425,7 +427,7 @@ Get-ChildItem -LiteralPath 'src\modules\mineruClient' -File -Filter '*.ts' | For
 
 Expected: every file is below 500 lines, and `src\modules\mineruClient\index.ts` is below 300 lines.
 
-- [ ] **Step 4.2: Run full TypeScript check**
+- [x] **Step 4.2: Run full TypeScript check**
 
 Run:
 
@@ -435,7 +437,7 @@ Run:
 
 Expected: exits with code 0.
 
-- [ ] **Step 4.3: Review diff scope**
+- [x] **Step 4.3: Review diff scope**
 
 Run:
 
@@ -446,7 +448,7 @@ git diff --name-status
 
 Expected: changes are limited to deleting `src/modules/mineruClient.ts`, creating `src/modules/mineruClient/*.ts`, and any import fixes required by TypeScript.
 
-- [ ] **Step 4.4: Commit Checkpoint 1**
+- [x] **Step 4.4: Commit Checkpoint 1**
 
 Run:
 
@@ -457,7 +459,7 @@ git commit -m "refactor(mineru): split client module"
 
 Expected: commit succeeds.
 
-- [ ] **Step 4.5: Stop for manual acceptance**
+- [x] **Step 4.5: Stop for manual acceptance**
 
 Report the commit hash, line-count table, `tsc` result, and diff scope to the user. Do not start Checkpoint 2 until the user explicitly approves.
 
