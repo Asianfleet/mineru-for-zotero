@@ -14,7 +14,7 @@ import type {
 
 const buttonBindings = new Map<string, ReaderToolbarButtonBinding>();
 
-/** Finds the PDF reader toolbar location where the MinerU button should mount. */
+/** 查找 MinerU button 应挂载的 PDF reader toolbar 位置。 */
 export function findReaderToolbarAnchor(doc: {
   getElementById(id: string): Element | null;
   querySelector(selector: string): Element | null;
@@ -35,7 +35,7 @@ export function findReaderToolbarAnchor(doc: {
   return null;
 }
 
-/** Ensures a reader has a toolbar button and floating menu binding. */
+/** 确保某个 reader 具有 toolbar button 和浮动菜单绑定。 */
 export function ensureButtonBinding(
   win: Window,
   reader: _ZoteroTypes.ReaderInstance,
@@ -88,7 +88,7 @@ export function ensureButtonBinding(
 
   const menu = createReaderToolbarPanel(doc);
   const menuState = panelStore.ensure(reader._instanceID);
-  /** Synchronizes the menu visibility and button active styling. */
+  /** 同步菜单可见性和 button 激活样式。 */
   const sync = () => {
     const open = menuState.isOpen();
     menu.hidden = !open;
@@ -100,7 +100,7 @@ export function ensureButtonBinding(
       positionMenu(button, menu);
     }
   };
-  /** Applies hover styling while the menu is closed. */
+  /** 在菜单关闭时应用悬停样式。 */
   const setHover = (hovered: boolean) => {
     if (!menuState.isOpen()) {
       button.style.backgroundColor = hovered
@@ -108,7 +108,7 @@ export function ensureButtonBinding(
         : "";
     }
   };
-  /** Toggles the toolbar menu from a primary mouse click. */
+  /** 通过主键鼠标点击切换 toolbar 菜单。 */
   const onClick = (event: MouseEvent) => {
     if (event.button !== 0) {
       return;
@@ -119,14 +119,14 @@ export function ensureButtonBinding(
     updateMenu(reader, doc, menu, sync);
     sync();
   };
-  /** Closes the menu when the reader document receives an outside pointer event. */
+  /** 当 reader document 收到外部 pointer event 时关闭菜单。 */
   const onDocumentPointerDown = (event: Event) => {
     if (isOutsideToolbarMenu(event, button, menu)) {
       menuState.close();
       sync();
     }
   };
-  /** Closes the menu when the Zotero main window receives an outside pointer event. */
+  /** 当 Zotero main window 收到外部 pointer event 时关闭菜单。 */
   const onMainWindowPointerDown = (event: Event) => {
     if (isOutsideToolbarMenu(event, button, menu)) {
       menuState.close();
@@ -136,12 +136,12 @@ export function ensureButtonBinding(
 
   button.addEventListener(
     "mouseenter",
-    /** Applies hover styling when the pointer enters the toolbar button. */
+    /** 当 pointer 进入 toolbar button 时应用悬停样式。 */
     () => setHover(true),
   );
   button.addEventListener(
     "mouseleave",
-    /** Clears hover styling when the pointer leaves the toolbar button. */
+    /** 当 pointer 离开 toolbar button 时清除悬停样式。 */
     () => setHover(false),
   );
   button.addEventListener("click", onClick);
@@ -159,7 +159,7 @@ export function ensureButtonBinding(
     anchor.parent.append(button);
   }
 
-  /** Removes DOM listeners and toolbar nodes for this binding. */
+  /** 移除此绑定对应的 DOM listener 和 toolbar 节点。 */
   const cleanup = () => {
     doc.removeEventListener("pointerdown", onDocumentPointerDown, true);
     win.document.removeEventListener(
@@ -177,7 +177,7 @@ export function ensureButtonBinding(
   return binding;
 }
 
-/** Refreshes toolbar button content for an existing reader binding. */
+/** 刷新现有 reader 绑定的 toolbar button 内容。 */
 export function updateButtonBinding(
   reader: _ZoteroTypes.ReaderInstance,
   binding: ReaderToolbarButtonBinding,
@@ -193,7 +193,7 @@ export function updateButtonBinding(
   );
 }
 
-/** Applies the current toolbar icon state to the reader toolbar button. */
+/** 将当前 toolbar icon 状态应用到 reader toolbar button。 */
 export function setReaderToolbarButtonContent(
   button: HTMLButtonElement,
   doc: Document,
@@ -207,7 +207,7 @@ export function setReaderToolbarButtonContent(
   );
 }
 
-/** Destroys a single reader toolbar button binding. */
+/** 销毁单个 reader toolbar button 绑定。 */
 export function destroyButtonBinding(readerInstanceID: string): void {
   const binding = buttonBindings.get(readerInstanceID);
   if (!binding) {
@@ -217,7 +217,7 @@ export function destroyButtonBinding(readerInstanceID: string): void {
   buttonBindings.delete(readerInstanceID);
 }
 
-/** Destroys every toolbar binding owned by a main window. */
+/** 销毁某个 main window 拥有的全部 toolbar 绑定。 */
 export function cleanupWindowBindings(
   win: Window,
   panelStore: ReaderToolbarPanelStore,
@@ -232,7 +232,7 @@ export function cleanupWindowBindings(
   }
 }
 
-/** Returns whether an event target is outside both the toolbar button and menu. */
+/** 返回事件 target 是否同时位于 toolbar button 和菜单之外。 */
 export function isOutsideToolbarMenu(
   event: Event,
   button: HTMLButtonElement,
@@ -242,7 +242,7 @@ export function isOutsideToolbarMenu(
   return Boolean(target && !menu.contains(target) && !button.contains(target));
 }
 
-/** Positions the floating menu near the reader toolbar button. */
+/** 将浮动菜单定位到 reader toolbar button 附近。 */
 export function positionMenu(
   button: HTMLButtonElement,
   menu: HTMLDivElement,
@@ -269,7 +269,7 @@ export function positionMenu(
   menu.style.visibility = "";
 }
 
-/** Gets all PDF reader instances in a Zotero main window. */
+/** 获取 Zotero main window 中所有 PDF reader 实例。 */
 export function getWindowReaders(
   win: _ZoteroTypes.MainWindow,
 ): _ZoteroTypes.ReaderInstance[] {
@@ -291,7 +291,7 @@ export function getWindowReaders(
   return readers;
 }
 
-/** Gets the PDF reader iframe document when it is ready for toolbar insertion. */
+/** 在 PDF reader iframe document 准备好插入 toolbar 时获取它。 */
 export function getReaderToolbarDocument(
   reader: _ZoteroTypes.ReaderInstance,
 ): Document | null {
@@ -302,7 +302,7 @@ export function getReaderToolbarDocument(
   return doc;
 }
 
-/** Gets the active PDF attachment backing a reader instance. */
+/** 获取支撑某个 reader 实例的活动 PDF attachment。 */
 export function getReaderAttachment(
   reader: _ZoteroTypes.ReaderInstance,
 ): Zotero.Item | null {
@@ -313,12 +313,12 @@ export function getReaderAttachment(
   return item;
 }
 
-/** Builds a stable DOM id for the reader toolbar button. */
+/** 为 reader toolbar button 构建稳定的 DOM id。 */
 export function getToolbarButtonID(readerInstanceID: string): string {
   return `mineru-reader-toolbar-${readerInstanceID}`;
 }
 
-/** Returns a snapshot of toolbar button bindings for registration cleanup. */
+/** 返回 toolbar button 绑定快照，供注册清理使用。 */
 export function getButtonBindingsSnapshot(): Array<
   [string, ReaderToolbarButtonBinding]
 > {

@@ -4,7 +4,7 @@ import { getReaderOverlayStateForReader } from "../readerOverlay";
 import { emitReaderToolbarDiagnostic, errorMessage } from "./diagnostics";
 import type { ReaderMessageId } from "./types";
 
-/** Runs a toolbar command and logs before/after overlay state diagnostics. */
+/** 运行 toolbar 命令，并记录前后 overlay 状态诊断。 */
 export function runReaderToolbarCommand(
   reader: _ZoteroTypes.ReaderInstance,
   command: string,
@@ -38,7 +38,7 @@ export function runReaderToolbarCommand(
 
   void Promise.resolve(result)
     .then(
-      /** Logs overlay state after an async or sync command completes. */
+      /** 在异步或同步命令完成后记录 overlay 状态。 */
       () => {
         const afterState = getReaderOverlayStateForReader(reader);
         emitReaderToolbarDiagnostic(reader, "MinerU reader toolbar state", {
@@ -51,7 +51,7 @@ export function runReaderToolbarCommand(
       },
     )
     .catch(
-      /** Logs failures from async toolbar command execution. */
+      /** 记录异步 toolbar 命令执行失败。 */
       (error) => {
         emitReaderToolbarDiagnostic(
           reader,
@@ -67,7 +67,7 @@ export function runReaderToolbarCommand(
     );
 }
 
-/** Resolves a reader-toolbar Fluent string with optional arguments. */
+/** 解析带可选参数的 reader-toolbar Fluent 字符串。 */
 export function readerString(
   id: ReaderMessageId,
   args?: Record<string, string | number>,

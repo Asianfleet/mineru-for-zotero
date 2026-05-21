@@ -1,33 +1,33 @@
 import type { ReaderToolbarMenuState, ReaderToolbarPanelStore } from "./types";
 
-/** Creates the open/closed state object for one reader toolbar menu. */
+/** 为一个 reader toolbar 菜单创建打开/关闭状态对象。 */
 export function createReaderToolbarMenuState(): ReaderToolbarMenuState {
   let open = false;
   return {
-    /** Returns whether this menu is currently open. */
+    /** 返回这个菜单当前是否打开。 */
     isOpen() {
       return open;
     },
-    /** Marks this menu as open. */
+    /** 标记这个菜单为打开。 */
     open() {
       open = true;
     },
-    /** Marks this menu as closed. */
+    /** 标记这个菜单为关闭。 */
     close() {
       open = false;
     },
-    /** Flips this menu between open and closed states. */
+    /** 在打开和关闭状态之间切换这个菜单。 */
     toggle() {
       open = !open;
     },
   };
 }
 
-/** Creates a per-reader store for toolbar menu states. */
+/** 为每个 reader 创建一个 toolbar 菜单状态存储。 */
 export function createReaderToolbarPanelStore(): ReaderToolbarPanelStore {
   const panels = new Map<string, ReaderToolbarMenuState>();
   return {
-    /** Gets or creates the menu state for a reader instance. */
+    /** 获取或创建某个 reader 实例的菜单状态。 */
     ensure(readerInstanceID) {
       let state = panels.get(readerInstanceID);
       if (!state) {
@@ -36,23 +36,23 @@ export function createReaderToolbarPanelStore(): ReaderToolbarPanelStore {
       }
       return state;
     },
-    /** Returns whether the menu for a reader instance is open. */
+    /** 返回某个 reader 实例的菜单是否打开。 */
     isOpen(readerInstanceID) {
       return panels.get(readerInstanceID)?.isOpen() ?? false;
     },
-    /** Toggles the menu for a reader instance. */
+    /** 切换某个 reader 实例的菜单状态。 */
     toggle(readerInstanceID) {
       this.ensure(readerInstanceID).toggle();
     },
-    /** Closes the menu for a reader instance if it exists. */
+    /** 如果存在，则关闭某个 reader 实例的菜单。 */
     close(readerInstanceID) {
       panels.get(readerInstanceID)?.close();
     },
-    /** Removes the stored menu state for a reader instance. */
+    /** 删除某个 reader 实例对应的菜单状态。 */
     delete(readerInstanceID) {
       panels.delete(readerInstanceID);
     },
-    /** Removes every stored reader menu state. */
+    /** 清空所有已存储的 reader 菜单状态。 */
     clear() {
       panels.clear();
     },

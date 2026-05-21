@@ -15,7 +15,7 @@ import {
 import { readerString, runReaderToolbarCommand } from "./commands";
 import type { ReaderOverlayMode } from "./types";
 
-/** Creates the floating menu panel shown from the reader toolbar button. */
+/** 创建由 reader toolbar button 弹出的浮动菜单面板。 */
 export function createReaderToolbarPanel(doc: Document): HTMLDivElement {
   const menu = doc.createElement("div");
   menu.className = "appearance-popup mineru-reader-toolbar-menu";
@@ -36,7 +36,7 @@ export function createReaderToolbarPanel(doc: Document): HTMLDivElement {
   return menu;
 }
 
-/** Rebuilds the menu contents from current overlay and selection state. */
+/** 根据当前 overlay 和选择状态重建菜单内容。 */
 export function updateMenu(
   reader: _ZoteroTypes.ReaderInstance,
   doc: Document,
@@ -51,12 +51,12 @@ export function updateMenu(
     createReaderToolbarModeGroup(
       doc,
       currentMode,
-      /** Applies a selected overlay mode and refreshes the menu state. */
+      /** 应用选中的 overlay 模式并刷新菜单状态。 */
       (mode) => {
         runReaderToolbarCommand(
           reader,
           `set-mode-${mode}`,
-          /** Applies the selected overlay mode to the current reader. */
+          /** 将选中的 overlay 模式应用到当前 reader。 */
           () => {
             return applyReaderOverlayMode(reader, mode);
           },
@@ -77,12 +77,12 @@ export function updateMenu(
     copyIconSVG: getReaderToolbarCopySelectionSVG(),
     clearLabel: readerString("reader-clear-selection"),
     clearIconSVG: getReaderToolbarClearSelectionSVG(),
-    /** Copies the current selection or full Markdown fallback. */
+    /** 复制当前选择，或回退为完整 Markdown。 */
     onCopy() {
       runReaderToolbarCommand(
         reader,
         "copy-selected-boxes",
-        /** Dispatches copy behavior for the current reader selection. */
+        /** 分发当前 reader 选择内容的复制行为。 */
         () => {
           return copySelectedBoxesForReader(reader);
         },
@@ -90,12 +90,12 @@ export function updateMenu(
       updateMenu(reader, doc, menu, sync);
       sync();
     },
-    /** Clears the current selection and rerenders the overlay. */
+    /** 清空当前选择并重新渲染 overlay。 */
     onClear() {
       runReaderToolbarCommand(
         reader,
         "clear-selection",
-        /** Clears overlay selection before rerendering the reader overlay. */
+        /** 在重新渲染 reader overlay 之前清空 overlay 选择。 */
         () => {
           clearReaderOverlaySelectionForReader(reader);
           return renderReaderOverlayForReader(reader);
@@ -110,7 +110,7 @@ export function updateMenu(
   menu.append(modeGroup, commandGroup);
 }
 
-/** Creates the selection count and copy/clear action row. */
+/** 创建选择数量以及复制/清空操作行。 */
 export function createReaderToolbarActionRow(
   doc: Document,
   group: HTMLDivElement,
@@ -146,7 +146,7 @@ export function createReaderToolbarActionRow(
   return row;
 }
 
-/** Creates the label and selected-box count badge for the action row. */
+/** 为操作行创建标签和已选 box 数量徽标。 */
 export function createReaderToolbarSelectionLabel(
   doc: Document,
   label: string,
@@ -183,7 +183,7 @@ export function createReaderToolbarSelectionLabel(
   return container;
 }
 
-/** Creates the icon command buttons for selection actions. */
+/** 创建用于选择操作的图标命令按钮。 */
 export function createReaderToolbarActionButtons(
   doc: Document,
   options: {
@@ -219,7 +219,7 @@ export function createReaderToolbarActionButtons(
   return actions;
 }
 
-/** Chooses the copy action label based on whether boxes are selected. */
+/** 根据是否选中了 box 选择复制操作标签。 */
 export function getReaderToolbarCopyLabel(options: {
   copySelectedLabel: string;
   copyFullMarkdownLabel: string;
@@ -230,7 +230,7 @@ export function getReaderToolbarCopyLabel(options: {
     : options.copyFullMarkdownLabel;
 }
 
-/** Creates an icon-only command button with accessible label text. */
+/** 创建仅图标的命令按钮，并提供可访问的 label 文本。 */
 export function createReaderToolbarIconCommandButton(
   doc: Document,
   label: string,
@@ -260,7 +260,7 @@ export function createReaderToolbarIconCommandButton(
   return button;
 }
 
-/** Creates the grouped mode toggle row for the toolbar menu. */
+/** 为 toolbar 菜单创建分组的模式切换行。 */
 export function createReaderToolbarModeGroup(
   doc: Document,
   currentMode: ReaderOverlayMode,
@@ -294,7 +294,7 @@ export function createReaderToolbarModeGroup(
         entry.label,
         entry.mode,
         currentMode === entry.mode,
-        /** Sends the selected mode back to the mode group command handler. */
+        /** 将选中的模式回传给模式组命令处理器。 */
         () => {
           onCommand(entry.mode);
         },
@@ -306,7 +306,7 @@ export function createReaderToolbarModeGroup(
   return option;
 }
 
-/** Creates one mode toggle button. */
+/** 创建一个模式切换按钮。 */
 export function createReaderToolbarModeButton(
   doc: Document,
   label: string,
@@ -323,7 +323,7 @@ export function createReaderToolbarModeButton(
   button.setAttribute("aria-pressed", active ? "true" : "false");
   button.addEventListener(
     "click",
-    /** Handles mode button clicks without native toolbar propagation. */
+    /** 处理模式按钮点击，并阻止原生 toolbar 冒泡。 */
     (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -338,7 +338,7 @@ export function createReaderToolbarModeButton(
   return button;
 }
 
-/** Creates a text command button with reader-popup styling. */
+/** 创建带 reader-popup 样式的文本命令按钮。 */
 export function createReaderToolbarCommandButton(
   doc: Document,
   label: string,
@@ -363,21 +363,21 @@ export function createReaderToolbarCommandButton(
   button.style.textAlign = "left";
   button.addEventListener(
     "mouseenter",
-    /** Applies hover background styling for command buttons. */
+    /** 为命令按钮应用悬停背景样式。 */
     () => {
       button.style.backgroundColor = "var(--fill-quinary, rgba(0, 0, 0, 0.08))";
     },
   );
   button.addEventListener(
     "mouseleave",
-    /** Clears hover background styling for command buttons. */
+    /** 清除命令按钮的悬停背景样式。 */
     () => {
       button.style.backgroundColor = "";
     },
   );
   button.addEventListener(
     "click",
-    /** Runs the command button action without native toolbar propagation. */
+    /** 执行命令按钮动作，并阻止原生 toolbar 冒泡。 */
     (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -387,7 +387,7 @@ export function createReaderToolbarCommandButton(
   return button;
 }
 
-/** Renders an image-backed toolbar button, falling back to text without an URI. */
+/** 渲染基于图片的 toolbar button，在没有 URI 时回退为文本。 */
 export function setReaderToolbarIconButtonContent(
   button: HTMLButtonElement,
   doc: Document,
@@ -422,7 +422,7 @@ export function setReaderToolbarIconButtonContent(
   button.setAttribute("aria-label", label);
 }
 
-/** Renders inline SVG button content, falling back to text without SVG content. */
+/** 渲染内联 SVG button 内容，在没有 SVG 内容时回退为文本。 */
 export function setReaderToolbarInlineSVGButtonContent(
   button: HTMLButtonElement,
   label: string,
