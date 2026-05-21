@@ -469,7 +469,7 @@ Report the commit hash, line-count table, `tsc` result, and diff scope to the us
 
 Start only after the user accepts Checkpoint 1. Stop after Task 8 and wait for user acceptance before starting Checkpoint 3.
 
-**Implementation status:** Completed and ready for manual acceptance. The split was committed as `3e2a010 refactor(reader): split toolbar module`, then followed by `6b63f9c docs(reader): 将 toolbar 注释改为中文` to align new reader-toolbar comments with the project language convention. TypeScript and reader-toolbar formatting checks passed. Current `readerToolbar` line counts remain within limits after Chinese comments: `panel.ts` 412, `binding.ts` 301, `assets.ts` 174, `registration.ts` 133, `commands.ts` 75, `store.ts` 58, `types.ts` 51, `diagnostics.ts` 41, `index.ts` 29.
+**Implementation status:** Completed and manually accepted. The split was committed as `3e2a010 refactor(reader): split toolbar module`, then followed by `6b63f9c docs(reader): 将 toolbar 注释改为中文` to align new reader-toolbar comments with the project language convention. TypeScript and reader-toolbar formatting checks passed. Current `readerToolbar` line counts remain within limits after Chinese comments: `panel.ts` 412, `binding.ts` 301, `assets.ts` 174, `registration.ts` 133, `commands.ts` 75, `store.ts` 58, `types.ts` 51, `diagnostics.ts` 41, `index.ts` 29.
 
 ### Task 5: Move `readerToolbar` To A Directory Entrypoint
 
@@ -807,6 +807,8 @@ Report the commit hash, line-count table, `tsc` result, and diff scope to the us
 
 Start only after the user accepts Checkpoint 2. Stop after Task 12 and wait for final user acceptance.
 
+**Implementation status:** Completed and manually accepted. The directory move landed first as `f3ca83e refactor(reader): split overlay module`, then the extracted submodules and orchestrator rewrite landed as `7d0338c refactor(reader): extract overlay submodules`. Final verification passed with `.\node_modules\.bin\tsc.CMD --noEmit` and `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail` (`120 passed`). The old `src/modules/readerOverlay.ts` file was removed, and current `readerOverlay` line counts remain within limits: `positioning.ts` 452, `render.ts` 298, `selection.ts` 240, `styles.ts` 200, `state.ts` 178, `index.ts` 174, `windows.ts` 147, `notice.ts` 52, `types.ts` 50, `copy.ts` 42, `diagnostics.ts` 35.
+
 ### Task 9: Move `readerOverlay` To A Directory Entrypoint
 
 **Files:**
@@ -814,7 +816,7 @@ Start only after the user accepts Checkpoint 2. Stop after Task 12 and wait for 
 - Delete: `src/modules/readerOverlay.ts`
 - Modify: imports inside the moved file
 
-- [ ] **Step 9.1: Create the target directory**
+- [x] **Step 9.1: Create the target directory**
 
 Run:
 
@@ -822,7 +824,7 @@ Run:
 New-Item -ItemType Directory -Force -Path 'src\modules\readerOverlay'
 ```
 
-- [ ] **Step 9.2: Move the current implementation**
+- [x] **Step 9.2: Move the current implementation**
 
 Run:
 
@@ -830,7 +832,7 @@ Run:
 git mv src\modules\readerOverlay.ts src\modules\readerOverlay\index.ts
 ```
 
-- [ ] **Step 9.3: Fix imports in `index.ts`**
+- [x] **Step 9.3: Fix imports in `index.ts`**
 
 Change:
 
@@ -854,7 +856,7 @@ import { createStorage } from "../storage";
 import { getString } from "../../utils/locale";
 ```
 
-- [ ] **Step 9.4: Verify directory import resolution**
+- [x] **Step 9.4: Verify directory import resolution**
 
 Run:
 
@@ -874,7 +876,7 @@ Expected: exits with code 0.
 - Create: `src/modules/readerOverlay/diagnostics.ts`
 - Modify: `src/modules/readerOverlay/index.ts`
 
-- [ ] **Step 10.1: Move overlay types to `types.ts`**
+- [x] **Step 10.1: Move overlay types to `types.ts`**
 
 Move and export:
 
@@ -890,7 +892,7 @@ PageRect
 
 Import `NormalizedBox` and `OverlayMode` from `../domain`.
 
-- [ ] **Step 10.2: Move state management to `state.ts`**
+- [x] **Step 10.2: Move state management to `state.ts`**
 
 Move and export:
 
@@ -916,7 +918,7 @@ isDeadObjectError
 
 Keep `addon.data.readerOverlays` access in this file.
 
-- [ ] **Step 10.3: Move reader window helpers to `windows.ts`**
+- [x] **Step 10.3: Move reader window helpers to `windows.ts`**
 
 Move and export:
 
@@ -935,7 +937,7 @@ getReaderAttachmentRef
 getReaderOverlayMountContainer
 ```
 
-- [ ] **Step 10.4: Move CSS and theme bridge to `styles.ts`**
+- [x] **Step 10.4: Move CSS and theme bridge to `styles.ts`**
 
 Move and export:
 
@@ -950,7 +952,7 @@ readCssVariable
 isSafeCssCustomPropertyValue
 ```
 
-- [ ] **Step 10.5: Move diagnostics to `diagnostics.ts`**
+- [x] **Step 10.5: Move diagnostics to `diagnostics.ts`**
 
 Move and export:
 
@@ -958,7 +960,7 @@ Move and export:
 logReaderOverlayDiagnostic
 ```
 
-- [ ] **Step 10.6: Run type check**
+- [x] **Step 10.6: Run type check**
 
 Run:
 
@@ -978,7 +980,7 @@ Expected: exits with code 0.
 - Create: `src/modules/readerOverlay/notice.ts`
 - Modify: `src/modules/readerOverlay/index.ts`
 
-- [ ] **Step 11.1: Move render helpers to `render.ts`**
+- [x] **Step 11.1: Move render helpers to `render.ts`**
 
 Move and export:
 
@@ -1002,7 +1004,7 @@ formatPercent
 clamp01
 ```
 
-- [ ] **Step 11.2: Move selection helpers to `selection.ts`**
+- [x] **Step 11.2: Move selection helpers to `selection.ts`**
 
 Move and export:
 
@@ -1024,7 +1026,7 @@ selectBoxRange
 getRawIndexRange
 ```
 
-- [ ] **Step 11.3: Move positioning helpers to `positioning.ts`**
+- [x] **Step 11.3: Move positioning helpers to `positioning.ts`**
 
 Move and export:
 
@@ -1041,7 +1043,7 @@ scrollElementBy
 createPageRect
 ```
 
-- [ ] **Step 11.4: Move copy helpers to `copy.ts`**
+- [x] **Step 11.4: Move copy helpers to `copy.ts`**
 
 Move and export:
 
@@ -1053,7 +1055,7 @@ copyText
 
 Keep usage of `formatBoxesForCopy` and `formatFormulaForCopy` imported from `../copyFormatter`.
 
-- [ ] **Step 11.5: Move notice and localized strings to `notice.ts`**
+- [x] **Step 11.5: Move notice and localized strings to `notice.ts`**
 
 Move and export:
 
@@ -1065,7 +1067,7 @@ getReaderOverlayNoticeText
 
 Import `getString` from `../../utils/locale`.
 
-- [ ] **Step 11.6: Keep `index.ts` as the overlay orchestrator**
+- [x] **Step 11.6: Keep `index.ts` as the overlay orchestrator**
 
 `index.ts` should keep high-level functions:
 
@@ -1077,7 +1079,7 @@ public re-exports
 
 It should import behavior from the new modules and remain below 300 lines.
 
-- [ ] **Step 11.7: Run type check**
+- [x] **Step 11.7: Run type check**
 
 Run:
 
@@ -1096,7 +1098,7 @@ Expected: exits with code 0.
 - Verify: `src/hooks.ts`
 - Verify: `src/addon.ts`
 
-- [ ] **Step 12.1: Verify file line counts for all split directories**
+- [x] **Step 12.1: Verify file line counts for all split directories**
 
 Run:
 
@@ -1106,7 +1108,7 @@ Get-ChildItem -LiteralPath 'src\modules\mineruClient','src\modules\readerToolbar
 
 Expected: every file is below 500 lines; each `index.ts` is below 300 lines.
 
-- [ ] **Step 12.2: Verify no old oversized module files remain**
+- [x] **Step 12.2: Verify no old oversized module files remain**
 
 Run:
 
@@ -1124,7 +1126,7 @@ False
 False
 ```
 
-- [ ] **Step 12.3: Run TypeScript check**
+- [x] **Step 12.3: Run TypeScript check**
 
 Run:
 
@@ -1134,7 +1136,7 @@ Run:
 
 Expected: exits with code 0.
 
-- [ ] **Step 12.4: Run full scaffold test suite**
+- [x] **Step 12.4: Run full scaffold test suite**
 
 Run:
 
@@ -1144,7 +1146,7 @@ Run:
 
 Expected: exits with code 0. If Zotero runtime setup blocks the test, capture the exact command output, keep `tsc` as the minimum verified result, and report the blocker.
 
-- [ ] **Step 12.5: Review final diff scope**
+- [x] **Step 12.5: Review final diff scope**
 
 Run:
 
@@ -1155,7 +1157,7 @@ git diff --name-status
 
 Expected: changes are limited to deleting the three old oversized module files, creating their directory modules, and import/export fixes required by TypeScript.
 
-- [ ] **Step 12.6: Commit Checkpoint 3**
+- [x] **Step 12.6: Commit Checkpoint 3**
 
 Run:
 
@@ -1166,7 +1168,7 @@ git commit -m "refactor(reader): split overlay module"
 
 Expected: commit succeeds.
 
-- [ ] **Step 12.7: Stop for final manual acceptance**
+- [x] **Step 12.7: Stop for final manual acceptance**
 
 Report the Checkpoint 3 commit hash, final line-count table, `tsc` result, scaffold test result, and final commit list to the user. Do not merge, squash, or start follow-up cleanup without explicit user instruction.
 
