@@ -469,6 +469,8 @@ Report the commit hash, line-count table, `tsc` result, and diff scope to the us
 
 Start only after the user accepts Checkpoint 1. Stop after Task 8 and wait for user acceptance before starting Checkpoint 3.
 
+**Implementation status:** Completed and ready for manual acceptance. The split was committed as `3e2a010 refactor(reader): split toolbar module`, then followed by `6b63f9c docs(reader): 将 toolbar 注释改为中文` to align new reader-toolbar comments with the project language convention. TypeScript and reader-toolbar formatting checks passed. Current `readerToolbar` line counts remain within limits after Chinese comments: `panel.ts` 412, `binding.ts` 301, `assets.ts` 174, `registration.ts` 133, `commands.ts` 75, `store.ts` 58, `types.ts` 51, `diagnostics.ts` 41, `index.ts` 29.
+
 ### Task 5: Move `readerToolbar` To A Directory Entrypoint
 
 **Files:**
@@ -476,7 +478,7 @@ Start only after the user accepts Checkpoint 1. Stop after Task 8 and wait for u
 - Delete: `src/modules/readerToolbar.ts`
 - Modify: imports inside the moved file
 
-- [ ] **Step 5.1: Create the target directory**
+- [x] **Step 5.1: Create the target directory**
 
 Run:
 
@@ -484,7 +486,7 @@ Run:
 New-Item -ItemType Directory -Force -Path 'src\modules\readerToolbar'
 ```
 
-- [ ] **Step 5.2: Move the current implementation**
+- [x] **Step 5.2: Move the current implementation**
 
 Run:
 
@@ -492,7 +494,7 @@ Run:
 git mv src\modules\readerToolbar.ts src\modules\readerToolbar\index.ts
 ```
 
-- [ ] **Step 5.3: Fix imports in `index.ts`**
+- [x] **Step 5.3: Fix imports in `index.ts`**
 
 Change:
 
@@ -520,7 +522,7 @@ to:
 import { getString } from "../../utils/locale";
 ```
 
-- [ ] **Step 5.4: Verify directory import resolution**
+- [x] **Step 5.4: Verify directory import resolution**
 
 Run:
 
@@ -539,7 +541,7 @@ Expected: exits with code 0.
 - Create: `src/modules/readerToolbar/panel.ts`
 - Modify: `src/modules/readerToolbar/index.ts`
 
-- [ ] **Step 6.1: Move toolbar types to `types.ts`**
+- [x] **Step 6.1: Move toolbar types to `types.ts`**
 
 Move these declarations into `types.ts` and export them:
 
@@ -554,7 +556,7 @@ ReaderToolbarButtonBinding
 ReaderToolbarRegistration
 ```
 
-- [ ] **Step 6.2: Move panel store to `store.ts`**
+- [x] **Step 6.2: Move panel store to `store.ts`**
 
 Move and export:
 
@@ -565,7 +567,7 @@ createReaderToolbarPanelStore
 
 Import their types from `./types`.
 
-- [ ] **Step 6.3: Move icon and SVG state to `assets.ts`**
+- [x] **Step 6.3: Move icon and SVG state to `assets.ts`**
 
 Move these constants, state variables, and functions to `assets.ts`:
 
@@ -606,7 +608,7 @@ export function getReaderToolbarClearSelectionSVG(): string;
 export function getReaderToolbarCopySelectionSVG(): string;
 ```
 
-- [ ] **Step 6.4: Move panel DOM creation to `panel.ts`**
+- [x] **Step 6.4: Move panel DOM creation to `panel.ts`**
 
 Move these functions to `panel.ts` and export the public test-facing functions:
 
@@ -627,7 +629,7 @@ setReaderToolbarInlineSVGButtonContent
 
 Keep `createReaderToolbarSelectionLabel` and `createReaderToolbarActionButtons` exported only if tests or another module imports them after extraction.
 
-- [ ] **Step 6.5: Update `index.ts` public exports**
+- [x] **Step 6.5: Update `index.ts` public exports**
 
 `index.ts` must re-export these current public helpers:
 
@@ -658,7 +660,7 @@ export type {
 } from "./types";
 ```
 
-- [ ] **Step 6.6: Run type check**
+- [x] **Step 6.6: Run type check**
 
 Run:
 
@@ -677,7 +679,7 @@ Expected: exits with code 0.
 - Create: `src/modules/readerToolbar/diagnostics.ts`
 - Modify: `src/modules/readerToolbar/index.ts`
 
-- [ ] **Step 7.1: Move diagnostics to `diagnostics.ts`**
+- [x] **Step 7.1: Move diagnostics to `diagnostics.ts`**
 
 Move and export:
 
@@ -686,7 +688,7 @@ emitReaderToolbarDiagnostic
 errorMessage
 ```
 
-- [ ] **Step 7.2: Move command dispatch to `commands.ts`**
+- [x] **Step 7.2: Move command dispatch to `commands.ts`**
 
 Move and export:
 
@@ -697,7 +699,7 @@ readerString
 
 Import overlay functions from `../readerOverlay` and locale `getString` from `../../utils/locale`.
 
-- [ ] **Step 7.3: Move reader lookup helpers to `binding.ts`**
+- [x] **Step 7.3: Move reader lookup helpers to `binding.ts`**
 
 Move and export the functions needed by registration:
 
@@ -718,7 +720,7 @@ getToolbarButtonID
 
 Keep `buttonBindings` in `binding.ts` so binding state is colocated with binding lifecycle.
 
-- [ ] **Step 7.4: Move window registration to `registration.ts`**
+- [x] **Step 7.4: Move window registration to `registration.ts`**
 
 Move and export:
 
@@ -731,11 +733,11 @@ syncWindowToolbar
 
 Keep `panelStore` in `index.ts` or `registration.ts`, but expose it to `binding.ts` through a typed parameter rather than importing mutable state from multiple directions.
 
-- [ ] **Step 7.5: Keep `index.ts` below 300 lines**
+- [x] **Step 7.5: Keep `index.ts` below 300 lines**
 
 `index.ts` should contain public exports plus shared singleton wiring only. If orchestration grows, move the wiring into `registration.ts` and have `index.ts` re-export it.
 
-- [ ] **Step 7.6: Run type check**
+- [x] **Step 7.6: Run type check**
 
 Run:
 
@@ -753,7 +755,7 @@ Expected: exits with code 0.
 - Verify: `src/hooks.ts`
 - Verify: `src/addon.ts`
 
-- [ ] **Step 8.1: Verify file line counts**
+- [x] **Step 8.1: Verify file line counts**
 
 Run:
 
@@ -763,7 +765,7 @@ Get-ChildItem -LiteralPath 'src\modules\readerToolbar' -File -Filter '*.ts' | Fo
 
 Expected: every file is below 500 lines, and `src\modules\readerToolbar\index.ts` is below 300 lines.
 
-- [ ] **Step 8.2: Run type check**
+- [x] **Step 8.2: Run type check**
 
 Run:
 
@@ -773,7 +775,7 @@ Run:
 
 Expected: exits with code 0.
 
-- [ ] **Step 8.3: Review diff scope**
+- [x] **Step 8.3: Review diff scope**
 
 Run:
 
@@ -784,7 +786,7 @@ git diff --name-status
 
 Expected: changes are limited to deleting `src/modules/readerToolbar.ts`, creating `src/modules/readerToolbar/*.ts`, and import/export fixes required by TypeScript.
 
-- [ ] **Step 8.4: Commit Checkpoint 2**
+- [x] **Step 8.4: Commit Checkpoint 2**
 
 Run:
 
@@ -795,7 +797,7 @@ git commit -m "refactor(reader): split toolbar module"
 
 Expected: commit succeeds.
 
-- [ ] **Step 8.5: Stop for manual acceptance**
+- [x] **Step 8.5: Stop for manual acceptance**
 
 Report the commit hash, line-count table, `tsc` result, and diff scope to the user. Do not start Checkpoint 3 until the user explicitly approves.
 
