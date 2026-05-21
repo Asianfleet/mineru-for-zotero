@@ -74,7 +74,7 @@
 - Read: `src/modules/readerToolbar.ts`
 - Read: `src/modules/readerOverlay.ts`
 
-- [ ] **Step 0.1: Confirm clean workspace**
+- [x] **Step 0.1: Confirm clean workspace**
 
 Run:
 
@@ -84,7 +84,7 @@ git status --short
 
 Expected: no output.
 
-- [ ] **Step 0.2: Record current oversized files**
+- [x] **Step 0.2: Record current oversized files**
 
 Run:
 
@@ -94,7 +94,7 @@ Get-ChildItem -LiteralPath 'src\modules' -File -Recurse | Where-Object { $_.Exte
 
 Expected: `readerOverlay.ts`, `mineruClient.ts`, and `readerToolbar.ts` are above 1000 lines before implementation.
 
-- [ ] **Step 0.3: Run baseline type check**
+- [x] **Step 0.3: Run baseline type check**
 
 Run:
 
@@ -110,6 +110,8 @@ Expected: exits with code 0. If it fails before edits, stop and report the basel
 
 Stop after Task 4 and wait for user acceptance before starting Checkpoint 2.
 
+**Implementation status:** Completed and manually accepted. The split was committed as `d50dcbe refactor(mineru): split client module`, then followed by `b774950 docs(mineru): add client function docstrings`. Manual plugin testing passed with no observed functional impact. Current `mineruClient` line counts remain within limits after docstrings: `download.ts` 356, `http.ts` 279, `zip.ts` 218, `index.ts` 186, `api.ts` 103, `result.ts` 99, `path.ts` 61, `errors.ts` 54, `types.ts` 51, `file.ts` 25.
+
 ### Task 1: Move `mineruClient` To A Directory Entrypoint
 
 **Files:**
@@ -117,7 +119,7 @@ Stop after Task 4 and wait for user acceptance before starting Checkpoint 2.
 - Delete: `src/modules/mineruClient.ts`
 - Modify: imports inside the moved file
 
-- [ ] **Step 1.1: Create the target directory**
+- [x] **Step 1.1: Create the target directory**
 
 Run:
 
@@ -127,7 +129,7 @@ New-Item -ItemType Directory -Force -Path 'src\modules\mineruClient'
 
 Expected: directory exists.
 
-- [ ] **Step 1.2: Move the current implementation**
+- [x] **Step 1.2: Move the current implementation**
 
 Run:
 
@@ -137,7 +139,7 @@ git mv src\modules\mineruClient.ts src\modules\mineruClient\index.ts
 
 Expected: `git status --short` shows a rename from `src/modules/mineruClient.ts` to `src/modules/mineruClient/index.ts`.
 
-- [ ] **Step 1.3: Fix the domain import in `index.ts`**
+- [x] **Step 1.3: Fix the domain import in `index.ts`**
 
 Change this import:
 
@@ -151,7 +153,7 @@ to:
 import type { MinerUImageFile } from "../domain";
 ```
 
-- [ ] **Step 1.4: Verify directory import resolution**
+- [x] **Step 1.4: Verify directory import resolution**
 
 Run:
 
@@ -170,7 +172,7 @@ Expected: exits with code 0. This proves `from "./mineruClient"` and `from "../s
 - Create: `src/modules/mineruClient/path.ts`
 - Modify: `src/modules/mineruClient/index.ts`
 
-- [ ] **Step 2.1: Move public and internal types to `types.ts`**
+- [x] **Step 2.1: Move public and internal types to `types.ts`**
 
 Move these declarations from `index.ts` to `types.ts`, preserving their names:
 
@@ -206,11 +208,11 @@ export type FetchLike = typeof fetch;
 
 Also move `FileUrlsBatchResponse`, `ExtractResultsBatchResponse`, `ZipEntry`, and `ZipEntries` into `types.ts` and export them.
 
-- [ ] **Step 2.2: Move error classes to `errors.ts`**
+- [x] **Step 2.2: Move error classes to `errors.ts`**
 
 Move `MinerURequestError`, `MinerUFileAccessError`, and `MinerUTaskError` unchanged into `errors.ts`, and export all three classes.
 
-- [ ] **Step 2.3: Move MinerU API helpers to `api.ts`**
+- [x] **Step 2.3: Move MinerU API helpers to `api.ts`**
 
 Move these functions to `api.ts` and export them:
 
@@ -233,7 +235,7 @@ import type { ExtractResultsBatchResponse, FetchLike } from "./types";
 import { errorMessage, responseErrorDetail } from "./http";
 ```
 
-- [ ] **Step 2.4: Move path and summary helpers to `path.ts`**
+- [x] **Step 2.4: Move path and summary helpers to `path.ts`**
 
 Move these functions to `path.ts` and export them:
 
@@ -246,7 +248,7 @@ summarizeBytes
 isSafeRelativePath
 ```
 
-- [ ] **Step 2.5: Update `index.ts` imports and public re-exports**
+- [x] **Step 2.5: Update `index.ts` imports and public re-exports**
 
 Add these imports and exports in `index.ts`:
 
@@ -274,7 +276,7 @@ export {
 export type { MinerUClient } from "./types";
 ```
 
-- [ ] **Step 2.6: Run type check**
+- [x] **Step 2.6: Run type check**
 
 Run:
 
@@ -295,7 +297,7 @@ Expected: exits with code 0.
 - Modify: `src/modules/mineruClient/api.ts`
 - Modify: `src/modules/mineruClient/path.ts`
 
-- [ ] **Step 3.1: Move HTTP adapters to `http.ts`**
+- [x] **Step 3.1: Move HTTP adapters to `http.ts`**
 
 Move these functions to `http.ts` and export the functions consumed by other modules:
 
@@ -327,7 +329,7 @@ sanitizeErrorDetail
 
 Keep `responseErrorDetail` exported because `api.ts` uses it.
 
-- [ ] **Step 3.2: Move download fallback logic to `download.ts`**
+- [x] **Step 3.2: Move download fallback logic to `download.ts`**
 
 Move these functions to `download.ts` and export `retryDownloadZip`, `zoteroDownloadFileBytes`, and `readZipOrFallback`:
 
@@ -350,7 +352,7 @@ removeFileIfExists
 
 Import ZIP parsing from `./zip`, error types from `./errors`, HTTP helpers from `./http`, and URL/path helpers from `./path`.
 
-- [ ] **Step 3.3: Move ZIP parsing to `zip.ts`**
+- [x] **Step 3.3: Move ZIP parsing to `zip.ts`**
 
 Move these functions to `zip.ts` and export the functions used outside the file:
 
@@ -369,7 +371,7 @@ readUint32
 
 Keep `readZip`, `readZipFile`, `textMapToZipEntries`, and `decodeText` exported.
 
-- [ ] **Step 3.4: Move result extraction to `result.ts`**
+- [x] **Step 3.4: Move result extraction to `result.ts`**
 
 Move these functions to `result.ts` and export them:
 
@@ -385,7 +387,7 @@ hasBlockGeometry
 
 Import `MinerUImageFile` from `../domain`, `ZipEntries` from `./types`, and `decodeText` from `./zip`.
 
-- [ ] **Step 3.5: Keep `index.ts` focused on `createMinerUClient`**
+- [x] **Step 3.5: Keep `index.ts` focused on `createMinerUClient`**
 
 After extraction, `index.ts` should contain:
 
@@ -398,7 +400,7 @@ public re-exports
 
 If `index.ts` remains above 300 lines, move `readPdfBytes` and `readFileBytes` to `file.ts` and import them from `index.ts`.
 
-- [ ] **Step 3.6: Verify type check after extraction**
+- [x] **Step 3.6: Verify type check after extraction**
 
 Run:
 
@@ -415,7 +417,7 @@ Expected: exits with code 0.
 - Verify: `test/mineruClient.test.ts`
 - Verify: `test/parseManager.test.ts`
 
-- [ ] **Step 4.1: Verify file line counts**
+- [x] **Step 4.1: Verify file line counts**
 
 Run:
 
@@ -425,7 +427,7 @@ Get-ChildItem -LiteralPath 'src\modules\mineruClient' -File -Filter '*.ts' | For
 
 Expected: every file is below 500 lines, and `src\modules\mineruClient\index.ts` is below 300 lines.
 
-- [ ] **Step 4.2: Run full TypeScript check**
+- [x] **Step 4.2: Run full TypeScript check**
 
 Run:
 
@@ -435,7 +437,7 @@ Run:
 
 Expected: exits with code 0.
 
-- [ ] **Step 4.3: Review diff scope**
+- [x] **Step 4.3: Review diff scope**
 
 Run:
 
@@ -446,7 +448,7 @@ git diff --name-status
 
 Expected: changes are limited to deleting `src/modules/mineruClient.ts`, creating `src/modules/mineruClient/*.ts`, and any import fixes required by TypeScript.
 
-- [ ] **Step 4.4: Commit Checkpoint 1**
+- [x] **Step 4.4: Commit Checkpoint 1**
 
 Run:
 
@@ -457,7 +459,7 @@ git commit -m "refactor(mineru): split client module"
 
 Expected: commit succeeds.
 
-- [ ] **Step 4.5: Stop for manual acceptance**
+- [x] **Step 4.5: Stop for manual acceptance**
 
 Report the commit hash, line-count table, `tsc` result, and diff scope to the user. Do not start Checkpoint 2 until the user explicitly approves.
 
@@ -467,6 +469,8 @@ Report the commit hash, line-count table, `tsc` result, and diff scope to the us
 
 Start only after the user accepts Checkpoint 1. Stop after Task 8 and wait for user acceptance before starting Checkpoint 3.
 
+**Implementation status:** Completed and manually accepted. The split was committed as `3e2a010 refactor(reader): split toolbar module`, then followed by `6b63f9c docs(reader): 将 toolbar 注释改为中文` to align new reader-toolbar comments with the project language convention. TypeScript and reader-toolbar formatting checks passed. Current `readerToolbar` line counts remain within limits after Chinese comments: `panel.ts` 412, `binding.ts` 301, `assets.ts` 174, `registration.ts` 133, `commands.ts` 75, `store.ts` 58, `types.ts` 51, `diagnostics.ts` 41, `index.ts` 29.
+
 ### Task 5: Move `readerToolbar` To A Directory Entrypoint
 
 **Files:**
@@ -474,7 +478,7 @@ Start only after the user accepts Checkpoint 1. Stop after Task 8 and wait for u
 - Delete: `src/modules/readerToolbar.ts`
 - Modify: imports inside the moved file
 
-- [ ] **Step 5.1: Create the target directory**
+- [x] **Step 5.1: Create the target directory**
 
 Run:
 
@@ -482,7 +486,7 @@ Run:
 New-Item -ItemType Directory -Force -Path 'src\modules\readerToolbar'
 ```
 
-- [ ] **Step 5.2: Move the current implementation**
+- [x] **Step 5.2: Move the current implementation**
 
 Run:
 
@@ -490,7 +494,7 @@ Run:
 git mv src\modules\readerToolbar.ts src\modules\readerToolbar\index.ts
 ```
 
-- [ ] **Step 5.3: Fix imports in `index.ts`**
+- [x] **Step 5.3: Fix imports in `index.ts`**
 
 Change:
 
@@ -518,7 +522,7 @@ to:
 import { getString } from "../../utils/locale";
 ```
 
-- [ ] **Step 5.4: Verify directory import resolution**
+- [x] **Step 5.4: Verify directory import resolution**
 
 Run:
 
@@ -537,7 +541,7 @@ Expected: exits with code 0.
 - Create: `src/modules/readerToolbar/panel.ts`
 - Modify: `src/modules/readerToolbar/index.ts`
 
-- [ ] **Step 6.1: Move toolbar types to `types.ts`**
+- [x] **Step 6.1: Move toolbar types to `types.ts`**
 
 Move these declarations into `types.ts` and export them:
 
@@ -552,7 +556,7 @@ ReaderToolbarButtonBinding
 ReaderToolbarRegistration
 ```
 
-- [ ] **Step 6.2: Move panel store to `store.ts`**
+- [x] **Step 6.2: Move panel store to `store.ts`**
 
 Move and export:
 
@@ -563,7 +567,7 @@ createReaderToolbarPanelStore
 
 Import their types from `./types`.
 
-- [ ] **Step 6.3: Move icon and SVG state to `assets.ts`**
+- [x] **Step 6.3: Move icon and SVG state to `assets.ts`**
 
 Move these constants, state variables, and functions to `assets.ts`:
 
@@ -604,7 +608,7 @@ export function getReaderToolbarClearSelectionSVG(): string;
 export function getReaderToolbarCopySelectionSVG(): string;
 ```
 
-- [ ] **Step 6.4: Move panel DOM creation to `panel.ts`**
+- [x] **Step 6.4: Move panel DOM creation to `panel.ts`**
 
 Move these functions to `panel.ts` and export the public test-facing functions:
 
@@ -625,7 +629,7 @@ setReaderToolbarInlineSVGButtonContent
 
 Keep `createReaderToolbarSelectionLabel` and `createReaderToolbarActionButtons` exported only if tests or another module imports them after extraction.
 
-- [ ] **Step 6.5: Update `index.ts` public exports**
+- [x] **Step 6.5: Update `index.ts` public exports**
 
 `index.ts` must re-export these current public helpers:
 
@@ -656,7 +660,7 @@ export type {
 } from "./types";
 ```
 
-- [ ] **Step 6.6: Run type check**
+- [x] **Step 6.6: Run type check**
 
 Run:
 
@@ -675,7 +679,7 @@ Expected: exits with code 0.
 - Create: `src/modules/readerToolbar/diagnostics.ts`
 - Modify: `src/modules/readerToolbar/index.ts`
 
-- [ ] **Step 7.1: Move diagnostics to `diagnostics.ts`**
+- [x] **Step 7.1: Move diagnostics to `diagnostics.ts`**
 
 Move and export:
 
@@ -684,7 +688,7 @@ emitReaderToolbarDiagnostic
 errorMessage
 ```
 
-- [ ] **Step 7.2: Move command dispatch to `commands.ts`**
+- [x] **Step 7.2: Move command dispatch to `commands.ts`**
 
 Move and export:
 
@@ -695,7 +699,7 @@ readerString
 
 Import overlay functions from `../readerOverlay` and locale `getString` from `../../utils/locale`.
 
-- [ ] **Step 7.3: Move reader lookup helpers to `binding.ts`**
+- [x] **Step 7.3: Move reader lookup helpers to `binding.ts`**
 
 Move and export the functions needed by registration:
 
@@ -716,7 +720,7 @@ getToolbarButtonID
 
 Keep `buttonBindings` in `binding.ts` so binding state is colocated with binding lifecycle.
 
-- [ ] **Step 7.4: Move window registration to `registration.ts`**
+- [x] **Step 7.4: Move window registration to `registration.ts`**
 
 Move and export:
 
@@ -729,11 +733,11 @@ syncWindowToolbar
 
 Keep `panelStore` in `index.ts` or `registration.ts`, but expose it to `binding.ts` through a typed parameter rather than importing mutable state from multiple directions.
 
-- [ ] **Step 7.5: Keep `index.ts` below 300 lines**
+- [x] **Step 7.5: Keep `index.ts` below 300 lines**
 
 `index.ts` should contain public exports plus shared singleton wiring only. If orchestration grows, move the wiring into `registration.ts` and have `index.ts` re-export it.
 
-- [ ] **Step 7.6: Run type check**
+- [x] **Step 7.6: Run type check**
 
 Run:
 
@@ -751,7 +755,7 @@ Expected: exits with code 0.
 - Verify: `src/hooks.ts`
 - Verify: `src/addon.ts`
 
-- [ ] **Step 8.1: Verify file line counts**
+- [x] **Step 8.1: Verify file line counts**
 
 Run:
 
@@ -761,7 +765,7 @@ Get-ChildItem -LiteralPath 'src\modules\readerToolbar' -File -Filter '*.ts' | Fo
 
 Expected: every file is below 500 lines, and `src\modules\readerToolbar\index.ts` is below 300 lines.
 
-- [ ] **Step 8.2: Run type check**
+- [x] **Step 8.2: Run type check**
 
 Run:
 
@@ -771,7 +775,7 @@ Run:
 
 Expected: exits with code 0.
 
-- [ ] **Step 8.3: Review diff scope**
+- [x] **Step 8.3: Review diff scope**
 
 Run:
 
@@ -782,7 +786,7 @@ git diff --name-status
 
 Expected: changes are limited to deleting `src/modules/readerToolbar.ts`, creating `src/modules/readerToolbar/*.ts`, and import/export fixes required by TypeScript.
 
-- [ ] **Step 8.4: Commit Checkpoint 2**
+- [x] **Step 8.4: Commit Checkpoint 2**
 
 Run:
 
@@ -793,7 +797,7 @@ git commit -m "refactor(reader): split toolbar module"
 
 Expected: commit succeeds.
 
-- [ ] **Step 8.5: Stop for manual acceptance**
+- [x] **Step 8.5: Stop for manual acceptance**
 
 Report the commit hash, line-count table, `tsc` result, and diff scope to the user. Do not start Checkpoint 3 until the user explicitly approves.
 
@@ -803,6 +807,8 @@ Report the commit hash, line-count table, `tsc` result, and diff scope to the us
 
 Start only after the user accepts Checkpoint 2. Stop after Task 12 and wait for final user acceptance.
 
+**Implementation status:** Completed and manually accepted. The directory move landed first as `f3ca83e refactor(reader): split overlay module`, then the extracted submodules and orchestrator rewrite landed as `7d0338c refactor(reader): extract overlay submodules`. Final verification passed with `.\node_modules\.bin\tsc.CMD --noEmit` and `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail` (`120 passed`). The old `src/modules/readerOverlay.ts` file was removed, and current `readerOverlay` line counts remain within limits: `positioning.ts` 452, `render.ts` 298, `selection.ts` 240, `styles.ts` 200, `state.ts` 178, `index.ts` 174, `windows.ts` 147, `notice.ts` 52, `types.ts` 50, `copy.ts` 42, `diagnostics.ts` 35.
+
 ### Task 9: Move `readerOverlay` To A Directory Entrypoint
 
 **Files:**
@@ -810,7 +816,7 @@ Start only after the user accepts Checkpoint 2. Stop after Task 12 and wait for 
 - Delete: `src/modules/readerOverlay.ts`
 - Modify: imports inside the moved file
 
-- [ ] **Step 9.1: Create the target directory**
+- [x] **Step 9.1: Create the target directory**
 
 Run:
 
@@ -818,7 +824,7 @@ Run:
 New-Item -ItemType Directory -Force -Path 'src\modules\readerOverlay'
 ```
 
-- [ ] **Step 9.2: Move the current implementation**
+- [x] **Step 9.2: Move the current implementation**
 
 Run:
 
@@ -826,7 +832,7 @@ Run:
 git mv src\modules\readerOverlay.ts src\modules\readerOverlay\index.ts
 ```
 
-- [ ] **Step 9.3: Fix imports in `index.ts`**
+- [x] **Step 9.3: Fix imports in `index.ts`**
 
 Change:
 
@@ -850,7 +856,7 @@ import { createStorage } from "../storage";
 import { getString } from "../../utils/locale";
 ```
 
-- [ ] **Step 9.4: Verify directory import resolution**
+- [x] **Step 9.4: Verify directory import resolution**
 
 Run:
 
@@ -870,7 +876,7 @@ Expected: exits with code 0.
 - Create: `src/modules/readerOverlay/diagnostics.ts`
 - Modify: `src/modules/readerOverlay/index.ts`
 
-- [ ] **Step 10.1: Move overlay types to `types.ts`**
+- [x] **Step 10.1: Move overlay types to `types.ts`**
 
 Move and export:
 
@@ -886,7 +892,7 @@ PageRect
 
 Import `NormalizedBox` and `OverlayMode` from `../domain`.
 
-- [ ] **Step 10.2: Move state management to `state.ts`**
+- [x] **Step 10.2: Move state management to `state.ts`**
 
 Move and export:
 
@@ -912,7 +918,7 @@ isDeadObjectError
 
 Keep `addon.data.readerOverlays` access in this file.
 
-- [ ] **Step 10.3: Move reader window helpers to `windows.ts`**
+- [x] **Step 10.3: Move reader window helpers to `windows.ts`**
 
 Move and export:
 
@@ -931,7 +937,7 @@ getReaderAttachmentRef
 getReaderOverlayMountContainer
 ```
 
-- [ ] **Step 10.4: Move CSS and theme bridge to `styles.ts`**
+- [x] **Step 10.4: Move CSS and theme bridge to `styles.ts`**
 
 Move and export:
 
@@ -946,7 +952,7 @@ readCssVariable
 isSafeCssCustomPropertyValue
 ```
 
-- [ ] **Step 10.5: Move diagnostics to `diagnostics.ts`**
+- [x] **Step 10.5: Move diagnostics to `diagnostics.ts`**
 
 Move and export:
 
@@ -954,7 +960,7 @@ Move and export:
 logReaderOverlayDiagnostic
 ```
 
-- [ ] **Step 10.6: Run type check**
+- [x] **Step 10.6: Run type check**
 
 Run:
 
@@ -974,7 +980,7 @@ Expected: exits with code 0.
 - Create: `src/modules/readerOverlay/notice.ts`
 - Modify: `src/modules/readerOverlay/index.ts`
 
-- [ ] **Step 11.1: Move render helpers to `render.ts`**
+- [x] **Step 11.1: Move render helpers to `render.ts`**
 
 Move and export:
 
@@ -998,7 +1004,7 @@ formatPercent
 clamp01
 ```
 
-- [ ] **Step 11.2: Move selection helpers to `selection.ts`**
+- [x] **Step 11.2: Move selection helpers to `selection.ts`**
 
 Move and export:
 
@@ -1020,7 +1026,7 @@ selectBoxRange
 getRawIndexRange
 ```
 
-- [ ] **Step 11.3: Move positioning helpers to `positioning.ts`**
+- [x] **Step 11.3: Move positioning helpers to `positioning.ts`**
 
 Move and export:
 
@@ -1037,7 +1043,7 @@ scrollElementBy
 createPageRect
 ```
 
-- [ ] **Step 11.4: Move copy helpers to `copy.ts`**
+- [x] **Step 11.4: Move copy helpers to `copy.ts`**
 
 Move and export:
 
@@ -1049,7 +1055,7 @@ copyText
 
 Keep usage of `formatBoxesForCopy` and `formatFormulaForCopy` imported from `../copyFormatter`.
 
-- [ ] **Step 11.5: Move notice and localized strings to `notice.ts`**
+- [x] **Step 11.5: Move notice and localized strings to `notice.ts`**
 
 Move and export:
 
@@ -1061,7 +1067,7 @@ getReaderOverlayNoticeText
 
 Import `getString` from `../../utils/locale`.
 
-- [ ] **Step 11.6: Keep `index.ts` as the overlay orchestrator**
+- [x] **Step 11.6: Keep `index.ts` as the overlay orchestrator**
 
 `index.ts` should keep high-level functions:
 
@@ -1073,7 +1079,7 @@ public re-exports
 
 It should import behavior from the new modules and remain below 300 lines.
 
-- [ ] **Step 11.7: Run type check**
+- [x] **Step 11.7: Run type check**
 
 Run:
 
@@ -1092,7 +1098,7 @@ Expected: exits with code 0.
 - Verify: `src/hooks.ts`
 - Verify: `src/addon.ts`
 
-- [ ] **Step 12.1: Verify file line counts for all split directories**
+- [x] **Step 12.1: Verify file line counts for all split directories**
 
 Run:
 
@@ -1102,7 +1108,7 @@ Get-ChildItem -LiteralPath 'src\modules\mineruClient','src\modules\readerToolbar
 
 Expected: every file is below 500 lines; each `index.ts` is below 300 lines.
 
-- [ ] **Step 12.2: Verify no old oversized module files remain**
+- [x] **Step 12.2: Verify no old oversized module files remain**
 
 Run:
 
@@ -1120,7 +1126,7 @@ False
 False
 ```
 
-- [ ] **Step 12.3: Run TypeScript check**
+- [x] **Step 12.3: Run TypeScript check**
 
 Run:
 
@@ -1130,7 +1136,7 @@ Run:
 
 Expected: exits with code 0.
 
-- [ ] **Step 12.4: Run full scaffold test suite**
+- [x] **Step 12.4: Run full scaffold test suite**
 
 Run:
 
@@ -1140,7 +1146,7 @@ Run:
 
 Expected: exits with code 0. If Zotero runtime setup blocks the test, capture the exact command output, keep `tsc` as the minimum verified result, and report the blocker.
 
-- [ ] **Step 12.5: Review final diff scope**
+- [x] **Step 12.5: Review final diff scope**
 
 Run:
 
@@ -1151,7 +1157,7 @@ git diff --name-status
 
 Expected: changes are limited to deleting the three old oversized module files, creating their directory modules, and import/export fixes required by TypeScript.
 
-- [ ] **Step 12.6: Commit Checkpoint 3**
+- [x] **Step 12.6: Commit Checkpoint 3**
 
 Run:
 
@@ -1162,7 +1168,7 @@ git commit -m "refactor(reader): split overlay module"
 
 Expected: commit succeeds.
 
-- [ ] **Step 12.7: Stop for final manual acceptance**
+- [x] **Step 12.7: Stop for final manual acceptance**
 
 Report the Checkpoint 3 commit hash, final line-count table, `tsc` result, scaffold test result, and final commit list to the user. Do not merge, squash, or start follow-up cleanup without explicit user instruction.
 
