@@ -48,6 +48,9 @@ export {
 } from "./errors";
 export type { MinerUClient } from "./types";
 
+/**
+ * 创建封装 MinerU v4 提交、轮询和结果下载流程的客户端实例。
+ */
 export function createMinerUClient(options: MinerUClientOptions): MinerUClient {
   const baseURL = normalizeBaseURL(options.baseURL ?? "https://mineru.net");
   const request = options.fetch ?? createDefaultRequest();
@@ -69,6 +72,9 @@ export function createMinerUClient(options: MinerUClientOptions): MinerUClient {
   const downloadRetryDelayMs = options.downloadRetryDelayMs ?? 2000;
 
   return {
+    /**
+     * 提交本地 PDF 到 MinerU，上传文件字节并返回 batch task ID。
+     */
     async submitPdf(filePath) {
       const fileName = basename(filePath);
       const response = await requestJson<FileUrlsBatchResponse>(
@@ -108,6 +114,9 @@ export function createMinerUClient(options: MinerUClientOptions): MinerUClient {
       return { taskID };
     },
 
+    /**
+     * 查询 MinerU batch task 状态并映射为插件内部状态。
+     */
     async pollTask(taskID) {
       const response = await fetchBatchResult(
         request,
@@ -130,6 +139,9 @@ export function createMinerUClient(options: MinerUClientOptions): MinerUClient {
       return { status: "running" };
     },
 
+    /**
+     * 下载 MinerU 解析结果，优先读取完整 ZIP 并回退到 Markdown URL。
+     */
     async downloadResult(taskID) {
       let response = await fetchBatchResult(
         request,

@@ -2,6 +2,9 @@ import { MinerUTaskError } from "./errors";
 import { isSafeRelativePath, summarizeBytes } from "./path";
 import type { ZipEntries } from "./types";
 
+/**
+ * 使用 Zotero nsIZipReader 从本地 ZIP 文件读取需要保留的条目。
+ */
 export function readZipFile(path: string): ZipEntries | null {
   const xpcom = globalThis as typeof globalThis & {
     Components?: typeof Components;
@@ -43,6 +46,9 @@ export function readZipFile(path: string): ZipEntries | null {
   return entries.size > 0 ? entries : null;
 }
 
+/**
+ * 从 nsIZipReader 中读取单个 ZIP 条目的完整字节。
+ */
 export function readZipEntryBytes(reader: nsIZipReader, name: string): Uint8Array {
   const input = reader.getInputStream(name);
   const classMap = Components.classes as typeof Components.classes &
@@ -59,6 +65,9 @@ export function readZipEntryBytes(reader: nsIZipReader, name: string): Uint8Arra
   }
 }
 
+/**
+ * 解析 ZIP ArrayBuffer 并返回 MinerU 结果需要的条目集合。
+ */
 export async function readZip(buffer: ArrayBuffer): Promise<ZipEntries> {
   const bytes = new Uint8Array(buffer);
   const entries: ZipEntries = new Map();
@@ -93,6 +102,9 @@ export async function readZip(buffer: ArrayBuffer): Promise<ZipEntries> {
   return entries;
 }
 
+/**
+ * 按本地文件头偏移读取 ZIP 条目并按压缩方法解码。
+ */
 export async function readZipEntry(
   bytes: Uint8Array,
   localOffset: number,
@@ -118,6 +130,9 @@ export async function readZipEntry(
   throw new MinerUTaskError(`Unsupported MinerU result zip method ${method}`);
 }
 
+/**
+ * 使用运行时 DecompressionStream 解压 deflate-raw 数据。
+ */
 export async function inflateRaw(
   compressed: Uint8Array,
   expectedSize: number,
@@ -144,6 +159,9 @@ export async function inflateRaw(
   return result;
 }
 
+/**
+ * 把文本映射转换为 ZIP 条目映射，供 Markdown 回退结果复用。
+ */
 export function textMapToZipEntries(entries: Map<string, string>): ZipEntries {
   const encoder = new TextEncoder();
   return new Map(
@@ -154,10 +172,16 @@ export function textMapToZipEntries(entries: Map<string, string>): ZipEntries {
   );
 }
 
+/**
+ * 使用 UTF-8 解码 ZIP 条目字节。
+ */
 export function decodeText(bytes: Uint8Array): string {
   return new TextDecoder().decode(bytes);
 }
 
+/**
+ * 判断 ZIP 条目是否需要读取到内存。
+ */
 function shouldReadZipEntry(name: string): boolean {
   return (
     name === "full.md" ||
@@ -166,6 +190,9 @@ function shouldReadZipEntry(name: string): boolean {
   );
 }
 
+/**
+ * 判断 ZIP 图片条目是否位于安全的 images 相对路径下。
+ */
 function isReadableZipImageEntry(name: string): boolean {
   const normalized = name.replace(/\\/g, "/");
   if (!normalized.startsWith("images/")) {
@@ -174,6 +201,9 @@ function isReadableZipImageEntry(name: string): boolean {
   return isSafeRelativePath(normalized.slice("images/".length));
 }
 
+/**
+ * 定位 ZIP 中央目录起始偏移。
+ */
 export function findCentralDirectoryOffset(bytes: Uint8Array): number {
   for (let offset = bytes.length - 22; offset >= 0; offset -= 1) {
     if (readUint32(bytes, offset) === 0x06054b50) {
@@ -185,6 +215,9 @@ export function findCentralDirectoryOffset(bytes: Uint8Array): number {
   );
 }
 
+/**
+ * 从字节数组指定偏移读取 little-endian uint16。
+ */
 export function readUint16(bytes: Uint8Array, offset: number): number {
   return new DataView(bytes.buffer, bytes.byteOffset + offset, 2).getUint16(
     0,
@@ -192,6 +225,9 @@ export function readUint16(bytes: Uint8Array, offset: number): number {
   );
 }
 
+/**
+ * 从字节数组指定偏移读取 little-endian uint32。
+ */
 export function readUint32(bytes: Uint8Array, offset: number): number {
   return new DataView(bytes.buffer, bytes.byteOffset + offset, 4).getUint32(
     0,

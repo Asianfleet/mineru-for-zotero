@@ -6,6 +6,9 @@ import { safeURL } from "./path";
 import type { ExtractResultsBatchResponse, ZipEntries } from "./types";
 import { readZip, readZipFile, textMapToZipEntries } from "./zip";
 
+/**
+ * 尝试解析网络 ZIP，失败时按文件下载和 Markdown URL 顺序回退。
+ */
 export async function readZipOrFallback(
   zipBuffer: ArrayBuffer,
   rawResult: ExtractResultsBatchResponse,
@@ -56,6 +59,9 @@ export async function readZipOrFallback(
   }
 }
 
+/**
+ * 把下载诊断信息附加到 MinerU 任务错误中。
+ */
 export function withDownloadDiagnostics(
   error: unknown,
   diagnostics: string[],
@@ -69,6 +75,9 @@ export function withDownloadDiagnostics(
   );
 }
 
+/**
+ * 按次数重试下载 MinerU 完整 ZIP，并在必要时重新拉取结果 URL。
+ */
 export async function retryDownloadZip(
   refetch: () => Promise<{
     response: ExtractResultsBatchResponse;
@@ -121,12 +130,18 @@ export async function retryDownloadZip(
     : new MinerUTaskError("MinerU result download failed");
 }
 
+/**
+ * 判断下载错误是否属于可以重试的空响应场景。
+ */
 export function isRetryableDownloadError(error: unknown): boolean {
   return (
     error instanceof MinerUTaskError && error.message.includes("empty response")
   );
 }
 
+/**
+ * 使用 Zotero Promise 或标准 timer 等待指定毫秒数。
+ */
 export async function delay(ms: number): Promise<void> {
   if (ms <= 0) {
     return;
@@ -138,6 +153,9 @@ export async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * 下载 MinerU ZIP 到临时文件并读取字节或 ZIP 条目。
+ */
 export async function zoteroDownloadFileBytes(
   url: string,
 ): Promise<Uint8Array | ZipEntries> {
@@ -157,6 +175,9 @@ export async function zoteroDownloadFileBytes(
   }
 }
 
+/**
+ * 在 Windows Zotero 运行时优先使用 curl 下载结果文件。
+ */
 export async function downloadWithCurl(
   url: string,
   path: string,
@@ -203,6 +224,9 @@ export async function downloadWithCurl(
   return { used: true };
 }
 
+/**
+ * 从 Zotero/浏览器运行时推断当前平台。
+ */
 export function getRuntimePlatform(): "win" | "mac" | "linux" | "unknown" {
   const runtime = globalThis as typeof globalThis & {
     AppConstants?: { platform?: string };
@@ -229,6 +253,9 @@ export function getRuntimePlatform(): "win" | "mac" | "linux" | "unknown" {
   return "unknown";
 }
 
+/**
+ * 通过 nsIProcess 调用本机 curl.exe 下载文件。
+ */
 export async function downloadWithNsIProcess(
   url: string,
   path: string,
@@ -271,6 +298,9 @@ export async function downloadWithNsIProcess(
   return { used: true };
 }
 
+/**
+ * 查找 Windows 系统目录中的 curl.exe。
+ */
 export async function findCurlPath(): Promise<string | null> {
   const candidates = [
     "C:\\Windows\\System32\\curl.exe",
@@ -284,6 +314,9 @@ export async function findCurlPath(): Promise<string | null> {
   return null;
 }
 
+/**
+ * 判断 Zotero 运行时能否访问指定文件路径。
+ */
 export async function fileExists(path: string): Promise<boolean> {
   try {
     if (typeof IOUtils !== "undefined") {
@@ -295,6 +328,9 @@ export async function fileExists(path: string): Promise<boolean> {
   }
 }
 
+/**
+ * 读取文件大小，失败时返回 0 供诊断使用。
+ */
 export async function fileSize(path: string): Promise<number> {
   try {
     if (typeof IOUtils !== "undefined") {
@@ -308,6 +344,9 @@ export async function fileSize(path: string): Promise<number> {
   }
 }
 
+/**
+ * 在系统临时目录下创建唯一临时文件路径。
+ */
 export async function createTemporaryPath(fileName: string): Promise<string> {
   const baseDir =
     typeof PathUtils !== "undefined"
@@ -319,6 +358,9 @@ export async function createTemporaryPath(fileName: string): Promise<string> {
     : OS.Path.join(baseDir, name);
 }
 
+/**
+ * 删除临时文件，忽略文件不存在或清理失败。
+ */
 export async function removeFileIfExists(path: string): Promise<void> {
   try {
     if (typeof IOUtils !== "undefined") {
