@@ -462,7 +462,7 @@ git commit -m "refactor(mineru): 拆分在线精准 client"
 - Modify: `src/modules/storage.ts`
 - Test: `test/storage.test.ts`
 
-- [ ] **Step 1: Add failing storage tests**
+- [x] **Step 1: Add failing storage tests**
 
 Add to `test/storage.test.ts`:
 
@@ -505,7 +505,7 @@ it("prefers precise markdown over lite markdown", async function () {
 });
 ```
 
-- [ ] **Step 2: Run focused storage tests and verify failure**
+- [x] **Step 2: Run focused storage tests and verify failure**
 
 Run:
 
@@ -515,7 +515,11 @@ Run:
 
 Expected: FAIL because `writeLiteResult`, `hasLiteResult`, and `readPreferredMarkdown` do not exist.
 
-- [ ] **Step 3: Add lite manifest domain type**
+注意：当前 `zotero-plugin-scaffold@0.8.2` 的 `zotero-plugin test` 不支持 `--grep`；此命令是原计划记录，实际验证需使用全量测试命令。
+
+执行记录：当前 `zotero-plugin test` CLI 不支持 `--grep`，该命令先因 `unknown option '--grep'` 失败；随后改跑 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，构建与测试阶段按预期失败，首个失败用例为 `writes and detects lite markdown without ready precise result`，原因是 `writeLiteResult`/`hasLiteResult`/`readPreferredMarkdown` 尚不存在，确认 red 阶段成立。
+
+- [x] **Step 3: Add lite manifest domain type**
 
 In `src/modules/domain.ts`, add:
 
@@ -535,7 +539,7 @@ export interface LiteParseManifest {
 }
 ```
 
-- [ ] **Step 4: Extend storage adapter**
+- [x] **Step 4: Extend storage adapter**
 
 In `src/modules/storage.ts`, import `LiteParseManifest` and extend `StorageAdapter`:
 
@@ -557,7 +561,7 @@ const LITE_CONTENT_FILE = "lite-content.md";
 const LITE_MANIFEST_FILE = "lite-manifest.json";
 ```
 
-- [ ] **Step 5: Implement lite storage methods**
+- [x] **Step 5: Implement lite storage methods**
 
 Inside `createStorage()` return object:
 
@@ -621,7 +625,7 @@ async function readReadyMarkdown(root: string, ref: AttachmentKeyRef): Promise<s
 
 Then call `readReadyMarkdown(fsRoot, ref)` from both `readMarkdown` and `readPreferredMarkdown`.
 
-- [ ] **Step 6: Preserve lite files across precise writes**
+- [x] **Step 6: Preserve lite files across precise writes**
 
 Before moving a new precise temp dir over an existing target dir in `writeAttachmentResultDir`, copy existing lite files into the temp dir:
 
@@ -645,7 +649,7 @@ async function preserveLiteFiles(sourceDir: string, targetDir: string): Promise<
 
 Call it after validating temp dir and before moving `targetDir` to backup. This ensures a new precise parse does not delete existing lite Markdown.
 
-- [ ] **Step 7: Run storage tests**
+- [x] **Step 7: Run storage tests**
 
 Run:
 
@@ -655,12 +659,22 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit lite storage**
+注意：当前 `zotero-plugin-scaffold@0.8.2` 的 `zotero-plugin test` 不支持 `--grep`；此命令是原计划记录，实际验证需使用全量测试命令。
+
+执行记录：当前 `zotero-plugin test` CLI 不支持 `--grep`，该命令无法作为 focused test 使用；已改跑 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，初始结果为 `127 passed`。审查后补充 precise 损坏不回退 lite、以及不保留不完整 lite 文件两个边界用例，并重新验证为 `129 passed`；另行运行 `.\node_modules\.bin\tsc.CMD --noEmit` 通过。
+
+- [x] **Step 8: Commit lite storage**
 
 ```powershell
 git add src\modules\domain.ts src\modules\storage.ts test\storage.test.ts
 git commit -m "feat(storage): 保存轻量解析 markdown"
 ```
+
+执行说明：按当前子代理约束，本轮不执行 commit，由主代理统一审查和提交。
+
+实现说明：
+本轮在 `domain.ts` 新增 `LiteParseManifest`，并在 `storage.ts` 中补充 `hasLiteResult()`、`writeLiteResult()`、`readPreferredMarkdown()` 以及 `lite-content.md` / `lite-manifest.json` 常量。`readMarkdown()` 与 `readPreferredMarkdown()` 共用 ready Markdown helper，避免重复判定逻辑；`writeLiteResult()` 对空 Markdown 显式报错。
+为了不破坏现有 precise 结果目录的原子替换与 backup 语义，`writeAttachmentResultDir()` 仍然先写临时目录并校验，再在替换前把已有完整 lite 文件复制进新的 precise temp dir，保证 precise 重写不会删除之前的 lite Markdown。审查后进一步收紧了两个边界：`readPreferredMarkdown()` 只在不存在 ready precise manifest 或 precise manifest 非 ready 时才回退 lite，避免 ready precise 内容损坏时被静默降级；`preserveLiteFiles()` 只有在 `lite-content.md` 与 `lite-manifest.json` 同时存在且 manifest 可解析时才迁移，避免保留半成品 lite 状态。测试方面，先补了 lite-only、preferred markdown、以及 precise 写入保留 lite 文件的用例，审查后又补了 ready precise 内容损坏不回退、以及不保留不完整 lite 文件的边界用例；由于当前 scaffold CLI 不支持 `--grep`，最终使用 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail` 全量验证，结果为 `129 passed`，并且 `.\node_modules\.bin\tsc.CMD --noEmit` 通过。
 
 ## Task 4: Parse Manager Mode Branching
 
