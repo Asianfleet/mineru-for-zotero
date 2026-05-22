@@ -45,7 +45,7 @@
 - Modify: `typings/i10n.d.ts`
 - Test: `test/preferenceScript.test.ts`
 
-- [ ] **Step 1: Add failing preference tests**
+- [x] **Step 1: Add failing preference tests**
 
 Add tests to `test/preferenceScript.test.ts` near the existing `getSaveImages` tests:
 
@@ -76,7 +76,7 @@ it("round-trips parse source, parse mode, and local API URL", function () {
 });
 ```
 
-- [ ] **Step 2: Run the focused preference test and verify failure**
+- [x] **Step 2: Run the focused preference test and verify failure**
 
 Run:
 
@@ -84,9 +84,13 @@ Run:
 .\node_modules\.bin\zotero-plugin.CMD test --grep "parse source" --exit-on-finish --abort-on-fail
 ```
 
+注意：当前 `zotero-plugin-scaffold@0.8.2` 的 `zotero-plugin test` 不支持 `--grep`；此命令是原计划记录，实际验证需使用全量测试命令。
+
 Expected: FAIL because `getParseSource`, `getParseMode`, and `getLocalApiBaseURL` are not exported.
 
-- [ ] **Step 3: Add preference types and defaults**
+执行记录：当前 `zotero-plugin test` CLI 不支持 `--grep`，该命令先因 `unknown option '--grep'` 失败，未能进入预期的测试用例失败阶段；该环境偏差已记录，后续以全量 `zotero-plugin test --exit-on-finish --abort-on-fail` 验证新增测试。
+
+- [x] **Step 3: Add preference types and defaults**
 
 In `typings/prefs.d.ts`, extend `PluginPrefsMap`:
 
@@ -104,7 +108,7 @@ pref("parseMode", "precise");
 pref("localApiBaseURL", "http://127.0.0.1:8000");
 ```
 
-- [ ] **Step 4: Add typed preference helpers**
+- [x] **Step 4: Add typed preference helpers**
 
 In `src/utils/prefs.ts`, add exported types and helpers:
 
@@ -142,7 +146,7 @@ export function setLocalApiBaseURL(value: string) {
 }
 ```
 
-- [ ] **Step 5: Add preference UI controls**
+- [x] **Step 5: Add preference UI controls**
 
 In `addon/content/preferences.xhtml`, insert a new `vbox` after the API Key block and before `saveImages`:
 
@@ -183,7 +187,7 @@ In `addon/content/preferences.xhtml`, insert a new `vbox` after the API Key bloc
   </vbox>
 ```
 
-- [ ] **Step 6: Add preference locale strings**
+- [x] **Step 6: Add preference locale strings**
 
 Append to `addon/locale/zh-CN/preferences.ftl`:
 
@@ -217,7 +221,7 @@ pref-local-api-base-url-help = Local mineru-api or mineru-router URL, for exampl
 
 Update `typings/i10n.d.ts` to include each new `pref-*` ID.
 
-- [ ] **Step 7: Run focused preference tests**
+- [x] **Step 7: Run focused preference tests**
 
 Run:
 
@@ -225,14 +229,22 @@ Run:
 .\node_modules\.bin\zotero-plugin.CMD test --grep "parse source" --exit-on-finish --abort-on-fail
 ```
 
+注意：当前 `zotero-plugin-scaffold@0.8.2` 的 `zotero-plugin test` 不支持 `--grep`；此命令是原计划记录，实际验证需使用全量测试命令。
+
 Expected: PASS for the new preference tests.
 
-- [ ] **Step 8: Commit preference surface**
+执行记录：当前 `zotero-plugin test` CLI 不支持 `--grep`，该命令无法作为 focused test 使用；已改跑 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，结果为 `123 passed`，其中新增 preference 测试通过。
+
+- [x] **Step 8: Commit preference surface**
 
 ```powershell
 git add typings\prefs.d.ts addon\prefs.js src\utils\prefs.ts addon\content\preferences.xhtml addon\locale\zh-CN\preferences.ftl addon\locale\en-US\preferences.ftl typings\i10n.d.ts test\preferenceScript.test.ts
 git commit -m "feat(prefs): 增加 API 来源与解析模式设置"
 ```
+
+实现说明：
+本轮已补充 parse source、parse mode、local API URL 的默认值与 round-trip 测试，扩展了 `PluginPrefsMap`、`src/utils/prefs.ts` 的类型化 helper，以及 preferences.xhtml 中对应的来源、模式和本地地址控件；同时补齐了中英文 locale 文案与 `typings/i10n.d.ts` 中新增的 `pref-*` ID。
+测试方面，按计划执行的 `.\node_modules\.bin\zotero-plugin.CMD test --grep "parse source" --exit-on-finish --abort-on-fail` 在当前脚手架版本下直接失败，错误为 `unknown option '--grep'`；因此改用 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail` 进行验证，结果为 `123 passed`，其中 `preferenceScript` 下新增的两条 parse source 相关测试通过。审查后已把 round-trip 测试改为 `finally` 中恢复默认偏好，避免持久 Zotero preferences 污染后续测试。
 
 ## Task 2: Client Result Types And Factory
 
