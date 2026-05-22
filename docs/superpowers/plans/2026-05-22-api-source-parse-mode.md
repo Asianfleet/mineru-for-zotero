@@ -1823,6 +1823,27 @@ Use an explicit file list instead of `git add .`.
 本轮先补充了 Task 9 的验证记录。最终 review 随后指出两个边界缺陷：lite result 只看 `lite-content.md` 会把缺少或失败的 `lite-manifest.json` 当作 ready；local lite 如果收到 ZIP 响应会被误转为 precise result。已追加修复：`hasLiteResult()` 与 `readPreferredMarkdown()` 现在要求 lite manifest `status === "ready"` 且 `mode === "lite"`，并要求 lite Markdown 非空；local ZIP 下载会先读取 Markdown，并在 `options.mode === "lite"` 时返回 `{ kind: "lite", markdown }`。已补充 storage partial-lite 测试和 local lite ZIP 测试。
 最终验证命令中，`.\node_modules\.bin\tsc.CMD --noEmit` 通过，`.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail` 最终为 `152 passed`。此前 `pnpm run lint:check` 未通过，原因是全仓库 Prettier 检查命中多处既有或计划外格式警告；为保持本任务 diff 聚焦，没有进行全仓库格式化。
 
+## Task 10: Runtime Preference Sync
+
+**Files:**
+- Modify: `src/modules/preferenceScript.ts`
+- Test: `test/preferenceScript.test.ts`
+
+- [x] **Step 1: Reproduce stale parse mode from the preferences UI**
+
+新增 `persists parse mode changes from the preferences UI immediately` 测试，模拟 preferences 页面中 `zotero-prefpane-mineruForZotero-parse-mode` 从 `lite` 切换到 `precise` 并触发 `change`。在实现前运行 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，构建按预期失败于缺少 `registerPreferenceValueSync` 导出，确认测试覆盖当前缺失的运行时同步入口。
+
+- [x] **Step 2: Explicitly sync preference controls into Zotero.Prefs**
+
+在 `registerPrefsScripts()` 加载 preferences 页面时调用 `registerPreferenceValueSync(document)`，为 API key、parse source、parse mode、local API base URL、save images 控件注册 `change` 监听器，并通过 `src/utils/prefs.ts` 的 typed setter 显式写入 `Zotero.Prefs`。其中 select 控件会校验允许值，避免未知 UI 值污染偏好。
+
+- [x] **Step 3: Verify runtime parse mode switching**
+
+已运行 `.\node_modules\.bin\tsc.CMD --noEmit`，退出码为 0；已运行 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，结果为 `157 passed`。
+
+实现说明：
+本轮真实根因是 preferences.xhtml 的隐式 `preference="parseMode"` 绑定没有保证在当前 Zotero 运行期内立刻写入 `Zotero.Prefs`，导致用户从轻量解析切到精准解析后，不重启时 `parseManager` 仍读取到旧的 `parseMode = "lite"`，从而继续走 online lite Agent client；重启后 preferences 才被提交，所以同一 PDF 再走精准解析就成功。修复后，设置页控件变化会即时同步到 `Zotero.Prefs`，`parseManager` 下一次解析会读取到最新的 `precise` 模式。
+
 ## Self-Review
 
 - Spec coverage: preferences, four API combinations, async local API, `/health`, lite storage, precise-vs-lite overwrite rules, preferred Markdown copy, API-key rules, and tests all map to tasks above.
