@@ -255,7 +255,7 @@ git commit -m "feat(prefs): 增加 API 来源与解析模式设置"
 - Modify: `src/modules/mineruClient/index.ts`
 - Test: `test/mineruClient.test.ts`
 
-- [ ] **Step 1: Add failing factory tests**
+- [x] **Step 1: Add failing factory tests**
 
 Add to `test/mineruClient.test.ts`:
 
@@ -287,7 +287,7 @@ it("creates the online precise client by default", async function () {
 });
 ```
 
-- [ ] **Step 2: Run the focused factory test and verify failure**
+- [x] **Step 2: Run the focused factory test and verify failure**
 
 Run:
 
@@ -297,7 +297,11 @@ Run:
 
 Expected: FAIL because `createMinerUClientForSettings` does not exist.
 
-- [ ] **Step 3: Extend result and settings types**
+注意：当前 `zotero-plugin-scaffold@0.8.2` 的 `zotero-plugin test` 不支持 `--grep`；此命令是原计划记录，实际验证需使用全量测试命令。
+
+执行记录：当前 `zotero-plugin test` CLI 不支持 `--grep`，该命令先因 `unknown option '--grep'` 失败，未能进入预期的测试用例失败阶段；随后改跑 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，构建阶段按预期失败，错误为 `No matching export in "src/modules/mineruClient/index.ts" for import "createMinerUClientForSettings"`，确认新增测试已覆盖缺失 factory 导出的 red 阶段。
+
+- [x] **Step 3: Extend result and settings types**
 
 In `src/modules/mineruClient/types.ts`, replace the current `downloadResult` shape with:
 
@@ -335,7 +339,7 @@ export interface MinerUClientFactoryOptions extends MinerUClientOptions {
 }
 ```
 
-- [ ] **Step 4: Move current implementation into online precise module**
+- [x] **Step 4: Move current implementation into online precise module**
 
 Create `src/modules/mineruClient/onlinePrecise.ts` by copying the full current `createMinerUClient(options: MinerUClientOptions)` implementation from `index.ts`. In the copied file, change the function declaration line from:
 
@@ -372,7 +376,7 @@ return {
 };
 ```
 
-- [ ] **Step 5: Add factory module**
+- [x] **Step 5: Add factory module**
 
 Create `src/modules/mineruClient/factory.ts`:
 
@@ -390,7 +394,7 @@ export function createMinerUClientForSettings(
 }
 ```
 
-- [ ] **Step 6: Keep public exports compatible**
+- [x] **Step 6: Keep public exports compatible**
 
 Replace `src/modules/mineruClient/index.ts` with exports that keep current imports working:
 
@@ -413,7 +417,7 @@ export type {
 } from "./types";
 ```
 
-- [ ] **Step 7: Update existing tests for result kind**
+- [x] **Step 7: Update existing tests for result kind**
 
 In `test/mineruClient.test.ts`, where tests assert result object equality, add `kind: "precise"` or assert specific fields. Example:
 
@@ -426,7 +430,7 @@ if (result.kind !== "precise") {
 assert.deepEqual(result.rawResult, { pages: [{ pageNo: 1 }] });
 ```
 
-- [ ] **Step 8: Run mineru client tests**
+- [x] **Step 8: Run mineru client tests**
 
 Run:
 
@@ -436,12 +440,20 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 9: Commit client factory**
+注意：当前 `zotero-plugin-scaffold@0.8.2` 的 `zotero-plugin test` 不支持 `--grep`；此命令是原计划记录，实际验证需使用全量测试命令。
+
+执行记录：当前 `zotero-plugin test` CLI 不支持 `--grep`，该命令无法作为 focused test 使用；已改跑 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，结果为 `124 passed`，其中 `mineruClient` 分组共 17 条测试全部通过，新增 factory 测试与 `result.kind` 相关断言通过。
+
+- [x] **Step 9: Commit client factory**
 
 ```powershell
 git add src\modules\mineruClient\types.ts src\modules\mineruClient\onlinePrecise.ts src\modules\mineruClient\factory.ts src\modules\mineruClient\index.ts test\mineruClient.test.ts
 git commit -m "refactor(mineru): 拆分在线精准 client"
 ```
+
+实现说明：
+本轮把 `MinerUClient` 的下载结果扩展为 `precise | lite` 判别联合，并新增 `MinerUClientFactoryOptions`、`MinerUParseSource`、`MinerUParseMode` 等类型；随后将原先 `index.ts` 中的在线 precise v4 实现整体迁移到 `onlinePrecise.ts`，统一在 ZIP 和 `md_url` 回退路径上返回 `kind: "precise"`。
+同时新增 `factory.ts`，提供 `createMinerUClientForSettings()`，当前先支持 `online/precise` 映射，并在 `index.ts` 中保留 `createMinerUClient` 旧入口导出到 `createOnlinePreciseMinerUClient`，避免现有 `parseManager` 与测试调用面破坏。由于 `downloadResult()` 已变为 union，而 Task 4 才会接入 lite 写入分支，本轮在 `parseManager` 下载后加了一个临时 `result.kind === "lite"` guard，使当前中间态保持类型正确且不改变 online precise 行为；审查后该 guard 改为记录日志并显示 generic 错误，避免把未接线的 lite 分支误报为下载失败。测试方面，按计划补充了 factory 创建测试，并把现有 `downloadResult()` 断言更新为校验 `result.kind === "precise"` 后再断言 `rawResult` 与 `images`；由于当前脚手架 CLI 不支持 `--grep`，最终使用 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail` 全量验证，结果为 `124 passed`；另运行 `.\node_modules\.bin\tsc.CMD --noEmit` 通过。
 
 ## Task 3: Storage Lite Results And Preferred Markdown
 

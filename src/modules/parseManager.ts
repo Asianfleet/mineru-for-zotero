@@ -253,6 +253,16 @@ async function parseAttachmentWithDependencies(
     await waitForTask(client, taskID, dependencies.delay);
     phase = "download";
     const result = await client.downloadResult(taskID);
+    if (result.kind === "lite") {
+      dependencies.log("MinerU lite result is not supported yet", {
+        attachmentID: attachment.id,
+        taskID,
+      });
+      dependencies.showMessage("parse-error-generic", {
+        message: "Lite parse result is not supported yet",
+      });
+      return;
+    }
     const boxes = normalizeMinerUBoxes(result.rawResult);
 
     if (boxes.length === 0) {

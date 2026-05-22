@@ -1,5 +1,6 @@
 import { assert } from "chai";
 import {
+  createMinerUClientForSettings,
   createMinerUClient,
   MinerUFileAccessError,
   MinerURequestError,
@@ -7,6 +8,33 @@ import {
 } from "../src/modules/mineruClient";
 
 describe("mineruClient", function () {
+  it("creates the online precise client for explicit settings", async function () {
+    const calls: string[] = [];
+    const client = createMinerUClientForSettings({
+      source: "online",
+      mode: "precise",
+      apiKey: "secret-token",
+      readBinary: async () => new Uint8Array([1]),
+      fetch: async (url, init) => {
+        calls.push(`${init?.method ?? "GET"} ${String(url)}`);
+        if (String(url).endsWith("/api/v4/file-urls/batch")) {
+          return jsonResponse({
+            code: 0,
+            data: {
+              batch_id: "batch-1",
+              file_urls: ["https://upload.example/a"],
+            },
+          });
+        }
+        return new Response("", { status: 200 });
+      },
+    });
+
+    await client.submitPdf("C:/tmp/a.pdf");
+
+    assert.equal(calls[0], "POST https://mineru.net/api/v4/file-urls/batch");
+  });
+
   it("submits a local PDF through the official batch upload flow", async function () {
     const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
     const client = createMinerUClient({
@@ -290,6 +318,10 @@ describe("mineruClient", function () {
 
     const result = await client.downloadResult("batch-1");
 
+    assert.equal(result.kind, "precise");
+    if (result.kind !== "precise") {
+      assert.fail("Expected precise result");
+    }
     assert.equal(result.markdown, "# Title");
     assert.deepEqual(result.rawResult, { pages: [{ pageNo: 1 }] });
   });
@@ -324,6 +356,10 @@ describe("mineruClient", function () {
 
     const result = await client.downloadResult("batch-1");
 
+    assert.equal(result.kind, "precise");
+    if (result.kind !== "precise") {
+      assert.fail("Expected precise result");
+    }
     assert.deepEqual(result.images, [
       { path: "a.png", bytes: new Uint8Array([137, 80, 78, 71]) },
     ]);
@@ -366,6 +402,10 @@ describe("mineruClient", function () {
 
     const result = await client.downloadResult("batch-1");
 
+    assert.equal(result.kind, "precise");
+    if (result.kind !== "precise") {
+      assert.fail("Expected precise result");
+    }
     assert.deepEqual(result.rawResult, {
       pdf_info: [
         {
@@ -448,6 +488,10 @@ describe("mineruClient", function () {
       const client = createMinerUClient({ apiKey: "secret-token" });
       const result = await client.downloadResult("batch-1");
 
+      assert.equal(result.kind, "precise");
+      if (result.kind !== "precise") {
+        assert.fail("Expected precise result");
+      }
       assert.equal(result.markdown, "# Title");
       assert.deepEqual(result.rawResult, { pages: [{ pageNo: 1 }] });
       assert.deepEqual(downloadCalls, [
@@ -509,6 +553,10 @@ describe("mineruClient", function () {
       const client = createMinerUClient({ apiKey: "secret-token" });
       const result = await client.downloadResult("batch-1");
 
+      assert.equal(result.kind, "precise");
+      if (result.kind !== "precise") {
+        assert.fail("Expected precise result");
+      }
       assert.equal(result.markdown, "# Title");
       assert.deepEqual(result.rawResult, { pages: [{ pageNo: 1 }] });
     } finally {
@@ -580,6 +628,10 @@ describe("mineruClient", function () {
 
     const result = await client.downloadResult("batch-1");
 
+    assert.equal(result.kind, "precise");
+    if (result.kind !== "precise") {
+      assert.fail("Expected precise result");
+    }
     assert.equal(result.markdown, "# Title");
     assert.deepEqual(result.rawResult, {
       code: 0,
@@ -623,6 +675,10 @@ describe("mineruClient", function () {
 
     const result = await client.downloadResult("batch-1");
 
+    assert.equal(result.kind, "precise");
+    if (result.kind !== "precise") {
+      assert.fail("Expected precise result");
+    }
     assert.equal(result.markdown, "# Title");
     assert.deepEqual(result.rawResult, { pages: [{ pageNo: 1 }] });
   });
@@ -665,6 +721,10 @@ describe("mineruClient", function () {
 
     const result = await client.downloadResult("batch-1");
 
+    assert.equal(result.kind, "precise");
+    if (result.kind !== "precise") {
+      assert.fail("Expected precise result");
+    }
     assert.equal(result.markdown, "# Title");
     assert.equal(extractCalls, 2);
     assert.equal(downloadCalls, 2);
