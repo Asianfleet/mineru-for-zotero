@@ -5,6 +5,7 @@ export {
 } from "./errors";
 export { createMinerUClientForSettings } from "./factory";
 export { createOnlinePreciseMinerUClient as createMinerUClient } from "./onlinePrecise";
+export { downloadPlainFileBytes } from "./download";
 export type {
   MinerUClient,
   MinerUClientFactoryOptions,

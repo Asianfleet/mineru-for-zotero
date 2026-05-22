@@ -1,8 +1,10 @@
 import { ensureBusinessSuccess, requestJson, requestOk } from "./api";
+import { downloadPlainFileBytes } from "./download";
 import { MinerUTaskError } from "./errors";
 import { readFileBytes, readPdfBytes } from "./file";
 import {
   createDefaultRequest,
+  errorMessage,
   fallbackDownloadBinary,
   fetchDownloadBinary,
   fetchUploadBinary,
@@ -55,9 +57,7 @@ export function createOnlineAgentLiteMinerUClient(
   const baseURL = normalizeBaseURL(options.baseURL ?? "https://mineru.net");
   const request = options.fetch ?? createDefaultRequest();
   const readBinary = options.readBinary ?? readFileBytes;
-  const uploadBinary =
-    options.uploadBinary ??
-    (options.fetch ? fetchUploadBinary(request) : xhrUploadBinary);
+  const uploadBinary = options.uploadBinary ?? xhrUploadBinary;
   const downloadBinary =
     options.downloadBinary ??
     (options.fetch
@@ -66,6 +66,8 @@ export function createOnlineAgentLiteMinerUClient(
           xhrDownloadBinary,
           fetchDownloadBinary(request),
         ));
+  const downloadFileBytes =
+    options.downloadFileBytes ?? downloadPlainFileBytes;
 
   return {
     /**
@@ -156,13 +158,63 @@ export function createOnlineAgentLiteMinerUClient(
       if (!markdownURL) {
         return { kind: "lite", markdown: "" };
       }
-      const markdownResponse = await requestOk(
-        () => downloadBinary(markdownURL),
-        markdownURL,
-        "download",
-        { method: "GET" },
-      );
-      return { kind: "lite", markdown: await markdownResponse.text() };
+      return {
+        kind: "lite",
+        markdown: await downloadMarkdown(
+          markdownURL,
+          downloadBinary,
+          downloadFileBytes,
+        ),
+      };
     },
   };
+}
+
+/**
+ * 下载在线 lite Markdown；网络响应为空或失败时回退到文件下载路径。
+ */
+async function downloadMarkdown(
+  url: string,
+  downloadBinary: (url: string) => Promise<Response>,
+  downloadFileBytes: NonNullable<MinerUClientOptions["downloadFileBytes"]>,
+): Promise<string> {
+  try {
+    const response = await requestOk(
+      () => downloadBinary(url),
+      url,
+      "download",
+      { method: "GET" },
+    );
+    const markdown = await response.text();
+    if (markdown.trim()) {
+      return markdown;
+    }
+  } catch {
+    // CDN Markdown 在 Zotero/Firefox 中可能 EOF；继续走文件下载兜底。
+  }
+
+  try {
+    const result = await downloadFileBytes(url);
+    if (result instanceof Map) {
+      const markdownEntry =
+        result.get("full.md") ??
+        Array.from(result.values()).find((entry) =>
+          entry.name.toLowerCase().endsWith(".md"),
+        );
+      return markdownEntry ? decodeMarkdownBytes(markdownEntry.bytes) : "";
+    }
+    return decodeMarkdownBytes(result);
+  } catch (error) {
+    throw new MinerUTaskError(
+      `MinerU Agent markdown download failed: ${errorMessage(error)}`,
+      { cause: error },
+    );
+  }
+}
+
+/**
+ * 将 Markdown 字节按 UTF-8 解码。
+ */
+function decodeMarkdownBytes(bytes: Uint8Array): string {
+  return new TextDecoder().decode(bytes);
 }

@@ -154,22 +154,36 @@ export async function delay(ms: number): Promise<void> {
 }
 
 /**
- * 下载 MinerU ZIP 到临时文件并读取字节或 ZIP 条目。
+ * 下载普通文件到临时路径并读取字节，不尝试按 ZIP 解析。
  */
-export async function zoteroDownloadFileBytes(
-  url: string,
-): Promise<Uint8Array | ZipEntries> {
-  const path = await createTemporaryPath("mineru-result.zip");
+export async function downloadPlainFileBytes(url: string): Promise<Uint8Array> {
+  const path = await createTemporaryPath("mineru-result-download");
   try {
     const curlResult = await downloadWithCurl(url, path);
     if (!curlResult.used) {
       await Zotero.File.download(url, path);
     }
-    return readZipFile(path) ?? normalizeBinary(await readFileBytes(path));
+    return normalizeBinary(await readFileBytes(path));
   } catch (error) {
     throw new MinerUTaskError(`file download failed: ${errorMessage(error)}`, {
       cause: error,
     });
+  } finally {
+    await removeFileIfExists(path);
+  }
+}
+
+/**
+ * 下载 MinerU ZIP 到临时文件并读取字节或 ZIP 条目。
+ */
+export async function zoteroDownloadFileBytes(
+  url: string,
+): Promise<Uint8Array | ZipEntries> {
+  const bytes = await downloadPlainFileBytes(url);
+  const path = await createTemporaryPath("mineru-result.zip");
+  try {
+    await writeDownloadedBytes(path, bytes);
+    return readZipFile(path) ?? bytes;
   } finally {
     await removeFileIfExists(path);
   }
@@ -371,4 +385,18 @@ export async function removeFileIfExists(path: string): Promise<void> {
   } catch {
     // Temporary-file cleanup failure should not hide the parse result.
   }
+}
+
+/**
+ * 写入已下载的临时字节，用于 ZIP reader 回退解析。
+ */
+export async function writeDownloadedBytes(
+  path: string,
+  bytes: Uint8Array,
+): Promise<void> {
+  if (typeof IOUtils !== "undefined") {
+    await IOUtils.write(path, bytes);
+    return;
+  }
+  await OS.File.writeAtomic(path, bytes);
 }

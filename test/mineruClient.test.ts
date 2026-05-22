@@ -1,5 +1,6 @@
 import { assert } from "chai";
 import {
+  downloadPlainFileBytes,
   createMinerUClientForSettings,
   createMinerUClient,
   MinerUFileAccessError,
@@ -369,6 +370,91 @@ describe("mineruClient", function () {
     assert.deepEqual(uploadBody, new Uint8Array([1, 2, 3]));
   });
 
+  it("uploads online lite PDFs through direct XHR without content type", async function () {
+    const originalXMLHttpRequest = globalThis.XMLHttpRequest;
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+    const uploadCalls: Array<{
+      method: string;
+      url: string;
+      headers: Record<string, string>;
+      body: ArrayBuffer | ArrayBufferView | null;
+    }> = [];
+    globalThis.XMLHttpRequest = class {
+      status = 200;
+      statusText = "OK";
+      response = new ArrayBuffer(0);
+      responseType = "";
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      private method = "";
+      private url = "";
+      private headers: Record<string, string> = {};
+
+      open(method: string, url: string) {
+        this.method = method;
+        this.url = url;
+      }
+
+      setRequestHeader(name: string, value: string) {
+        this.headers[name] = value;
+      }
+
+      getAllResponseHeaders() {
+        return "";
+      }
+
+      send(body?: Document | XMLHttpRequestBodyInit | null) {
+        uploadCalls.push({
+          method: this.method,
+          url: this.url,
+          headers: this.headers,
+          body: body as ArrayBuffer | ArrayBufferView | null,
+        });
+        this.onload?.();
+      }
+    } as unknown as typeof XMLHttpRequest;
+
+    try {
+      const client = createMinerUClientForSettings({
+        source: "online",
+        mode: "lite",
+        apiKey: "",
+        readBinary: async () => new Uint8Array([1, 2, 3]),
+        fetch: async (url, init) => {
+          calls.push({ url: String(url), init });
+          if (String(url).endsWith("/api/v1/agent/parse/file")) {
+            return jsonResponse({
+              code: 0,
+              data: {
+                task_id: "agent-task",
+                file_url: "https://upload.example/lite",
+              },
+            });
+          }
+          return new Response(
+            "<Error><Code>SignatureDoesNotMatch</Code></Error>",
+            { status: 403 },
+          );
+        },
+      });
+
+      const result = await client.submitPdf("C:/tmp/a.pdf");
+
+      assert.deepEqual(result, { taskID: "agent-task" });
+      assert.equal(calls.length, 1);
+      assert.deepEqual(uploadCalls, [
+        {
+          method: "PUT",
+          url: "https://upload.example/lite",
+          headers: {},
+          body: new Uint8Array([1, 2, 3]).buffer,
+        },
+      ]);
+    } finally {
+      globalThis.XMLHttpRequest = originalXMLHttpRequest;
+    }
+  });
+
   it("maps wrapped online lite polling states to MinerU task status", async function () {
     const client = createMinerUClientForSettings({
       source: "online",
@@ -412,6 +498,119 @@ describe("mineruClient", function () {
     const result = await client.downloadResult("agent-task");
 
     assert.deepEqual(result, { kind: "lite", markdown: "# Lite" });
+  });
+
+  it("falls back to file download when online lite markdown response is empty", async function () {
+    let networkDownloads = 0;
+    const client = createMinerUClientForSettings({
+      source: "online",
+      mode: "lite",
+      apiKey: "",
+      fetch: async () =>
+        jsonResponse({
+          code: 0,
+          data: {
+            state: "done",
+            markdown_url: "https://download.example/lite.md",
+          },
+        }),
+      downloadBinary: async () => {
+        networkDownloads += 1;
+        return new Response("");
+      },
+      downloadFileBytes: async (url) =>
+        String(url) === "https://download.example/lite.md"
+          ? new TextEncoder().encode("# Lite From File")
+          : new Uint8Array(),
+    });
+
+    const result = await client.downloadResult("agent-task");
+
+    assert.deepEqual(result, {
+      kind: "lite",
+      markdown: "# Lite From File",
+    });
+    assert.equal(networkDownloads, 1);
+  });
+
+  it("downloads plain markdown files without opening them as zip archives", async function () {
+    const originalDownload = Zotero.File.download;
+    const originalReadFileBytes = IOUtils.read;
+    const originalNavigator = globalThis.navigator;
+    const originalAppConstants = (
+      globalThis as typeof globalThis & { AppConstants?: unknown }
+    ).AppConstants;
+    const originalServices = (
+      globalThis as typeof globalThis & { Services?: unknown }
+    ).Services;
+    const originalReadZipFile =
+      Components.classes["@mozilla.org/libjar/zip-reader;1"];
+    const downloadedPaths: string[] = [];
+    const markdownBytes = new TextEncoder().encode("# Plain Markdown");
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { platform: "Linux" },
+    });
+    Object.defineProperty(globalThis, "AppConstants", {
+      configurable: true,
+      value: { platform: "linux" },
+    });
+    Object.defineProperty(globalThis, "Services", {
+      configurable: true,
+      value: { appinfo: { OS: "Linux" } },
+    });
+    (
+      Zotero.File as typeof Zotero.File & {
+        download: typeof Zotero.File.download;
+      }
+    ).download = async (_url, path) => {
+      downloadedPaths.push(path);
+    };
+    (
+      IOUtils as typeof IOUtils & {
+        read: typeof IOUtils.read;
+      }
+    ).read = async (path) => {
+      if (downloadedPaths.includes(path)) {
+        return markdownBytes;
+      }
+      return originalReadFileBytes(path);
+    };
+
+    try {
+      const bytes = await downloadPlainFileBytes(
+        "https://download.example/full.md",
+      );
+
+      assert.deepEqual(bytes, markdownBytes);
+    } finally {
+      (
+        Zotero.File as typeof Zotero.File & {
+          download: typeof Zotero.File.download;
+        }
+      ).download = originalDownload;
+      (
+        IOUtils as typeof IOUtils & {
+          read: typeof IOUtils.read;
+        }
+      ).read = originalReadFileBytes;
+      Object.defineProperty(globalThis, "navigator", {
+        configurable: true,
+        value: originalNavigator,
+      });
+      Object.defineProperty(globalThis, "AppConstants", {
+        configurable: true,
+        value: originalAppConstants,
+      });
+      Object.defineProperty(globalThis, "Services", {
+        configurable: true,
+        value: originalServices,
+      });
+      assert.strictEqual(
+        Components.classes["@mozilla.org/libjar/zip-reader;1"],
+        originalReadZipFile,
+      );
+    }
   });
 
   it("submits a local PDF through the official batch upload flow", async function () {
