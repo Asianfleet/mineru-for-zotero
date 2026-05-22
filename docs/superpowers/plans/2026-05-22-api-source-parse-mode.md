@@ -1819,7 +1819,9 @@ git commit -m "test(mineru): 覆盖 API 来源与解析模式"
 Use an explicit file list instead of `git add .`.
 
 实现说明：
-本轮没有发现需要修改生产代码或测试代码的最终缺陷，只补充了 Task 9 的验证记录。最终验证命令中，`.\node_modules\.bin\tsc.CMD --noEmit` 通过，`.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail` 为 `149 passed`，`git status --short --branch` 与 `git diff --stat` 确认提交后无未提交任务 diff。`pnpm run lint:check` 未通过，原因是全仓库 Prettier 检查命中多处既有或计划外格式警告；为保持本任务 diff 聚焦，没有进行全仓库格式化。
+实现说明：
+本轮先补充了 Task 9 的验证记录。最终 review 随后指出两个边界缺陷：lite result 只看 `lite-content.md` 会把缺少或失败的 `lite-manifest.json` 当作 ready；local lite 如果收到 ZIP 响应会被误转为 precise result。已追加修复：`hasLiteResult()` 与 `readPreferredMarkdown()` 现在要求 lite manifest `status === "ready"` 且 `mode === "lite"`，并要求 lite Markdown 非空；local ZIP 下载会先读取 Markdown，并在 `options.mode === "lite"` 时返回 `{ kind: "lite", markdown }`。已补充 storage partial-lite 测试和 local lite ZIP 测试。
+最终验证命令中，`.\node_modules\.bin\tsc.CMD --noEmit` 通过，`.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail` 最终为 `152 passed`。此前 `pnpm run lint:check` 未通过，原因是全仓库 Prettier 检查命中多处既有或计划外格式警告；为保持本任务 diff 聚焦，没有进行全仓库格式化。
 
 ## Self-Review
 

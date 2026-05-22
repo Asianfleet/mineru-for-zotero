@@ -121,9 +121,13 @@ export function createLocalMinerUClient(
           await response.arrayBuffer(),
           "mineru-local-result.zip",
         );
+        const markdown = readLocalZipMarkdown(zip);
+        if (options.mode === "lite") {
+          return { kind: "lite", markdown };
+        }
         return {
           kind: "precise",
-          markdown: readLocalZipMarkdown(zip),
+          markdown,
           rawResult: readLocalZipRawResult(zip),
           images: readImagesFromZip(zip),
         };

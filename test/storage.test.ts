@@ -193,6 +193,44 @@ describe("storage", function () {
     assert.isFalse(await exists(joinPath(dir, "lite-manifest.json")));
   });
 
+  it("does not treat lite markdown without manifest as ready", async function () {
+    const storage = createStorage("TmpD/mineru-copy-partial-lite-test");
+    const attachment = {
+      id: 1,
+      key: "CONTENT-ONLY-LITE",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    const dir = resolveTmpPath(storage.getAttachmentDir(attachment));
+    await writeText(joinPath(dir, "lite-content.md"), "# Partial Lite");
+
+    assert.isFalse(await storage.hasLiteResult(attachment));
+    await assertRejects(() => storage.readPreferredMarkdown(attachment));
+  });
+
+  it("does not treat lite markdown with failed manifest as ready", async function () {
+    const storage = createStorage("TmpD/mineru-copy-partial-lite-test");
+    const attachment = {
+      id: 1,
+      key: "FAILED-LITE",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    const dir = resolveTmpPath(storage.getAttachmentDir(attachment));
+    await writeText(joinPath(dir, "lite-content.md"), "# Failed Lite");
+    await writeText(
+      joinPath(dir, "lite-manifest.json"),
+      `${JSON.stringify({ status: "failed" })}\n`,
+    );
+
+    assert.isFalse(await storage.hasLiteResult(attachment));
+    await assertRejects(() => storage.readPreferredMarkdown(attachment));
+  });
+
   it("writes MinerU images under the attachment images directory", async function () {
     const storage = createStorage(rootDir);
     const attachment = {

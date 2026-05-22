@@ -259,6 +259,27 @@ describe("mineruClient", function () {
     assert.deepEqual(result.rawResult, raw);
   });
 
+  it("downloads local lite markdown from zip responses", async function () {
+    const client = createMinerUClientForSettings({
+      source: "local",
+      mode: "lite",
+      apiKey: "",
+      localApiBaseURL: "http://127.0.0.1:8000",
+      fetch: async () =>
+        new Response(
+          createStoredZipBytes({
+            "a.md": "# Lite Zip",
+            "a_middle.json": JSON.stringify({ ignored: true }),
+          }),
+          { headers: { "Content-Type": "application/zip" } },
+        ),
+    });
+
+    const result = await client.downloadResult("local-task");
+
+    assert.deepEqual(result, { kind: "lite", markdown: "# Lite Zip" });
+  });
+
   it("falls back to nsIZipReader for compressed local zip results", async function () {
     const raw = {
       pdf_info: [{ page_idx: 0, page_size: [100, 200], para_blocks: [] }],
