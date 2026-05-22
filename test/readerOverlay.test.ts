@@ -1547,6 +1547,56 @@ describe("readerOverlay", function () {
     }
   });
 
+  it("copies lite markdown when precise markdown is missing", async function () {
+    const copied: string[] = [];
+    const globals = globalThis as typeof globalThis & {
+      ztoolkit?: unknown;
+    };
+    const originalZtoolkit = globals.ztoolkit;
+    globals.ztoolkit = {
+      Clipboard: class {
+        private text = "";
+
+        addText(text: string) {
+          this.text = text;
+          return this;
+        }
+
+        copy() {
+          copied.push(this.text);
+        }
+      },
+    };
+    const reader = createReader({
+      instanceID: "reader-copy-lite-markdown",
+      attachmentKey: "LITECOPY",
+      views: [createView("primary")],
+    });
+    setReaderOverlayModeForReader(reader, "hover");
+    await createStorage(getMinerUStorageRoot()).writeLiteResult({
+      attachment: {
+        id: 1,
+        key: "LITECOPY",
+        libraryID: 1,
+        fileName: "a.pdf",
+        filePath: "a.pdf",
+        mtime: 1,
+      },
+      mineruTaskID: "lite-task",
+      source: "online",
+      markdown: "# Lite Full",
+    });
+
+    try {
+      const text = await readerOverlay.copySelectedBoxesForReader(reader);
+
+      assert.equal(text, "# Lite Full");
+      assert.deepEqual(copied, ["# Lite Full"]);
+    } finally {
+      globals.ztoolkit = originalZtoolkit;
+    }
+  });
+
   it("clears selected box classes across rendered split roots", function () {
     const reader = createReader({
       instanceID: "reader-clear-selection",

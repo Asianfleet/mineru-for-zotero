@@ -1644,7 +1644,7 @@ git commit -m "feat(mineru): 支持在线轻量解析"
 - Modify: `src/modules/readerOverlay/copy.ts`
 - Test: `test/readerOverlay.test.ts`
 
-- [ ] **Step 1: Add failing reader overlay copy test**
+- [x] **Step 1: Add failing reader overlay copy test**
 
 Add to `test/readerOverlay.test.ts` near the full markdown copy tests:
 
@@ -1702,7 +1702,7 @@ it("copies lite markdown when precise markdown is missing", async function () {
 });
 ```
 
-- [ ] **Step 2: Run focused reader copy test and verify failure**
+- [x] **Step 2: Run focused reader copy test and verify failure**
 
 Run:
 
@@ -1712,7 +1712,11 @@ Run:
 
 Expected: FAIL because copy fallback reads only `content.md`.
 
-- [ ] **Step 3: Use preferred Markdown for no-selection copy**
+注意：当前 `zotero-plugin-scaffold@0.8.2` 的 `zotero-plugin test` 不支持 `--grep`；此命令是原计划记录，实际验证需使用全量测试命令。
+
+执行记录：新增 `copies lite markdown when precise markdown is missing` 测试后，`.\node_modules\.bin\tsc.CMD --noEmit` 通过，`.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail` 按预期失败于该测试，因为 no-selection 复制仍只调用 `readMarkdown()`。
+
+- [x] **Step 3: Use preferred Markdown for no-selection copy**
 
 In `src/modules/readerOverlay/copy.ts`, replace:
 
@@ -1728,7 +1732,7 @@ with:
 
 Do not change the selected-box branch; only the no-selection Markdown branch should call `readPreferredMarkdown()`.
 
-- [ ] **Step 4: Run reader overlay tests**
+- [x] **Step 4: Run reader overlay tests**
 
 Run:
 
@@ -1738,12 +1742,15 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit copy fallback**
+- [x] **Step 5: Commit copy fallback**
 
 ```powershell
 git add src\modules\readerOverlay\copy.ts test\readerOverlay.test.ts
 git commit -m "feat(reader): 复制全文 markdown 支持轻量结果兜底"
 ```
+
+实现说明：
+本轮在 `readerOverlay` 复制全文路径新增 lite markdown 覆盖：当 reader 没有选中 box 时，`copySelectedBoxesForReader()` 改用 `storage.readPreferredMarkdown()`，因此 precise `content.md` 可用时仍优先复制 precise Markdown；只有 precise Markdown 缺失时才兜底读取 lite 结果。选中 box 的复制分支没有改变，仍读取 boxes 并按 `rawIndex` 格式化。验证方面已运行 `.\node_modules\.bin\tsc.CMD --noEmit` 通过，并运行 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，结果为 `149 passed`。
 
 ## Task 9: Final Integration And Verification
 
