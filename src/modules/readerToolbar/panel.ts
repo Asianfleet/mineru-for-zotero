@@ -42,9 +42,15 @@ export function updateMenu(
   doc: Document,
   menu: HTMLDivElement,
   sync: () => void,
+  options?: {
+    applyMode?: (mode: ReaderOverlayMode) => void | Promise<unknown>;
+  },
 ): void {
   const currentMode = (getReaderOverlayStateForReader(reader)?.mode ??
     "off") as ReaderOverlayMode;
+  const applyMode: (mode: ReaderOverlayMode) => void | Promise<unknown> =
+    options?.applyMode ??
+    ((mode: ReaderOverlayMode) => applyReaderOverlayMode(reader, mode));
   const modeGroup = doc.createElement("div");
   modeGroup.className = "group";
   modeGroup.append(
@@ -53,16 +59,15 @@ export function updateMenu(
       currentMode,
       /** 应用选中的 overlay 模式并刷新菜单状态。 */
       (mode) => {
-        runReaderToolbarCommand(
+        void runReaderToolbarCommand(
           reader,
           `set-mode-${mode}`,
           /** 将选中的 overlay 模式应用到当前 reader。 */
-          () => {
-            return applyReaderOverlayMode(reader, mode);
-          },
-        );
-        updateMenu(reader, doc, menu, sync);
-        sync();
+          () => applyMode(mode),
+        ).finally(() => {
+          updateMenu(reader, doc, menu, sync, options);
+          sync();
+        });
       },
     ),
   );

@@ -12,6 +12,11 @@ import {
   setReaderToolbarIconURI,
   setReaderToolbarModeIconSVG,
 } from "../src/modules/readerToolbar";
+import {
+  getReaderOverlayStateForReader,
+  setReaderOverlayModeForReader,
+} from "../src/modules/readerOverlay";
+import { updateMenu } from "../src/modules/readerToolbar/panel";
 
 describe("readerToolbar", function () {
   it("opens and closes the menu with explicit state", function () {
@@ -404,6 +409,66 @@ describe("readerToolbar", function () {
     assert.isTrue(clicked);
   });
 
+  it("keeps off mode active until enabling boxes succeeds", async function () {
+    const restoreLocale = installReaderToolbarLocale();
+    const reader = createToolbarReader("reader-mode-pending", "PENDINGMODE");
+    const state = setReaderOverlayModeForReader(reader, "off");
+    if (!state) {
+      assert.fail("Expected overlay state");
+    }
+
+    const doc = createToolbarDocumentStub();
+    const menu = doc.createElement("div") as HTMLDivElement;
+    let resolveApply: (() => void) | null = null;
+    const renderMenu = updateMenu as unknown as (
+      reader: _ZoteroTypes.ReaderInstance,
+      doc: Document,
+      menu: HTMLDivElement,
+      sync: () => void,
+      options?: {
+        applyMode?: (
+          mode: "all" | "hover" | "off",
+        ) => void | Promise<unknown>;
+      },
+    ) => void;
+
+    try {
+      renderMenu(reader, doc as unknown as Document, menu, () => {}, {
+        applyMode: async () => {
+          state.mode = "all";
+          await new Promise<void>((resolve) => {
+            resolveApply = resolve;
+          });
+          state.mode = "off";
+        },
+      });
+
+      findToolbarButtonByLabel(menu, "Show all boxes").dispatch(
+        "click",
+        createToolbarClickEvent(),
+      );
+
+      assert.equal(
+        findToolbarButtonByLabel(menu, "Disable plugin features").className,
+        "active",
+      );
+      assert.equal(findToolbarButtonByLabel(menu, "Show all boxes").className, "");
+
+      resolveApply?.();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      assert.equal(getReaderOverlayStateForReader(reader)?.mode, "off");
+      assert.equal(
+        findToolbarButtonByLabel(menu, "Disable plugin features").className,
+        "active",
+      );
+      assert.equal(findToolbarButtonByLabel(menu, "Show all boxes").className, "");
+    } finally {
+      restoreLocale();
+    }
+  });
+
   it("creates a reader-safe data URI from SVG content", function () {
     const iconSource = createReaderToolbarIconDataURI(
       '<svg xmlns="http://www.w3.org/2000/svg"><path d="M1 1"></path></svg>',
@@ -504,3 +569,125 @@ describe("readerToolbar", function () {
     assert.equal(button["aria-label"], "MinerU box");
   });
 });
+
+function createToolbarReader(
+  instanceID: string,
+  attachmentKey: string,
+): _ZoteroTypes.ReaderInstance {
+  return {
+    _instanceID: instanceID,
+    _item: {
+      key: attachmentKey,
+      libraryID: 1,
+    },
+  } as unknown as _ZoteroTypes.ReaderInstance;
+}
+
+function createToolbarDocumentStub(): Document {
+  return {
+    createElement(_tagName: string) {
+      return createToolbarElement();
+    },
+  } as unknown as Document;
+}
+
+function createToolbarElement(): HTMLButtonElement &
+  HTMLDivElement & {
+    children: Array<ReturnType<typeof createToolbarElement>>;
+    dispatch: (type: string, event: Event) => void;
+  } {
+  const listeners = new Map<string, EventListener[]>();
+  return {
+    className: "",
+    title: "",
+    hidden: false,
+    innerHTML: "",
+    textContent: "",
+    style: {},
+    dataset: {},
+    children: [] as Array<ReturnType<typeof createToolbarElement>>,
+    append(...nodes: Array<ReturnType<typeof createToolbarElement>>) {
+      this.children.push(...nodes);
+    },
+    replaceChildren(...nodes: Array<ReturnType<typeof createToolbarElement>>) {
+      this.children.splice(0, this.children.length, ...nodes);
+    },
+    setAttribute(name: string, value: string) {
+      this[name] = value;
+    },
+    addEventListener(type: string, listener: EventListener) {
+      listeners.set(type, [...(listeners.get(type) ?? []), listener]);
+    },
+    dispatch(type: string, event: Event) {
+      for (const listener of listeners.get(type) ?? []) {
+        listener.call(this, event);
+      }
+    },
+  } as unknown as HTMLButtonElement &
+    HTMLDivElement & {
+      children: Array<ReturnType<typeof createToolbarElement>>;
+      dispatch: (type: string, event: Event) => void;
+    };
+}
+
+function findToolbarButtonByLabel(
+  root: ReturnType<typeof createToolbarElement>,
+  label: string,
+): ReturnType<typeof createToolbarElement> {
+  const queue = [root];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) {
+      continue;
+    }
+    if ((current["aria-label"] as string | undefined) === label) {
+      return current;
+    }
+    queue.push(...current.children);
+  }
+  assert.fail(`Expected to find toolbar button with label: ${label}`);
+}
+
+function installReaderToolbarLocale(): () => void {
+  const globals = globalThis as typeof globalThis & { addon?: unknown };
+  const originalAddon = globals.addon;
+  globals.addon = {
+    data: {
+      locale: {
+        current: {
+          formatMessagesSync(messages: Array<{ id: string }>) {
+            const values: Record<string, string> = {
+              "mineruForZotero-reader-mode-group-label": "Mode",
+              "mineruForZotero-reader-show-all-boxes": "Show all boxes",
+              "mineruForZotero-reader-show-hover-box":
+                "Show only hovered box",
+              "mineruForZotero-reader-disable-plugin":
+                "Disable plugin features",
+              "mineruForZotero-reader-selected-boxes-label":
+                "Selected content",
+              "mineruForZotero-reader-copy-selected-boxes":
+                "Copy selected content",
+              "mineruForZotero-reader-copy-full-markdown":
+                "Copy full markdown",
+              "mineruForZotero-reader-clear-selection": "Clear selection",
+            };
+            return messages.map(({ id }) => ({
+              value: values[id] ?? id,
+              attributes: null,
+            }));
+          },
+        },
+      },
+    },
+  };
+  return () => {
+    globals.addon = originalAddon;
+  };
+}
+
+function createToolbarClickEvent(): Event {
+  return {
+    preventDefault() {},
+    stopPropagation() {},
+  } as unknown as Event;
+}

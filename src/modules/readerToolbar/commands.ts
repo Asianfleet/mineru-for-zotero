@@ -9,7 +9,7 @@ export function runReaderToolbarCommand(
   reader: _ZoteroTypes.ReaderInstance,
   command: string,
   action: () => void | Promise<unknown>,
-): void {
+): Promise<void> {
   const beforeState = getReaderOverlayStateForReader(reader);
   emitReaderToolbarDiagnostic(reader, "MinerU reader toolbar command", {
     command,
@@ -33,10 +33,10 @@ export function runReaderToolbarCommand(
         error: errorMessage(error),
       },
     );
-    return;
+    return Promise.resolve();
   }
 
-  void Promise.resolve(result)
+  return Promise.resolve(result)
     .then(
       /** 在异步或同步命令完成后记录 overlay 状态。 */
       () => {
