@@ -815,6 +815,26 @@ describe("parseManager", function () {
       assert.include(messages, testCase.expected);
     }
   });
+
+  it("maps local API request failures to local unavailable messages", async function () {
+    const messages: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getParseSource: () => "local",
+      getParseMode: () => "lite",
+      client: {
+        submitPdf: async () => {
+          throw new MinerURequestError("local-health", 503, "offline");
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({ kind: "lite", markdown: "# Lite" }),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.include(messages, "parse-error-local-api-unavailable");
+  });
 });
 
 function baseDependencies(messages: string[]): ParseManagerDependencies {

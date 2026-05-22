@@ -35,6 +35,278 @@ describe("mineruClient", function () {
     assert.equal(calls[0], "POST https://mineru.net/api/v4/file-urls/batch");
   });
 
+  it("checks local health before submitting a local task", async function () {
+    const calls: string[] = [];
+    const client = createMinerUClientForSettings({
+      source: "local",
+      mode: "lite",
+      apiKey: "",
+      localApiBaseURL: "http://127.0.0.1:8000",
+      readBinary: async () => new Uint8Array([1, 2, 3]),
+      fetch: async (url, init) => {
+        calls.push(`${init?.method ?? "GET"} ${String(url)}`);
+        if (String(url).endsWith("/health")) {
+          return jsonResponse({ status: "healthy" });
+        }
+        return jsonResponse({ task_id: "local-task" }, 202);
+      },
+    });
+
+    const result = await client.submitPdf("C:/tmp/a.pdf");
+
+    assert.deepEqual(result, { taskID: "local-task" });
+    assert.equal(calls[0], "GET http://127.0.0.1:8000/health");
+    assert.equal(calls[1], "POST http://127.0.0.1:8000/tasks");
+  });
+
+  it("submits local lite tasks with markdown-only result flags", async function () {
+    let submittedBody: FormData | undefined;
+    const client = createMinerUClientForSettings({
+      source: "local",
+      mode: "lite",
+      apiKey: "",
+      localApiBaseURL: "http://127.0.0.1:8000",
+      readBinary: async () => new Uint8Array([1, 2, 3]),
+      fetch: async (url, init) => {
+        if (String(url).endsWith("/health")) {
+          return jsonResponse({ status: "healthy" });
+        }
+        submittedBody = init?.body as FormData;
+        return jsonResponse({ task_id: "local-task" }, 202);
+      },
+    });
+
+    await client.submitPdf("C:/tmp/a.pdf");
+
+    assert.equal(submittedBody?.get("return_md"), "true");
+    assert.equal(submittedBody?.get("return_middle_json"), "false");
+    assert.equal(submittedBody?.get("return_images"), "false");
+    assert.equal(submittedBody?.get("response_format_zip"), "false");
+  });
+
+  it("submits local precise tasks through the default fetch path", async function () {
+    const globals = globalThis as typeof globalThis & {
+      fetch?: typeof fetch;
+    };
+    const originalFetch = globals.fetch;
+    const originalRequest = Zotero.HTTP.request;
+    const calls: string[] = [];
+    let submittedBody: FormData | undefined;
+    globals.fetch = (async (url, init) => {
+      calls.push(`${init?.method ?? "GET"} ${String(url)}`);
+      if (String(url).endsWith("/health")) {
+        return jsonResponse({ status: "healthy" });
+      }
+      submittedBody = init?.body as FormData;
+      return jsonResponse({ task_id: "local-task" }, 202);
+    }) as typeof fetch;
+    (
+      Zotero.HTTP as typeof Zotero.HTTP & {
+        request: typeof Zotero.HTTP.request;
+      }
+    ).request = async () => {
+      throw new Error("Zotero.HTTP should not submit local FormData");
+    };
+
+    try {
+      const client = createMinerUClientForSettings({
+        source: "local",
+        mode: "precise",
+        apiKey: "",
+        localApiBaseURL: "http://127.0.0.1:8000",
+        saveImages: false,
+        readBinary: async () => new Uint8Array([1, 2, 3]),
+      });
+
+      const result = await client.submitPdf("C:/tmp/a.pdf");
+
+      assert.deepEqual(result, { taskID: "local-task" });
+      assert.deepEqual(calls, [
+        "GET http://127.0.0.1:8000/health",
+        "POST http://127.0.0.1:8000/tasks",
+      ]);
+      assert.equal(submittedBody?.get("return_middle_json"), "true");
+      assert.equal(submittedBody?.get("return_content_list"), "true");
+      assert.equal(submittedBody?.get("return_images"), "false");
+      assert.equal(submittedBody?.get("response_format_zip"), "true");
+    } finally {
+      globals.fetch = originalFetch;
+      (
+        Zotero.HTTP as typeof Zotero.HTTP & {
+          request: typeof Zotero.HTTP.request;
+        }
+      ).request = originalRequest;
+    }
+  });
+
+  it("maps local task polling states to MinerU task status", async function () {
+    const calls: string[] = [];
+    const client = createMinerUClientForSettings({
+      source: "local",
+      mode: "precise",
+      apiKey: "",
+      localApiBaseURL: "http://127.0.0.1:8000/",
+      fetch: async (url, init) => {
+        calls.push(`${init?.method ?? "GET"} ${String(url)}`);
+        return jsonResponse({ status: "completed" });
+      },
+    });
+
+    const result = await client.pollTask("local-task");
+
+    assert.deepEqual(result, { status: "succeeded" });
+    assert.deepEqual(calls, ["GET http://127.0.0.1:8000/tasks/local-task"]);
+  });
+
+  it("throws task errors when local submit response misses task id", async function () {
+    const client = createMinerUClientForSettings({
+      source: "local",
+      mode: "lite",
+      apiKey: "",
+      localApiBaseURL: "http://127.0.0.1:8000",
+      readBinary: async () => new Uint8Array([1, 2, 3]),
+      fetch: async (url) =>
+        String(url).endsWith("/health")
+          ? jsonResponse({ status: "healthy" })
+          : jsonResponse({}),
+    });
+
+    try {
+      await client.submitPdf("C:/tmp/a.pdf");
+      assert.fail("Expected submitPdf to throw");
+    } catch (error) {
+      assert.instanceOf(error, MinerUTaskError);
+      assert.include((error as Error).message, "missing task_id");
+    }
+  });
+
+  it("downloads local lite markdown from JSON results", async function () {
+    const client = createMinerUClientForSettings({
+      source: "local",
+      mode: "lite",
+      apiKey: "",
+      localApiBaseURL: "http://127.0.0.1:8000",
+      fetch: async () =>
+        jsonResponse({
+          results: {
+            "a.pdf": { md_content: "# Lite" },
+          },
+        }),
+    });
+
+    const result = await client.downloadResult("local-task");
+
+    assert.deepEqual(result, { kind: "lite", markdown: "# Lite" });
+  });
+
+  it("downloads local precise markdown and raw result from JSON results", async function () {
+    const raw = {
+      pdf_info: [{ page_idx: 0, page_size: [100, 200], para_blocks: [] }],
+    };
+    const client = createMinerUClientForSettings({
+      source: "local",
+      mode: "precise",
+      apiKey: "",
+      localApiBaseURL: "http://127.0.0.1:8000",
+      fetch: async () =>
+        jsonResponse({
+          results: {
+            "a.pdf": {
+              md_content: "# Precise",
+              middle_json: JSON.stringify(raw),
+              content_list: JSON.stringify([{ type: "text" }]),
+            },
+          },
+        }),
+    });
+
+    const result = await client.downloadResult("local-task");
+
+    assert.equal(result.kind, "precise");
+    if (result.kind !== "precise") {
+      assert.fail("Expected precise result");
+    }
+    assert.equal(result.markdown, "# Precise");
+    assert.deepEqual(result.rawResult, raw);
+  });
+
+  it("downloads local precise results from zip responses", async function () {
+    const raw = {
+      pdf_info: [{ page_idx: 0, page_size: [100, 200], para_blocks: [] }],
+    };
+    const client = createMinerUClientForSettings({
+      source: "local",
+      mode: "precise",
+      apiKey: "",
+      localApiBaseURL: "http://127.0.0.1:8000",
+      fetch: async () =>
+        new Response(
+          createStoredZipBytes({
+            "a.md": "# Precise Zip",
+            "a_middle.json": JSON.stringify(raw),
+          }),
+          { headers: { "Content-Type": "application/octet-stream" } },
+        ),
+    });
+
+    const result = await client.downloadResult("local-task");
+
+    assert.equal(result.kind, "precise");
+    if (result.kind !== "precise") {
+      assert.fail("Expected precise result");
+    }
+    assert.equal(result.markdown, "# Precise Zip");
+    assert.deepEqual(result.rawResult, raw);
+  });
+
+  it("falls back to nsIZipReader for compressed local zip results", async function () {
+    const raw = {
+      pdf_info: [{ page_idx: 0, page_size: [100, 200], para_blocks: [] }],
+    };
+    const runtime = globalThis as typeof globalThis & {
+      DecompressionStream?: typeof DecompressionStream;
+    };
+    const originalDecompressionStream = runtime.DecompressionStream;
+    runtime.DecompressionStream = undefined;
+
+    try {
+      const client = createMinerUClientForSettings({
+        source: "local",
+        mode: "precise",
+        apiKey: "",
+        localApiBaseURL: "http://127.0.0.1:8000",
+        fetch: async () =>
+          new Response(
+            createDeflatedZipBytes({
+              "a.md": "# Precise Zip",
+              "a_middle.json": JSON.stringify(raw),
+            }),
+            { headers: { "Content-Type": "application/zip" } },
+          ),
+      });
+
+      let result: Awaited<ReturnType<typeof client.downloadResult>>;
+      try {
+        result = await client.downloadResult("local-task");
+      } catch (error) {
+        assert.fail(
+          error instanceof Error
+            ? `${error.message}\n${error.stack ?? ""}`
+            : String(error),
+        );
+      }
+
+      assert.equal(result.kind, "precise");
+      if (result.kind !== "precise") {
+        assert.fail("Expected precise result");
+      }
+      assert.equal(result.markdown, "# Precise Zip");
+      assert.deepEqual(result.rawResult, raw);
+    } finally {
+      runtime.DecompressionStream = originalDecompressionStream;
+    }
+  });
+
   it("submits a local PDF through the official batch upload flow", async function () {
     const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
     const client = createMinerUClient({
@@ -731,9 +1003,9 @@ describe("mineruClient", function () {
   });
 });
 
-function jsonResponse(value: unknown): Response {
+function jsonResponse(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), {
-    status: 200,
+    status,
     headers: { "Content-Type": "application/json" },
   });
 }
@@ -808,6 +1080,59 @@ function createStoredZipBytes(
   return concatBytes([...localParts, ...centralParts, end]);
 }
 
+function createDeflatedZipBytes(files: Record<string, string>): Uint8Array {
+  const encoder = new TextEncoder();
+  const localParts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
+  let offset = 0;
+
+  for (const [name, content] of Object.entries(files)) {
+    const nameBytes = encoder.encode(name);
+    const contentBytes = encoder.encode(content);
+    const compressedBytes = deflateRawStoredBlock(contentBytes);
+    const crc = crc32(contentBytes);
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    const local = new DataView(localHeader.buffer);
+    local.setUint32(0, 0x04034b50, true);
+    local.setUint16(4, 20, true);
+    local.setUint16(8, 8, true);
+    local.setUint32(14, crc, true);
+    local.setUint32(18, compressedBytes.length, true);
+    local.setUint32(22, contentBytes.length, true);
+    local.setUint16(26, nameBytes.length, true);
+    localHeader.set(nameBytes, 30);
+
+    const centralHeader = new Uint8Array(46 + nameBytes.length);
+    const central = new DataView(centralHeader.buffer);
+    central.setUint32(0, 0x02014b50, true);
+    central.setUint16(4, 20, true);
+    central.setUint16(6, 20, true);
+    central.setUint16(10, 8, true);
+    central.setUint32(16, crc, true);
+    central.setUint32(20, compressedBytes.length, true);
+    central.setUint32(24, contentBytes.length, true);
+    central.setUint16(28, nameBytes.length, true);
+    central.setUint32(42, offset, true);
+    centralHeader.set(nameBytes, 46);
+
+    localParts.push(localHeader, compressedBytes);
+    centralParts.push(centralHeader);
+    offset += localHeader.length + compressedBytes.length;
+  }
+
+  const centralOffset = offset;
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  endView.setUint32(0, 0x06054b50, true);
+  endView.setUint16(8, Object.keys(files).length, true);
+  endView.setUint16(10, Object.keys(files).length, true);
+  endView.setUint32(12, centralSize, true);
+  endView.setUint32(16, centralOffset, true);
+
+  return concatBytes([...localParts, ...centralParts, end]);
+}
+
 function concatBytes(parts: Uint8Array[]): Uint8Array {
   const result = new Uint8Array(
     parts.reduce((sum, part) => sum + part.length, 0),
@@ -817,6 +1142,21 @@ function concatBytes(parts: Uint8Array[]): Uint8Array {
     result.set(part, offset);
     offset += part.length;
   }
+  return result;
+}
+
+function deflateRawStoredBlock(bytes: Uint8Array): Uint8Array {
+  if (bytes.length > 0xffff) {
+    throw new Error("Test ZIP entry is too large for one stored deflate block");
+  }
+  const result = new Uint8Array(5 + bytes.length);
+  result[0] = 0x01;
+  result[1] = bytes.length & 0xff;
+  result[2] = (bytes.length >>> 8) & 0xff;
+  const inverted = (~bytes.length) & 0xffff;
+  result[3] = inverted & 0xff;
+  result[4] = (inverted >>> 8) & 0xff;
+  result.set(bytes, 5);
   return result;
 }
 

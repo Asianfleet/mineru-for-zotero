@@ -603,6 +603,12 @@ function getParseFailureMessage(
   const message = error instanceof Error ? error.message : String(error);
   if (
     error instanceof MinerURequestError &&
+    error.stage.startsWith("local-")
+  ) {
+    return { id: "parse-error-local-api-unavailable", args: { message } };
+  }
+  if (
+    error instanceof MinerURequestError &&
     ["submit", "upload"].includes(error.stage)
   ) {
     return { id: "parse-error-upload", args: { message } };

@@ -964,7 +964,7 @@ git commit -m "feat(parse): 按来源与模式处理解析结果"
 - Modify: `src/modules/mineruClient/factory.ts`
 - Test: `test/mineruClient.test.ts`
 
-- [ ] **Step 1: Add failing local client tests**
+- [x] **Step 1: Add failing local client tests**
 
 Add to `test/mineruClient.test.ts`:
 
@@ -1019,7 +1019,7 @@ it("submits local lite tasks with markdown-only result flags", async function ()
 });
 ```
 
-- [ ] **Step 2: Run focused local tests and verify failure**
+- [x] **Step 2: Run focused local tests and verify failure**
 
 Run:
 
@@ -1029,7 +1029,11 @@ Run:
 
 Expected: FAIL because local clients are unsupported.
 
-- [ ] **Step 3: Add multipart builder**
+注意：当前 `zotero-plugin-scaffold@0.8.2` 的 `zotero-plugin test` 不支持 `--grep`；此命令是原计划记录，实际验证需使用全量测试命令。
+
+执行记录：当前 `zotero-plugin test` CLI 不支持 `--grep`，该命令先因 `unknown option '--grep'` 失败；随后新增 local client 测试在中断前已写入，生产代码尚未支持 local client，符合 red 阶段预期。
+
+- [x] **Step 3: Add multipart builder**
 
 Create `src/modules/mineruClient/formData.ts`:
 
@@ -1069,7 +1073,7 @@ export function buildLocalTaskFormData(input: {
 }
 ```
 
-- [ ] **Step 4: Implement local client skeleton**
+- [x] **Step 4: Implement local client skeleton**
 
 Create `src/modules/mineruClient/local.ts`:
 
@@ -1150,7 +1154,7 @@ export function createLocalMinerUClient(
 }
 ```
 
-- [ ] **Step 5: Wire local client in factory**
+- [x] **Step 5: Wire local client in factory**
 
 In `src/modules/mineruClient/factory.ts`:
 
@@ -1171,7 +1175,7 @@ if (options.source === "local") {
 }
 ```
 
-- [ ] **Step 6: Run focused local submit tests**
+- [x] **Step 6: Run focused local submit tests**
 
 Run:
 
@@ -1181,12 +1185,20 @@ Run:
 
 Expected: PASS for submit/form tests. Other local result tests are not added until Task 6.
 
-- [ ] **Step 7: Commit local submit and polling**
+注意：当前 `zotero-plugin-scaffold@0.8.2` 的 `zotero-plugin test` 不支持 `--grep`；此命令是原计划记录，实际验证需使用全量测试命令。
+
+执行记录：当前 `zotero-plugin test` CLI 不支持 `--grep`，该命令无法作为 focused test 使用；已改跑 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，结果为 `139 passed`，其中 local health、local lite form flags 与 local poll 状态测试通过。另运行 `.\node_modules\.bin\tsc.CMD --noEmit` 通过。
+
+- [x] **Step 7: Commit local submit and polling**
 
 ```powershell
 git add src\modules\mineruClient\formData.ts src\modules\mineruClient\local.ts src\modules\mineruClient\factory.ts test\mineruClient.test.ts
 git commit -m "feat(mineru): 提交本地异步解析任务"
 ```
+
+实现说明：
+本轮新增 `formData.ts`，集中构造本地 MinerU `/tasks` multipart form data，并按 `precise/lite` 设置 `return_md`、`return_middle_json`、`return_content_list`、`return_images` 与 `response_format_zip` 等字段。新增 `local.ts`，实现本地 API 的 `/health` 检查、`/tasks` 提交、任务状态轮询，以及 Task 6 前的 placeholder `downloadResult()`。
+`factory.ts` 已接入 `source === "local"` 分支，并在缺省时使用 `http://127.0.0.1:8000` 作为本地 API 地址。测试方面，先由中断的子代理补入 local client red 测试，随后本地完成实现；由于当前 scaffold CLI 不支持 `--grep`，最终使用 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail` 全量验证通过，结果为 `139 passed`；另运行 `.\node_modules\.bin\tsc.CMD --noEmit` 通过。审查时发现 `factory.ts` 暴露 local client 后，placeholder `downloadResult()` 会让用户可选但不可用，因此 Task 5 未单独提交；本步骤随 Task 6 的真实结果下载实现合并提交。复审前又补充了默认请求路径覆盖：本地 client 不再把 multipart `FormData` 交给 `Zotero.HTTP.request`，而是使用可提交 FormData 的 fetch/XHR 请求器。
 
 ## Task 6: Local API Result Download
 
@@ -1195,7 +1207,7 @@ git commit -m "feat(mineru): 提交本地异步解析任务"
 - Modify: `src/modules/mineruClient/result.ts`
 - Test: `test/mineruClient.test.ts`
 
-- [ ] **Step 1: Add failing local result tests**
+- [x] **Step 1: Add failing local result tests**
 
 Add to `test/mineruClient.test.ts`:
 
@@ -1247,7 +1259,7 @@ it("downloads local precise markdown and raw result from JSON results", async fu
 });
 ```
 
-- [ ] **Step 2: Run focused local result tests and verify failure**
+- [x] **Step 2: Run focused local result tests and verify failure**
 
 Run:
 
@@ -1257,7 +1269,11 @@ Run:
 
 Expected: FAIL because `downloadResult()` throws.
 
-- [ ] **Step 3: Implement JSON result parsing**
+注意：当前 `zotero-plugin-scaffold@0.8.2` 的 `zotero-plugin test` 不支持 `--grep`；此命令是原计划记录，实际验证需使用全量测试命令。
+
+执行记录：Task 5 审查后决定不保留 placeholder `downloadResult()`，因此本轮直接补入 local JSON/ZIP 结果测试并推进实现；测试覆盖 lite JSON、precise JSON、precise ZIP，以及 local submit 缺失 `task_id` 时抛出 `MinerUTaskError`。
+
+- [x] **Step 3: Implement JSON result parsing**
 
 In `src/modules/mineruClient/local.ts`, add:
 
@@ -1327,7 +1343,7 @@ return {
 };
 ```
 
-- [ ] **Step 4: Add ZIP result support for precise local results**
+- [x] **Step 4: Add ZIP result support for precise local results**
 
 If local precise uses `response_format_zip=true`, `requestJson()` will fail on ZIP. Replace the precise result download branch with `requestOk()`, inspect content type, and parse ZIP when needed:
 
@@ -1370,7 +1386,7 @@ function readLocalZipRawResult(zip: ZipEntries): unknown {
 
 Import existing `readZipEntries`, `decodeText`, and `readImagesFromZip` helpers.
 
-- [ ] **Step 5: Run local result tests**
+- [x] **Step 5: Run local result tests**
 
 Run:
 
@@ -1380,12 +1396,16 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit local result download**
+- [x] **Step 6: Commit local result download**
 
 ```powershell
 git add src\modules\mineruClient\local.ts src\modules\mineruClient\result.ts test\mineruClient.test.ts
 git commit -m "feat(mineru): 读取本地解析结果"
 ```
+
+实现说明：
+本轮把本地 `downloadResult(taskID)` 从 placeholder 改为真实下载逻辑：统一请求 `/tasks/{taskID}/result`，根据 `Content-Type` 处理 JSON 或 ZIP 结果；lite JSON 返回 `{ kind: "lite", markdown }`，precise JSON 解析 `middle_json`、`content_list` 与 data URL 图片，precise ZIP 读取任意 `.md`、`*_middle.json`、`*_content_list.json` 和 `images/` 图片。为支持本地 ZIP 中非 `full.md` 的 Markdown 文件名，ZIP reader 与结果条目保留规则扩展为读取任意 `.md`。
+同时把 local submit 缺失 `task_id` 的错误改为 `MinerUTaskError`，并在 `parseManager` 中把 `local-*` 请求阶段统一映射到 `parse-error-local-api-unavailable`，避免本地服务不可用时落入泛化错误。审查后修复了三个边界：默认本地提交路径优先使用可提交 `FormData` 的 fetch/XHR 请求器，避免 `Zotero.HTTP.request` 不支持 multipart body；ZIP 判定扩展到 `application/octet-stream` 与 `application/x-zip-compressed`；本地 ZIP 内存解析失败时会写入临时文件并通过 Zotero `nsIZipReader` 回退，避免缺少 `DecompressionStream("deflate-raw")` 时压缩 ZIP 无法读取。由于 Task 5 的 factory 暴露 local client 依赖 Task 6 的真实结果下载，Task 5 和 Task 6 合并为一个提交更安全。验证方面已运行 `.\node_modules\.bin\tsc.CMD --noEmit` 通过，并运行 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，结果为 `146 passed`。
 
 ## Task 7: Online Agent Lite Client
 

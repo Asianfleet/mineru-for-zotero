@@ -49,7 +49,11 @@ export function readImagesFromZip(zip: ZipEntries): MinerUImageFile[] | undefine
  * 判断 ZIP 条目是否属于 Markdown、JSON 或图片结果。
  */
 export function shouldKeepZipEntry(name: string): boolean {
-  return name === "full.md" || name.endsWith(".json") || isZipImageEntry(name);
+  return (
+    name.endsWith(".md") ||
+    name.endsWith(".json") ||
+    isZipImageEntry(name)
+  );
 }
 
 /**
