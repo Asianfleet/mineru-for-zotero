@@ -1,0 +1,1722 @@
+# API Source And Parse Mode Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Add global API source and parse mode preferences so the plugin supports online/local and precise/lite parsing while preserving existing precise-result behavior.
+
+**Architecture:** Keep the existing `MinerUClient` submit/poll/download contract, but make `downloadResult()` return a discriminated union for precise vs lite results. Add focused online-lite and local-API client modules, keep storage responsible for precise-vs-lite file semantics, and let `parseManager` branch only on result kind.
+
+**Tech Stack:** TypeScript ES modules, Zotero plugin scaffold, Mocha/Chai tests, Fluent locale files, Zotero/Firefox `fetch`/XHR/IOUtils APIs.
+
+---
+
+## File Structure
+
+- Modify `typings/prefs.d.ts`: add `parseSource`, `parseMode`, and `localApiBaseURL` preference types.
+- Modify `addon/prefs.js`: add default preference values.
+- Modify `src/utils/prefs.ts`: add typed getters/setters for the new preferences and safe defaults.
+- Modify `addon/content/preferences.xhtml`: add source/mode/local URL controls without reflowing unrelated XHTML.
+- Modify `addon/locale/zh-CN/preferences.ftl` and `addon/locale/en-US/preferences.ftl`: add preference labels/help text.
+- Modify `typings/i10n.d.ts`: add new locale IDs used by preferences and parse messages.
+- Modify `addon/locale/zh-CN/mainWindow.ftl` and `addon/locale/en-US/mainWindow.ftl`: add parse status/error strings.
+- Modify `src/modules/mineruClient/types.ts`: add parse option/result unions and local/agent response types.
+- Create `src/modules/mineruClient/factory.ts`: map preferences to the right client implementation.
+- Rename current online precise implementation conceptually by editing `src/modules/mineruClient/index.ts`: preserve `createMinerUClient()` export and re-export factory/client helpers.
+- Create `src/modules/mineruClient/onlinePrecise.ts`: place the existing v4 batch implementation from `src/modules/mineruClient/index.ts` behind `createOnlinePreciseMinerUClient(options)`.
+- Create `src/modules/mineruClient/agentLite.ts`: implement online Agent lite async flow.
+- Create `src/modules/mineruClient/local.ts`: implement local `/health`, `/tasks`, polling, and result download parsing.
+- Create `src/modules/mineruClient/formData.ts`: build multipart form data in one place for local API clients.
+- Modify `src/modules/mineruClient/result.ts`: add local ZIP extraction helpers if the existing ZIP helper needs source-specific filename support.
+- Modify `src/modules/storage.ts`: add lite result write/read/preferred Markdown methods.
+- Modify `src/modules/domain.ts`: add `LiteParseManifest`.
+- Modify `src/modules/parseManager.ts`: read preferences, create clients, handle precise vs lite results, and mode-specific existing-result checks.
+- Modify `src/modules/readerOverlay/copy.ts`: use preferred Markdown for full-copy fallback.
+- Modify tests in `test/prefs`, `test/mineruClient.test.ts`, `test/storage.test.ts`, `test/parseManager.test.ts`, and `test/readerOverlay.test.ts`.
+
+## Task 1: Preferences And Locale Surface
+
+**Files:**
+- Modify: `typings/prefs.d.ts`
+- Modify: `addon/prefs.js`
+- Modify: `src/utils/prefs.ts`
+- Modify: `addon/content/preferences.xhtml`
+- Modify: `addon/locale/zh-CN/preferences.ftl`
+- Modify: `addon/locale/en-US/preferences.ftl`
+- Modify: `typings/i10n.d.ts`
+- Test: `test/preferenceScript.test.ts`
+
+- [ ] **Step 1: Add failing preference tests**
+
+Add tests to `test/preferenceScript.test.ts` near the existing `getSaveImages` tests:
+
+```ts
+import {
+  getLocalApiBaseURL,
+  getParseMode,
+  getParseSource,
+  setLocalApiBaseURL,
+  setParseMode,
+  setParseSource,
+} from "../src/utils/prefs";
+
+it("defaults parse source, parse mode, and local API URL", function () {
+  assert.equal(getParseSource(), "online");
+  assert.equal(getParseMode(), "precise");
+  assert.equal(getLocalApiBaseURL(), "http://127.0.0.1:8000");
+});
+
+it("round-trips parse source, parse mode, and local API URL", function () {
+  setParseSource("local");
+  setParseMode("lite");
+  setLocalApiBaseURL("http://127.0.0.1:9000/");
+
+  assert.equal(getParseSource(), "local");
+  assert.equal(getParseMode(), "lite");
+  assert.equal(getLocalApiBaseURL(), "http://127.0.0.1:9000/");
+});
+```
+
+- [ ] **Step 2: Run the focused preference test and verify failure**
+
+Run:
+
+```powershell
+.\node_modules\.bin\zotero-plugin.CMD test --grep "parse source" --exit-on-finish --abort-on-fail
+```
+
+Expected: FAIL because `getParseSource`, `getParseMode`, and `getLocalApiBaseURL` are not exported.
+
+- [ ] **Step 3: Add preference types and defaults**
+
+In `typings/prefs.d.ts`, extend `PluginPrefsMap`:
+
+```ts
+"parseSource": "online" | "local";
+"parseMode": "precise" | "lite";
+"localApiBaseURL": string;
+```
+
+In `addon/prefs.js`, set defaults:
+
+```js
+pref("parseSource", "online");
+pref("parseMode", "precise");
+pref("localApiBaseURL", "http://127.0.0.1:8000");
+```
+
+- [ ] **Step 4: Add typed preference helpers**
+
+In `src/utils/prefs.ts`, add exported types and helpers:
+
+```ts
+export type ParseSource = "online" | "local";
+export type ParseMode = "precise" | "lite";
+
+export function getParseSource(): ParseSource {
+  const value = getPref("parseSource");
+  return value === "local" ? "local" : "online";
+}
+
+export function setParseSource(value: ParseSource) {
+  return setPref("parseSource", value);
+}
+
+export function getParseMode(): ParseMode {
+  const value = getPref("parseMode");
+  return value === "lite" ? "lite" : "precise";
+}
+
+export function setParseMode(value: ParseMode) {
+  return setPref("parseMode", value);
+}
+
+export function getLocalApiBaseURL(): string {
+  const value = getPref("localApiBaseURL");
+  return typeof value === "string" && value.trim()
+    ? value.trim()
+    : "http://127.0.0.1:8000";
+}
+
+export function setLocalApiBaseURL(value: string) {
+  return setPref("localApiBaseURL", value);
+}
+```
+
+- [ ] **Step 5: Add preference UI controls**
+
+In `addon/content/preferences.xhtml`, insert a new `vbox` after the API Key block and before `saveImages`:
+
+```xml
+  <vbox>
+    <html:h3 data-l10n-id="pref-api-source-title"></html:h3>
+    <html:select
+      id="zotero-prefpane-__addonRef__-parse-source"
+      preference="parseSource"
+    >
+      <html:option value="online" data-l10n-id="pref-api-source-online"></html:option>
+      <html:option value="local" data-l10n-id="pref-api-source-local"></html:option>
+    </html:select>
+    <html:div data-l10n-id="pref-api-source-help"></html:div>
+  </vbox>
+  <vbox>
+    <html:h3 data-l10n-id="pref-parse-mode-title"></html:h3>
+    <html:select
+      id="zotero-prefpane-__addonRef__-parse-mode"
+      preference="parseMode"
+    >
+      <html:option value="precise" data-l10n-id="pref-parse-mode-precise"></html:option>
+      <html:option value="lite" data-l10n-id="pref-parse-mode-lite"></html:option>
+    </html:select>
+    <html:div data-l10n-id="pref-parse-mode-help"></html:div>
+  </vbox>
+  <vbox>
+    <html:h3
+      for="zotero-prefpane-__addonRef__-local-api-base-url"
+      data-l10n-id="pref-local-api-base-url"
+    ></html:h3>
+    <html:input
+      type="text"
+      id="zotero-prefpane-__addonRef__-local-api-base-url"
+      preference="localApiBaseURL"
+    ></html:input>
+    <html:div data-l10n-id="pref-local-api-base-url-help"></html:div>
+  </vbox>
+```
+
+- [ ] **Step 6: Add preference locale strings**
+
+Append to `addon/locale/zh-CN/preferences.ftl`:
+
+```ftl
+pref-api-source-title = API 来源
+pref-api-source-online = 在线 API
+pref-api-source-local = 本地部署 API
+pref-api-source-help = 解析命令始终使用这里选择的 API 来源。
+pref-parse-mode-title = 解析模式
+pref-parse-mode-precise = 精准解析
+pref-parse-mode-lite = 轻量解析
+pref-parse-mode-help = 精准解析生成框选数据；轻量解析只保存 Markdown。
+pref-local-api-base-url = 本地 API 地址
+pref-local-api-base-url-help = 本地 mineru-api 或 mineru-router 地址，例如 http://127.0.0.1:8000。
+```
+
+Append to `addon/locale/en-US/preferences.ftl`:
+
+```ftl
+pref-api-source-title = API Source
+pref-api-source-online = Online API
+pref-api-source-local = Local API
+pref-api-source-help = Parse commands always use the API source selected here.
+pref-parse-mode-title = Parse Mode
+pref-parse-mode-precise = Precise Parse
+pref-parse-mode-lite = Lite Parse
+pref-parse-mode-help = Precise parse creates box data; lite parse saves Markdown only.
+pref-local-api-base-url = Local API URL
+pref-local-api-base-url-help = Local mineru-api or mineru-router URL, for example http://127.0.0.1:8000.
+```
+
+Update `typings/i10n.d.ts` to include each new `pref-*` ID.
+
+- [ ] **Step 7: Run focused preference tests**
+
+Run:
+
+```powershell
+.\node_modules\.bin\zotero-plugin.CMD test --grep "parse source" --exit-on-finish --abort-on-fail
+```
+
+Expected: PASS for the new preference tests.
+
+- [ ] **Step 8: Commit preference surface**
+
+```powershell
+git add typings\prefs.d.ts addon\prefs.js src\utils\prefs.ts addon\content\preferences.xhtml addon\locale\zh-CN\preferences.ftl addon\locale\en-US\preferences.ftl typings\i10n.d.ts test\preferenceScript.test.ts
+git commit -m "feat(prefs): 增加 API 来源与解析模式设置"
+```
+
+## Task 2: Client Result Types And Factory
+
+**Files:**
+- Modify: `src/modules/mineruClient/types.ts`
+- Create: `src/modules/mineruClient/onlinePrecise.ts`
+- Create: `src/modules/mineruClient/factory.ts`
+- Modify: `src/modules/mineruClient/index.ts`
+- Test: `test/mineruClient.test.ts`
+
+- [ ] **Step 1: Add failing factory tests**
+
+Add to `test/mineruClient.test.ts`:
+
+```ts
+import { createMinerUClientForSettings } from "../src/modules/mineruClient";
+
+it("creates the online precise client by default", async function () {
+  const calls: string[] = [];
+  const client = createMinerUClientForSettings({
+    source: "online",
+    mode: "precise",
+    apiKey: "secret-token",
+    readBinary: async () => new Uint8Array([1]),
+    fetch: async (url, init) => {
+      calls.push(`${init?.method ?? "GET"} ${String(url)}`);
+      if (String(url).endsWith("/api/v4/file-urls/batch")) {
+        return jsonResponse({
+          code: 0,
+          data: { batch_id: "batch-1", file_urls: ["https://upload.example/a"] },
+        });
+      }
+      return new Response("", { status: 200 });
+    },
+  });
+
+  await client.submitPdf("C:/tmp/a.pdf");
+
+  assert.equal(calls[0], "POST https://mineru.net/api/v4/file-urls/batch");
+});
+```
+
+- [ ] **Step 2: Run the focused factory test and verify failure**
+
+Run:
+
+```powershell
+.\node_modules\.bin\zotero-plugin.CMD test --grep "creates the online precise client" --exit-on-finish --abort-on-fail
+```
+
+Expected: FAIL because `createMinerUClientForSettings` does not exist.
+
+- [ ] **Step 3: Extend result and settings types**
+
+In `src/modules/mineruClient/types.ts`, replace the current `downloadResult` shape with:
+
+```ts
+export type MinerUParseSource = "online" | "local";
+export type MinerUParseMode = "precise" | "lite";
+
+export type MinerUPreciseResult = {
+  kind: "precise";
+  rawResult: unknown;
+  markdown: string;
+  images?: MinerUImageFile[];
+};
+
+export type MinerULiteResult = {
+  kind: "lite";
+  markdown: string;
+};
+
+export type MinerUParseResult = MinerUPreciseResult | MinerULiteResult;
+
+export interface MinerUClient {
+  submitPdf(filePath: string): Promise<{ taskID: string }>;
+  pollTask(
+    taskID: string,
+  ): Promise<{ status: "running" | "succeeded" | "failed"; error?: string }>;
+  downloadResult(taskID: string): Promise<MinerUParseResult>;
+}
+
+export interface MinerUClientFactoryOptions extends MinerUClientOptions {
+  source: MinerUParseSource;
+  mode: MinerUParseMode;
+  localApiBaseURL?: string;
+  saveImages?: boolean;
+}
+```
+
+- [ ] **Step 4: Move current implementation into online precise module**
+
+Create `src/modules/mineruClient/onlinePrecise.ts` by copying the full current `createMinerUClient(options: MinerUClientOptions)` implementation from `index.ts`. In the copied file, change the function declaration line from:
+
+```ts
+export function createMinerUClient(options: MinerUClientOptions): MinerUClient {
+```
+
+to:
+
+```ts
+export function createOnlinePreciseMinerUClient(options: MinerUClientOptions): MinerUClient {
+```
+
+Ensure every returned download result has `kind: "precise"`:
+
+```ts
+return {
+  kind: "precise",
+  rawResult: readRawResultFromZip(zip) ?? response,
+  markdown: zip.has("full.md")
+    ? decodeText(zip.get("full.md")?.bytes ?? new Uint8Array())
+    : "",
+  images: readImagesFromZip(zip),
+};
+```
+
+For the `md_url` fallback:
+
+```ts
+return {
+  kind: "precise",
+  rawResult: response,
+  markdown: await markdownResponse.text(),
+};
+```
+
+- [ ] **Step 5: Add factory module**
+
+Create `src/modules/mineruClient/factory.ts`:
+
+```ts
+import { createOnlinePreciseMinerUClient } from "./onlinePrecise";
+import type { MinerUClient, MinerUClientFactoryOptions } from "./types";
+
+export function createMinerUClientForSettings(
+  options: MinerUClientFactoryOptions,
+): MinerUClient {
+  if (options.source === "online" && options.mode === "precise") {
+    return createOnlinePreciseMinerUClient(options);
+  }
+  throw new Error(`Unsupported MinerU client mode: ${options.source}/${options.mode}`);
+}
+```
+
+- [ ] **Step 6: Keep public exports compatible**
+
+Replace `src/modules/mineruClient/index.ts` with exports that keep current imports working:
+
+```ts
+export {
+  MinerUFileAccessError,
+  MinerURequestError,
+  MinerUTaskError,
+} from "./errors";
+export { createMinerUClientForSettings } from "./factory";
+export { createOnlinePreciseMinerUClient as createMinerUClient } from "./onlinePrecise";
+export type {
+  MinerUClient,
+  MinerUClientFactoryOptions,
+  MinerULiteResult,
+  MinerUParseMode,
+  MinerUParseResult,
+  MinerUParseSource,
+  MinerUPreciseResult,
+} from "./types";
+```
+
+- [ ] **Step 7: Update existing tests for result kind**
+
+In `test/mineruClient.test.ts`, where tests assert result object equality, add `kind: "precise"` or assert specific fields. Example:
+
+```ts
+assert.equal(result.kind, "precise");
+assert.equal(result.markdown, "# Title");
+if (result.kind !== "precise") {
+  assert.fail("Expected precise result");
+}
+assert.deepEqual(result.rawResult, { pages: [{ pageNo: 1 }] });
+```
+
+- [ ] **Step 8: Run mineru client tests**
+
+Run:
+
+```powershell
+.\node_modules\.bin\zotero-plugin.CMD test --grep "mineruClient" --exit-on-finish --abort-on-fail
+```
+
+Expected: PASS.
+
+- [ ] **Step 9: Commit client factory**
+
+```powershell
+git add src\modules\mineruClient\types.ts src\modules\mineruClient\onlinePrecise.ts src\modules\mineruClient\factory.ts src\modules\mineruClient\index.ts test\mineruClient.test.ts
+git commit -m "refactor(mineru): 拆分在线精准 client"
+```
+
+## Task 3: Storage Lite Results And Preferred Markdown
+
+**Files:**
+- Modify: `src/modules/domain.ts`
+- Modify: `src/modules/storage.ts`
+- Test: `test/storage.test.ts`
+
+- [ ] **Step 1: Add failing storage tests**
+
+Add to `test/storage.test.ts`:
+
+```ts
+it("writes and detects lite markdown without ready precise result", async function () {
+  const storage = createStorage("TmpD/mineru-copy-test");
+  const attachment = attachmentRef();
+
+  await storage.writeLiteResult({
+    attachment,
+    mineruTaskID: "lite-task",
+    source: "online",
+    markdown: "# Lite",
+  });
+
+  assert.isTrue(await storage.hasLiteResult(attachment));
+  assert.isFalse(await storage.hasReadyResult(attachment));
+  assert.equal(await storage.readPreferredMarkdown(attachment), "# Lite");
+});
+
+it("prefers precise markdown over lite markdown", async function () {
+  const storage = createStorage("TmpD/mineru-copy-test");
+  const attachment = attachmentRef({ key: "PREFER" });
+
+  await storage.writeLiteResult({
+    attachment,
+    mineruTaskID: "lite-task",
+    source: "local",
+    markdown: "# Lite",
+  });
+  await storage.writeResult({
+    attachment,
+    mineruTaskID: "precise-task",
+    rawResult: { pages: [{ pageNo: 1 }] },
+    markdown: "# Precise",
+    boxes: normalizedBoxes,
+  });
+
+  assert.equal(await storage.readPreferredMarkdown(attachment), "# Precise");
+});
+```
+
+- [ ] **Step 2: Run focused storage tests and verify failure**
+
+Run:
+
+```powershell
+.\node_modules\.bin\zotero-plugin.CMD test --grep "lite markdown" --exit-on-finish --abort-on-fail
+```
+
+Expected: FAIL because `writeLiteResult`, `hasLiteResult`, and `readPreferredMarkdown` do not exist.
+
+- [ ] **Step 3: Add lite manifest domain type**
+
+In `src/modules/domain.ts`, add:
+
+```ts
+export interface LiteParseManifest {
+  attachmentID: number;
+  attachmentKey: string;
+  libraryID: number;
+  fileName: string;
+  pdfMtime: number;
+  parsedAt: string;
+  mineruTaskID: string;
+  resultVersion: 1;
+  source: "online" | "local";
+  mode: "lite";
+  status: "ready";
+}
+```
+
+- [ ] **Step 4: Extend storage adapter**
+
+In `src/modules/storage.ts`, import `LiteParseManifest` and extend `StorageAdapter`:
+
+```ts
+hasLiteResult(ref: AttachmentKeyRef): Promise<boolean>;
+readPreferredMarkdown(ref: AttachmentKeyRef): Promise<string>;
+writeLiteResult(input: {
+  attachment: AttachmentRef;
+  mineruTaskID: string;
+  source: "online" | "local";
+  markdown: string;
+}): Promise<void>;
+```
+
+Add constants:
+
+```ts
+const LITE_CONTENT_FILE = "lite-content.md";
+const LITE_MANIFEST_FILE = "lite-manifest.json";
+```
+
+- [ ] **Step 5: Implement lite storage methods**
+
+Inside `createStorage()` return object:
+
+```ts
+async hasLiteResult(ref) {
+  try {
+    const markdown = await readText(joinPath(getAttachmentDir(fsRoot, ref), LITE_CONTENT_FILE));
+    return markdown.trim().length > 0;
+  } catch {
+    return false;
+  }
+},
+
+async readPreferredMarkdown(ref) {
+  try {
+    return await this.readMarkdown(ref);
+  } catch {
+    const markdown = await readText(joinPath(getAttachmentDir(fsRoot, ref), LITE_CONTENT_FILE));
+    if (!markdown.trim()) {
+      throw new Error("MinerU lite result is empty");
+    }
+    return markdown;
+  }
+},
+
+async writeLiteResult(input) {
+  if (!input.markdown.trim()) {
+    throw new Error("MinerU lite markdown is empty");
+  }
+  const dir = getAttachmentDir(fsRoot, input.attachment);
+  const manifest: LiteParseManifest = {
+    attachmentID: input.attachment.id,
+    attachmentKey: input.attachment.key,
+    libraryID: input.attachment.libraryID,
+    fileName: input.attachment.fileName,
+    pdfMtime: input.attachment.mtime,
+    parsedAt: new Date().toISOString(),
+    mineruTaskID: input.mineruTaskID,
+    resultVersion: 1,
+    source: input.source,
+    mode: "lite",
+    status: "ready",
+  };
+  await writeText(joinPath(dir, LITE_CONTENT_FILE), input.markdown);
+  await writeJson(joinPath(dir, LITE_MANIFEST_FILE), manifest);
+},
+```
+
+If TypeScript rejects `this.readMarkdown(ref)` inside the object, use a local helper:
+
+```ts
+async function readReadyMarkdown(root: string, ref: AttachmentKeyRef): Promise<string> {
+  const dir = getAttachmentDir(root, ref);
+  const manifest = await readManifestFile(dir);
+  if (manifest.status !== "ready") {
+    throw new Error(`MinerU result is not ready: ${manifest.status}`);
+  }
+  return readText(joinPath(dir, CONTENT_FILE));
+}
+```
+
+Then call `readReadyMarkdown(fsRoot, ref)` from both `readMarkdown` and `readPreferredMarkdown`.
+
+- [ ] **Step 6: Preserve lite files across precise writes**
+
+Before moving a new precise temp dir over an existing target dir in `writeAttachmentResultDir`, copy existing lite files into the temp dir:
+
+```ts
+await preserveLiteFiles(targetDir, tempDir);
+```
+
+Add helper:
+
+```ts
+async function preserveLiteFiles(sourceDir: string, targetDir: string): Promise<void> {
+  for (const fileName of [LITE_CONTENT_FILE, LITE_MANIFEST_FILE]) {
+    const source = joinPath(sourceDir, fileName);
+    if (!(await exists(source))) {
+      continue;
+    }
+    await writeText(joinPath(targetDir, fileName), await readText(source));
+  }
+}
+```
+
+Call it after validating temp dir and before moving `targetDir` to backup. This ensures a new precise parse does not delete existing lite Markdown.
+
+- [ ] **Step 7: Run storage tests**
+
+Run:
+
+```powershell
+.\node_modules\.bin\zotero-plugin.CMD test --grep "storage" --exit-on-finish --abort-on-fail
+```
+
+Expected: PASS.
+
+- [ ] **Step 8: Commit lite storage**
+
+```powershell
+git add src\modules\domain.ts src\modules\storage.ts test\storage.test.ts
+git commit -m "feat(storage): 保存轻量解析 markdown"
+```
+
+## Task 4: Parse Manager Mode Branching
+
+**Files:**
+- Modify: `src/modules/parseManager.ts`
+- Modify: `addon/locale/zh-CN/mainWindow.ftl`
+- Modify: `addon/locale/en-US/mainWindow.ftl`
+- Modify: `typings/i10n.d.ts`
+- Test: `test/parseManager.test.ts`
+
+- [ ] **Step 1: Add failing parse manager tests**
+
+Add to `test/parseManager.test.ts`:
+
+```ts
+it("does not require an API key for lite results", async function () {
+  const messages: string[] = [];
+  let wroteLite = false;
+  const manager = createParseManager({
+    ...baseDependencies(messages),
+    getApiKey: () => "",
+    getParseSource: () => "online",
+    getParseMode: () => "lite",
+    storage: {
+      ...baseStorage(),
+      hasLiteResult: async () => false,
+      writeLiteResult: async () => {
+        wroteLite = true;
+      },
+    },
+    client: {
+      submitPdf: async () => ({ taskID: "lite-task" }),
+      pollTask: async () => ({ status: "succeeded" }),
+      downloadResult: async () => ({ kind: "lite", markdown: "# Lite" }),
+    },
+  });
+
+  await manager.parseAttachment(pdfAttachment());
+
+  assert.isTrue(wroteLite);
+  assert.notInclude(messages, "parse-error-missing-api-key");
+});
+
+it("writes precise results only for precise client results", async function () {
+  const messages: string[] = [];
+  let wrotePrecise = false;
+  const manager = createParseManager({
+    ...baseDependencies(messages),
+    getParseSource: () => "online",
+    getParseMode: () => "precise",
+    storage: {
+      ...baseStorage(),
+      writeResult: async () => {
+        wrotePrecise = true;
+      },
+    },
+    client: {
+      submitPdf: async () => ({ taskID: "precise-task" }),
+      pollTask: async () => ({ status: "succeeded" }),
+      downloadResult: async () => ({
+        kind: "precise",
+        rawResult: {
+          pages: [
+            {
+              pageNo: 1,
+              width: 1000,
+              height: 1000,
+              blocks: [{ type: "text", bbox: [0, 0, 100, 100], markdown: "A" }],
+            },
+          ],
+        },
+        markdown: "A",
+      }),
+    },
+  });
+
+  await manager.parseAttachment(pdfAttachment());
+
+  assert.isTrue(wrotePrecise);
+});
+```
+
+After production types are changed, update the test helper exactly as described in Step 8: add `getParseSource`, `getParseMode`, and `getLocalApiBaseURL` to `baseDependencies()`, and add `hasLiteResult`, `readPreferredMarkdown`, and `writeLiteResult` to `baseStorage()`.
+
+- [ ] **Step 2: Run focused parse manager tests and verify failure**
+
+Run:
+
+```powershell
+.\node_modules\.bin\zotero-plugin.CMD test --grep "lite results" --exit-on-finish --abort-on-fail
+```
+
+Expected: FAIL because parse manager does not understand mode/source or lite results.
+
+- [ ] **Step 3: Extend parse manager dependencies**
+
+In `src/modules/parseManager.ts`, import new preference getters:
+
+```ts
+import {
+  getApiKey,
+  getLocalApiBaseURL,
+  getParseMode,
+  getParseSource,
+  getSaveImages,
+  type ParseMode,
+  type ParseSource,
+} from "../utils/prefs";
+```
+
+Extend `ParseManagerDependencies`:
+
+```ts
+getParseSource?: () => ParseSource;
+getParseMode?: () => ParseMode;
+getLocalApiBaseURL?: () => string;
+createClient?: (settings: {
+  apiKey: string;
+  source: ParseSource;
+  mode: ParseMode;
+  localApiBaseURL: string;
+  saveImages: boolean;
+}) => MinerUClient;
+```
+
+- [ ] **Step 4: Add helper functions for settings**
+
+Add helpers near `getClient`:
+
+```ts
+function getCurrentParseSource(dependencies: ParseManagerDependencies): ParseSource {
+  return dependencies.getParseSource?.() ?? "online";
+}
+
+function getCurrentParseMode(dependencies: ParseManagerDependencies): ParseMode {
+  return dependencies.getParseMode?.() ?? "precise";
+}
+
+function requiresApiKey(source: ParseSource, mode: ParseMode): boolean {
+  return source === "online" && mode === "precise";
+}
+```
+
+Update `createDefaultDependencies()`:
+
+```ts
+getParseSource,
+getParseMode,
+getLocalApiBaseURL,
+createClient: (settings) => createMinerUClientForSettings(settings),
+```
+
+- [ ] **Step 5: Make existing-result checks mode-specific**
+
+In both single and bulk parse paths, replace unconditional API-key and ready checks with:
+
+```ts
+const source = getCurrentParseSource(dependencies);
+const mode = getCurrentParseMode(dependencies);
+const apiKey = dependencies.getApiKey().trim();
+if (requiresApiKey(source, mode) && !apiKey) {
+  dependencies.showMessage("parse-error-missing-api-key");
+  return;
+}
+```
+
+Add helper:
+
+```ts
+async function hasExistingResultForMode(
+  attachment: AttachmentRef,
+  mode: ParseMode,
+  storage: StorageAdapter,
+): Promise<boolean> {
+  return mode === "lite"
+    ? await storage.hasLiteResult(attachment)
+    : await storage.hasReadyResult(attachment);
+}
+```
+
+Use this helper where `hasReadyResult()` is currently used.
+
+- [ ] **Step 6: Branch writes by result kind**
+
+After `const result = await client.downloadResult(taskID);`, add:
+
+```ts
+if (result.kind === "lite") {
+  phase = "write";
+  if (!result.markdown.trim()) {
+    dependencies.showMessage("parse-error-empty-lite-markdown");
+    return;
+  }
+  await storage.writeLiteResult({
+    attachment: attachmentRef,
+    mineruTaskID: taskID,
+    source,
+    markdown: result.markdown,
+  });
+  dependencies.showMessage("parse-lite-finished");
+  return;
+}
+```
+
+Keep the existing normalize/writeResult flow under the precise branch:
+
+```ts
+const boxes = normalizeMinerUBoxes(result.rawResult);
+```
+
+- [ ] **Step 7: Add locale keys for lite/local errors**
+
+Append to `addon/locale/zh-CN/mainWindow.ftl`:
+
+```ftl
+parse-lite-finished = 轻量解析完成
+parse-error-empty-lite-markdown = 轻量解析没有返回 Markdown
+parse-error-local-api-url = 请先配置有效的本地 API 地址
+parse-error-local-api-unavailable = 本地 API 服务不可用：{ $message }
+```
+
+Append to `addon/locale/en-US/mainWindow.ftl`:
+
+```ftl
+parse-lite-finished = Lite parse finished
+parse-error-empty-lite-markdown = Lite parse returned no Markdown
+parse-error-local-api-url = Configure a valid local API URL first
+parse-error-local-api-unavailable = Local API service is unavailable: { $message }
+```
+
+Update `typings/i10n.d.ts` with those IDs.
+
+- [ ] **Step 8: Update test doubles**
+
+In `test/parseManager.test.ts`, update `baseDependencies()` with:
+
+```ts
+getParseSource: () => "online",
+getParseMode: () => "precise",
+getLocalApiBaseURL: () => "http://127.0.0.1:8000",
+```
+
+Update `baseStorage()` with no-op methods:
+
+```ts
+hasLiteResult: async () => false,
+readPreferredMarkdown: async () => "Body",
+writeLiteResult: async () => {},
+```
+
+Update existing fake `downloadResult` return values to include `kind: "precise"` when they include `rawResult`.
+
+- [ ] **Step 9: Run parse manager tests**
+
+Run:
+
+```powershell
+.\node_modules\.bin\zotero-plugin.CMD test --grep "parseManager" --exit-on-finish --abort-on-fail
+```
+
+Expected: PASS.
+
+- [ ] **Step 10: Commit parse manager branching**
+
+```powershell
+git add src\modules\parseManager.ts addon\locale\zh-CN\mainWindow.ftl addon\locale\en-US\mainWindow.ftl typings\i10n.d.ts test\parseManager.test.ts
+git commit -m "feat(parse): 按来源与模式处理解析结果"
+```
+
+## Task 5: Local API Client
+
+**Files:**
+- Create: `src/modules/mineruClient/formData.ts`
+- Create: `src/modules/mineruClient/local.ts`
+- Modify: `src/modules/mineruClient/factory.ts`
+- Test: `test/mineruClient.test.ts`
+
+- [ ] **Step 1: Add failing local client tests**
+
+Add to `test/mineruClient.test.ts`:
+
+```ts
+it("checks local health before submitting a local task", async function () {
+  const calls: string[] = [];
+  const client = createMinerUClientForSettings({
+    source: "local",
+    mode: "lite",
+    apiKey: "",
+    localApiBaseURL: "http://127.0.0.1:8000",
+    readBinary: async () => new Uint8Array([1, 2, 3]),
+    fetch: async (url, init) => {
+      calls.push(`${init?.method ?? "GET"} ${String(url)}`);
+      if (String(url).endsWith("/health")) {
+        return jsonResponse({ status: "healthy" });
+      }
+      return jsonResponse({ task_id: "local-task" }, 202);
+    },
+  });
+
+  const result = await client.submitPdf("C:/tmp/a.pdf");
+
+  assert.deepEqual(result, { taskID: "local-task" });
+  assert.equal(calls[0], "GET http://127.0.0.1:8000/health");
+  assert.equal(calls[1], "POST http://127.0.0.1:8000/tasks");
+});
+
+it("submits local lite tasks with markdown-only result flags", async function () {
+  let submittedBody: FormData | undefined;
+  const client = createMinerUClientForSettings({
+    source: "local",
+    mode: "lite",
+    apiKey: "",
+    localApiBaseURL: "http://127.0.0.1:8000",
+    readBinary: async () => new Uint8Array([1, 2, 3]),
+    fetch: async (url, init) => {
+      if (String(url).endsWith("/health")) {
+        return jsonResponse({ status: "healthy" });
+      }
+      submittedBody = init?.body as FormData;
+      return jsonResponse({ task_id: "local-task" }, 202);
+    },
+  });
+
+  await client.submitPdf("C:/tmp/a.pdf");
+
+  assert.equal(submittedBody?.get("return_md"), "true");
+  assert.equal(submittedBody?.get("return_middle_json"), "false");
+  assert.equal(submittedBody?.get("return_images"), "false");
+  assert.equal(submittedBody?.get("response_format_zip"), "false");
+});
+```
+
+- [ ] **Step 2: Run focused local tests and verify failure**
+
+Run:
+
+```powershell
+.\node_modules\.bin\zotero-plugin.CMD test --grep "local" --exit-on-finish --abort-on-fail
+```
+
+Expected: FAIL because local clients are unsupported.
+
+- [ ] **Step 3: Add multipart builder**
+
+Create `src/modules/mineruClient/formData.ts`:
+
+```ts
+import { basename } from "./path";
+
+export type LocalParseMode = "precise" | "lite";
+
+export function buildLocalTaskFormData(input: {
+  filePath: string;
+  bytes: Uint8Array;
+  mode: LocalParseMode;
+  saveImages: boolean;
+}): FormData {
+  const form = new FormData();
+  form.append(
+    "files",
+    new Blob([input.bytes], { type: "application/pdf" }),
+    basename(input.filePath),
+  );
+  form.append("lang_list", "ch");
+  form.append("backend", "hybrid-auto-engine");
+  form.append("parse_method", "auto");
+  form.append("formula_enable", "true");
+  form.append("table_enable", "true");
+  form.append("image_analysis", "true");
+  form.append("return_md", "true");
+  form.append("return_middle_json", input.mode === "precise" ? "true" : "false");
+  form.append("return_model_output", "false");
+  form.append("return_content_list", input.mode === "precise" ? "true" : "false");
+  form.append("return_images", input.mode === "precise" && input.saveImages ? "true" : "false");
+  form.append("response_format_zip", input.mode === "precise" ? "true" : "false");
+  form.append("return_original_file", "false");
+  form.append("start_page_id", "0");
+  form.append("end_page_id", "99999");
+  return form;
+}
+```
+
+- [ ] **Step 4: Implement local client skeleton**
+
+Create `src/modules/mineruClient/local.ts`:
+
+```ts
+import { requestJson, requestOk } from "./api";
+import { buildLocalTaskFormData } from "./formData";
+import { readFileBytes, readPdfBytes } from "./file";
+import { createDefaultRequest, normalizeBinary } from "./http";
+import { normalizeBaseURL } from "./path";
+import type { MinerUClient, MinerUClientOptions, MinerUParseMode } from "./types";
+
+type LocalTaskResponse = {
+  task_id?: string;
+  taskId?: string;
+  status?: string;
+  message?: string;
+};
+
+export function createLocalMinerUClient(
+  options: MinerUClientOptions & {
+    mode: MinerUParseMode;
+    localApiBaseURL: string;
+    saveImages?: boolean;
+  },
+): MinerUClient {
+  const baseURL = normalizeBaseURL(options.localApiBaseURL);
+  const request = options.fetch ?? createDefaultRequest();
+  const readBinary = options.readBinary ?? readFileBytes;
+
+  return {
+    async submitPdf(filePath) {
+      await requestOk(request, `${baseURL}/health`, "local-health", {
+        method: "GET",
+      });
+      const bytes = normalizeBinary(await readPdfBytes(readBinary, filePath));
+      const response = await requestJson<LocalTaskResponse>(
+        request,
+        `${baseURL}/tasks`,
+        "local-submit",
+        {
+          method: "POST",
+          body: buildLocalTaskFormData({
+            filePath,
+            bytes,
+            mode: options.mode,
+            saveImages: options.saveImages !== false,
+          }),
+        },
+      );
+      const taskID = response.task_id ?? response.taskId;
+      if (!taskID) {
+        throw new Error("Local MinerU submit response missing task_id");
+      }
+      return { taskID };
+    },
+    async pollTask(taskID) {
+      const response = await requestJson<LocalTaskResponse>(
+        request,
+        `${baseURL}/tasks/${encodeURIComponent(taskID)}`,
+        "local-poll",
+        { method: "GET" },
+      );
+      const status = String(response.status ?? "").toLowerCase();
+      if (["done", "success", "succeeded", "finished", "completed"].includes(status)) {
+        return { status: "succeeded" };
+      }
+      if (["failed", "fail", "error"].includes(status)) {
+        return { status: "failed", error: response.message || "Local MinerU task failed" };
+      }
+      return { status: "running" };
+    },
+    async downloadResult() {
+      return options.mode === "lite"
+        ? { kind: "lite", markdown: "" }
+        : { kind: "precise", rawResult: {}, markdown: "" };
+    },
+  };
+}
+```
+
+- [ ] **Step 5: Wire local client in factory**
+
+In `src/modules/mineruClient/factory.ts`:
+
+```ts
+import { createLocalMinerUClient } from "./local";
+```
+
+Add branch:
+
+```ts
+if (options.source === "local") {
+  return createLocalMinerUClient({
+    ...options,
+    mode: options.mode,
+    localApiBaseURL: options.localApiBaseURL ?? "http://127.0.0.1:8000",
+    saveImages: options.saveImages,
+  });
+}
+```
+
+- [ ] **Step 6: Run focused local submit tests**
+
+Run:
+
+```powershell
+.\node_modules\.bin\zotero-plugin.CMD test --grep "local.*task|markdown-only" --exit-on-finish --abort-on-fail
+```
+
+Expected: PASS for submit/form tests. Other local result tests are not added until Task 6.
+
+- [ ] **Step 7: Commit local submit and polling**
+
+```powershell
+git add src\modules\mineruClient\formData.ts src\modules\mineruClient\local.ts src\modules\mineruClient\factory.ts test\mineruClient.test.ts
+git commit -m "feat(mineru): 提交本地异步解析任务"
+```
+
+## Task 6: Local API Result Download
+
+**Files:**
+- Modify: `src/modules/mineruClient/local.ts`
+- Modify: `src/modules/mineruClient/result.ts`
+- Test: `test/mineruClient.test.ts`
+
+- [ ] **Step 1: Add failing local result tests**
+
+Add to `test/mineruClient.test.ts`:
+
+```ts
+it("downloads local lite markdown from JSON results", async function () {
+  const client = createMinerUClientForSettings({
+    source: "local",
+    mode: "lite",
+    apiKey: "",
+    localApiBaseURL: "http://127.0.0.1:8000",
+    fetch: async () =>
+      jsonResponse({
+        results: {
+          "a.pdf": { md_content: "# Lite" },
+        },
+      }),
+  });
+
+  const result = await client.downloadResult("local-task");
+
+  assert.deepEqual(result, { kind: "lite", markdown: "# Lite" });
+});
+
+it("downloads local precise markdown and raw result from JSON results", async function () {
+  const raw = { pdf_info: [{ page_idx: 0, page_size: [100, 200], para_blocks: [] }] };
+  const client = createMinerUClientForSettings({
+    source: "local",
+    mode: "precise",
+    apiKey: "",
+    localApiBaseURL: "http://127.0.0.1:8000",
+    fetch: async () =>
+      jsonResponse({
+        results: {
+          "a.pdf": {
+            md_content: "# Precise",
+            middle_json: JSON.stringify(raw),
+            content_list: JSON.stringify([{ type: "text" }]),
+          },
+        },
+      }),
+  });
+
+  const result = await client.downloadResult("local-task");
+
+  assert.equal(result.kind, "precise");
+  if (result.kind !== "precise") assert.fail("Expected precise result");
+  assert.equal(result.markdown, "# Precise");
+  assert.deepEqual(result.rawResult, raw);
+});
+```
+
+- [ ] **Step 2: Run focused local result tests and verify failure**
+
+Run:
+
+```powershell
+.\node_modules\.bin\zotero-plugin.CMD test --grep "downloads local" --exit-on-finish --abort-on-fail
+```
+
+Expected: FAIL because `downloadResult()` throws.
+
+- [ ] **Step 3: Implement JSON result parsing**
+
+In `src/modules/mineruClient/local.ts`, add:
+
+```ts
+type LocalResultResponse = {
+  results?: Record<string, {
+    md_content?: string;
+    middle_json?: unknown;
+    content_list?: unknown;
+    images?: Record<string, string>;
+  }>;
+};
+
+function firstLocalResult(response: LocalResultResponse) {
+  return Object.values(response.results ?? {})[0] ?? {};
+}
+
+function parseMaybeJson(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function decodeDataURLImages(images: Record<string, string> | undefined) {
+  if (!images) {
+    return undefined;
+  }
+  return Object.entries(images).flatMap(([path, value]) => {
+    const comma = value.indexOf(",");
+    if (comma === -1) {
+      return [];
+    }
+    const binary = atob(value.slice(comma + 1));
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return [{ path, bytes }];
+  });
+}
+```
+
+Implement `downloadResult(taskID)` JSON path:
+
+```ts
+const response = await requestJson<LocalResultResponse>(
+  request,
+  `${baseURL}/tasks/${encodeURIComponent(taskID)}/result`,
+  "local-download",
+  { method: "GET" },
+);
+const result = firstLocalResult(response);
+const markdown = result.md_content ?? "";
+if (options.mode === "lite") {
+  return { kind: "lite", markdown };
+}
+return {
+  kind: "precise",
+  markdown,
+  rawResult: parseMaybeJson(result.middle_json ?? result.content_list ?? response),
+  images: decodeDataURLImages(result.images),
+};
+```
+
+- [ ] **Step 4: Add ZIP result support for precise local results**
+
+If local precise uses `response_format_zip=true`, `requestJson()` will fail on ZIP. Replace the precise result download branch with `requestOk()`, inspect content type, and parse ZIP when needed:
+
+```ts
+const response = await requestOk(
+  request,
+  `${baseURL}/tasks/${encodeURIComponent(taskID)}/result`,
+  "local-download",
+  { method: "GET" },
+);
+const contentType = response.headers.get("Content-Type") ?? "";
+if (contentType.includes("application/zip")) {
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  const zip = readZipEntries(bytes);
+  return {
+    kind: "precise",
+    markdown: readLocalZipMarkdown(zip),
+    rawResult: readLocalZipRawResult(zip),
+    images: readImagesFromZip(zip),
+  };
+}
+const json = (await response.json()) as LocalResultResponse;
+```
+
+Add helper functions in `local.ts` or `result.ts`:
+
+```ts
+function readLocalZipMarkdown(zip: ZipEntries): string {
+  const entry = Array.from(zip.values()).find((item) => item.name.endsWith(".md"));
+  return entry ? decodeText(entry.bytes) : "";
+}
+
+function readLocalZipRawResult(zip: ZipEntries): unknown {
+  const middle = Array.from(zip.values()).find((item) => item.name.endsWith("_middle.json"));
+  const content = Array.from(zip.values()).find((item) => item.name.endsWith("_content_list.json"));
+  const entry = middle ?? content;
+  return entry ? JSON.parse(decodeText(entry.bytes)) : {};
+}
+```
+
+Import existing `readZipEntries`, `decodeText`, and `readImagesFromZip` helpers.
+
+- [ ] **Step 5: Run local result tests**
+
+Run:
+
+```powershell
+.\node_modules\.bin\zotero-plugin.CMD test --grep "downloads local" --exit-on-finish --abort-on-fail
+```
+
+Expected: PASS.
+
+- [ ] **Step 6: Commit local result download**
+
+```powershell
+git add src\modules\mineruClient\local.ts src\modules\mineruClient\result.ts test\mineruClient.test.ts
+git commit -m "feat(mineru): 读取本地解析结果"
+```
+
+## Task 7: Online Agent Lite Client
+
+**Files:**
+- Create: `src/modules/mineruClient/agentLite.ts`
+- Modify: `src/modules/mineruClient/factory.ts`
+- Test: `test/mineruClient.test.ts`
+
+- [ ] **Step 1: Add failing online lite tests**
+
+Add to `test/mineruClient.test.ts`:
+
+```ts
+it("submits online lite tasks without authorization", async function () {
+  const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+  const client = createMinerUClientForSettings({
+    source: "online",
+    mode: "lite",
+    apiKey: "",
+    readBinary: async () => new Uint8Array([1, 2, 3]),
+    fetch: async (url, init) => {
+      calls.push({ url: String(url), init });
+      if (String(url).endsWith("/api/v1/agent/parse/file")) {
+        return jsonResponse({
+          task_id: "agent-task",
+          file_url: "https://upload.example/lite",
+        });
+      }
+      return new Response("", { status: 200 });
+    },
+  });
+
+  await client.submitPdf("C:/tmp/a.pdf");
+
+  assert.equal(calls[0].url, "https://mineru.net/api/v1/agent/parse/file");
+  assert.isUndefined((calls[0].init?.headers as Record<string, string> | undefined)?.Authorization);
+  assert.equal(calls[1].url, "https://upload.example/lite");
+});
+
+it("downloads online lite markdown from markdown_url", async function () {
+  const client = createMinerUClientForSettings({
+    source: "online",
+    mode: "lite",
+    apiKey: "",
+    fetch: async (url) => {
+      if (String(url).includes("/api/v1/agent/parse/")) {
+        return jsonResponse({
+          state: "done",
+          markdown_url: "https://download.example/lite.md",
+        });
+      }
+      return new Response("# Lite");
+    },
+  });
+
+  const result = await client.downloadResult("agent-task");
+
+  assert.deepEqual(result, { kind: "lite", markdown: "# Lite" });
+});
+```
+
+- [ ] **Step 2: Run focused online lite tests and verify failure**
+
+Run:
+
+```powershell
+.\node_modules\.bin\zotero-plugin.CMD test --grep "online lite" --exit-on-finish --abort-on-fail
+```
+
+Expected: FAIL because online lite client is unsupported.
+
+- [ ] **Step 3: Implement Agent lite client**
+
+Create `src/modules/mineruClient/agentLite.ts`:
+
+```ts
+import { requestJson, requestOk } from "./api";
+import { readFileBytes, readPdfBytes } from "./file";
+import {
+  createDefaultRequest,
+  fetchUploadBinary,
+  normalizeBinary,
+  xhrUploadBinary,
+} from "./http";
+import { basename, normalizeBaseURL } from "./path";
+import type { MinerUClient, MinerUClientOptions } from "./types";
+
+type AgentSubmitResponse = {
+  task_id?: string;
+  taskId?: string;
+  file_url?: string;
+  fileUrl?: string;
+};
+
+type AgentPollResponse = {
+  state?: string;
+  status?: string;
+  err_msg?: string;
+  message?: string;
+  markdown_url?: string;
+  markdownUrl?: string;
+};
+
+export function createOnlineAgentLiteMinerUClient(
+  options: MinerUClientOptions,
+): MinerUClient {
+  const baseURL = normalizeBaseURL(options.baseURL ?? "https://mineru.net");
+  const request = options.fetch ?? createDefaultRequest();
+  const readBinary = options.readBinary ?? readFileBytes;
+  const uploadBinary =
+    options.uploadBinary ??
+    (options.fetch ? fetchUploadBinary(request) : xhrUploadBinary);
+
+  return {
+    async submitPdf(filePath) {
+      const response = await requestJson<AgentSubmitResponse>(
+        request,
+        `${baseURL}/api/v1/agent/parse/file`,
+        "agent-submit",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            file_name: basename(filePath),
+            language: "ch",
+            enable_table: false,
+            enable_formula: false,
+            is_ocr: false,
+          }),
+        },
+      );
+      const taskID = response.task_id ?? response.taskId;
+      const uploadURL = response.file_url ?? response.fileUrl;
+      if (!taskID || !uploadURL) {
+        throw new Error("MinerU Agent submit response missing upload data");
+      }
+      const bytes = normalizeBinary(await readPdfBytes(readBinary, filePath));
+      await requestOk(() => uploadBinary(uploadURL, bytes), uploadURL, "agent-upload", {
+        method: "PUT",
+      });
+      return { taskID };
+    },
+    async pollTask(taskID) {
+      const response = await requestJson<AgentPollResponse>(
+        request,
+        `${baseURL}/api/v1/agent/parse/${encodeURIComponent(taskID)}`,
+        "agent-poll",
+        { method: "GET" },
+      );
+      const state = String(response.state ?? response.status ?? "").toLowerCase();
+      if (["done", "success", "succeeded", "finished"].includes(state)) {
+        return { status: "succeeded" };
+      }
+      if (["failed", "fail", "error"].includes(state)) {
+        return { status: "failed", error: response.err_msg || response.message || "MinerU Agent task failed" };
+      }
+      return { status: "running" };
+    },
+    async downloadResult(taskID) {
+      const response = await requestJson<AgentPollResponse>(
+        request,
+        `${baseURL}/api/v1/agent/parse/${encodeURIComponent(taskID)}`,
+        "agent-download",
+        { method: "GET" },
+      );
+      const markdownURL = response.markdown_url ?? response.markdownUrl;
+      if (!markdownURL) {
+        return { kind: "lite", markdown: "" };
+      }
+      const markdownResponse = await requestOk(
+        request,
+        markdownURL,
+        "agent-download-markdown",
+        { method: "GET" },
+      );
+      return { kind: "lite", markdown: await markdownResponse.text() };
+    },
+  };
+}
+```
+
+- [ ] **Step 4: Wire online lite factory branch**
+
+In `src/modules/mineruClient/factory.ts`:
+
+```ts
+import { createOnlineAgentLiteMinerUClient } from "./agentLite";
+```
+
+Add branch before unsupported error:
+
+```ts
+if (options.source === "online" && options.mode === "lite") {
+  return createOnlineAgentLiteMinerUClient(options);
+}
+```
+
+- [ ] **Step 5: Run online lite tests**
+
+Run:
+
+```powershell
+.\node_modules\.bin\zotero-plugin.CMD test --grep "online lite" --exit-on-finish --abort-on-fail
+```
+
+Expected: PASS.
+
+- [ ] **Step 6: Commit online lite client**
+
+```powershell
+git add src\modules\mineruClient\agentLite.ts src\modules\mineruClient\factory.ts test\mineruClient.test.ts
+git commit -m "feat(mineru): 支持在线轻量解析"
+```
+
+## Task 8: Copy Full Markdown Fallback
+
+**Files:**
+- Modify: `src/modules/readerOverlay/copy.ts`
+- Test: `test/readerOverlay.test.ts`
+
+- [ ] **Step 1: Add failing reader overlay copy test**
+
+Add to `test/readerOverlay.test.ts` near the full markdown copy tests:
+
+```ts
+it("copies lite markdown when precise markdown is missing", async function () {
+  const copied: string[] = [];
+  const globals = globalThis as typeof globalThis & {
+    ztoolkit?: unknown;
+  };
+  const originalZtoolkit = globals.ztoolkit;
+  globals.ztoolkit = {
+    Clipboard: class {
+      private text = "";
+
+      addText(text: string) {
+        this.text = text;
+        return this;
+      }
+
+      copy() {
+        copied.push(this.text);
+      }
+    },
+  };
+  const storage = createStorage("TmpD/mineru-copy-reader-test");
+  const attachment = {
+    id: 1,
+    key: "LITECOPY",
+    libraryID: 1,
+    fileName: "a.pdf",
+    filePath: "a.pdf",
+    mtime: 1,
+  };
+  const reader = createReader({
+    instanceID: "reader-copy-lite-markdown",
+    attachmentKey: "LITECOPY",
+    views: [createView("primary")],
+  });
+  setReaderOverlayModeForReader(reader, "hover");
+
+  try {
+    await storage.writeLiteResult({
+      attachment,
+      mineruTaskID: "lite-task",
+      source: "online",
+      markdown: "# Lite Full",
+    });
+    const text = await readerOverlay.copySelectedBoxesForReader(reader);
+
+    assert.equal(text, "# Lite Full");
+    assert.deepEqual(copied, ["# Lite Full"]);
+  } finally {
+    globals.ztoolkit = originalZtoolkit;
+  }
+});
+```
+
+- [ ] **Step 2: Run focused reader copy test and verify failure**
+
+Run:
+
+```powershell
+.\node_modules\.bin\zotero-plugin.CMD test --grep "lite markdown when precise markdown is missing" --exit-on-finish --abort-on-fail
+```
+
+Expected: FAIL because copy fallback reads only `content.md`.
+
+- [ ] **Step 3: Use preferred Markdown for no-selection copy**
+
+In `src/modules/readerOverlay/copy.ts`, replace:
+
+```ts
+? await storage.readMarkdown(attachment)
+```
+
+with:
+
+```ts
+? await storage.readPreferredMarkdown(attachment)
+```
+
+Do not change the selected-box branch; only the no-selection Markdown branch should call `readPreferredMarkdown()`.
+
+- [ ] **Step 4: Run reader overlay tests**
+
+Run:
+
+```powershell
+.\node_modules\.bin\zotero-plugin.CMD test --grep "copies full markdown|lite markdown" --exit-on-finish --abort-on-fail
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit copy fallback**
+
+```powershell
+git add src\modules\readerOverlay\copy.ts test\readerOverlay.test.ts
+git commit -m "feat(reader): 复制全文 markdown 支持轻量结果兜底"
+```
+
+## Task 9: Final Integration And Verification
+
+**Files:**
+- Modify: only task-related files from Tasks 1-8 if verification exposes a defect
+- Test: full test suite and type/build checks
+
+- [ ] **Step 1: Run type check**
+
+Run:
+
+```powershell
+.\node_modules\.bin\tsc.CMD --noEmit
+```
+
+Expected: PASS with no TypeScript errors.
+
+- [ ] **Step 2: Run focused full test suite**
+
+Run:
+
+```powershell
+.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail
+```
+
+Expected: PASS. This project does not use Vitest.
+
+- [ ] **Step 3: Check diff for unrelated changes**
+
+Run:
+
+```powershell
+git status --short
+git diff --stat
+```
+
+Expected: only task-related source, test, locale, and docs changes are present. No generated `.scaffold/build` files or unrelated formatting-only XHTML churn should remain.
+
+- [ ] **Step 4: Run lint check if time allows**
+
+Run:
+
+```powershell
+pnpm run lint:check
+```
+
+Expected: PASS. If lint finds formatting in unrelated XHTML or Markdown, revert unrelated formatting and rerun focused checks.
+
+- [ ] **Step 5: Commit final fixes if any**
+
+If Step 1-4 required fixes, commit them:
+
+```powershell
+git add typings\prefs.d.ts typings\i10n.d.ts addon\prefs.js addon\content\preferences.xhtml addon\locale\zh-CN\preferences.ftl addon\locale\en-US\preferences.ftl addon\locale\zh-CN\mainWindow.ftl addon\locale\en-US\mainWindow.ftl src\utils\prefs.ts src\modules\domain.ts src\modules\storage.ts src\modules\parseManager.ts src\modules\readerOverlay\copy.ts src\modules\mineruClient\types.ts src\modules\mineruClient\index.ts src\modules\mineruClient\factory.ts src\modules\mineruClient\onlinePrecise.ts src\modules\mineruClient\agentLite.ts src\modules\mineruClient\local.ts src\modules\mineruClient\formData.ts src\modules\mineruClient\result.ts test\preferenceScript.test.ts test\mineruClient.test.ts test\storage.test.ts test\parseManager.test.ts test\readerOverlay.test.ts
+git commit -m "test(mineru): 覆盖 API 来源与解析模式"
+```
+
+Use an explicit file list instead of `git add .`.
+
+## Self-Review
+
+- Spec coverage: preferences, four API combinations, async local API, `/health`, lite storage, precise-vs-lite overwrite rules, preferred Markdown copy, API-key rules, and tests all map to tasks above.
+- Placeholder scan: no `TBD`, `TODO`, or "implement later" placeholders are intentionally present.
+- Type consistency: source/mode names are `online | local` and `precise | lite` throughout; result kinds are `precise | lite`; storage methods are `hasLiteResult`, `writeLiteResult`, and `readPreferredMarkdown`.
