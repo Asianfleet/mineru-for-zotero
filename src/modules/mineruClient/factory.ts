@@ -1,3 +1,4 @@
+import { createOnlineAgentLiteMinerUClient } from "./agentLite";
 import { createLocalMinerUClient } from "./local";
 import { createOnlinePreciseMinerUClient } from "./onlinePrecise";
 import type { MinerUClient, MinerUClientFactoryOptions } from "./types";
@@ -10,6 +11,9 @@ export function createMinerUClientForSettings(
 ): MinerUClient {
   if (options.source === "online" && options.mode === "precise") {
     return createOnlinePreciseMinerUClient(options);
+  }
+  if (options.source === "online" && options.mode === "lite") {
+    return createOnlineAgentLiteMinerUClient(options);
   }
   if (options.source === "local") {
     return createLocalMinerUClient({

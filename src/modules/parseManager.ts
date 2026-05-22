@@ -609,7 +609,7 @@ function getParseFailureMessage(
   }
   if (
     error instanceof MinerURequestError &&
-    ["submit", "upload"].includes(error.stage)
+    ["submit", "upload", "agent-submit", "agent-upload"].includes(error.stage)
   ) {
     return { id: "parse-error-upload", args: { message } };
   }

@@ -307,6 +307,69 @@ describe("mineruClient", function () {
     }
   });
 
+  it("submits online lite tasks without authorization", async function () {
+    const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
+    let uploadBody: Uint8Array | undefined;
+    const client = createMinerUClientForSettings({
+      source: "online",
+      mode: "lite",
+      apiKey: "",
+      readBinary: async () => new Uint8Array([1, 2, 3]),
+      uploadBinary: async (url, body) => {
+        uploadBody = body;
+        calls.push({ url, init: { method: "PUT", body } });
+        return new Response("", { status: 200 });
+      },
+      fetch: async (url, init) => {
+        calls.push({ url: String(url), init });
+        if (String(url).endsWith("/api/v1/agent/parse/file")) {
+          return jsonResponse({
+            task_id: "agent-task",
+            file_url: "https://upload.example/lite",
+          });
+        }
+        return new Response("", { status: 200 });
+      },
+    });
+
+    const result = await client.submitPdf("C:/tmp/a.pdf");
+
+    assert.deepEqual(result, { taskID: "agent-task" });
+    assert.equal(calls[0].url, "https://mineru.net/api/v1/agent/parse/file");
+    assert.isUndefined(
+      (calls[0].init?.headers as Record<string, string> | undefined)
+        ?.Authorization,
+    );
+    assert.equal(calls[1].url, "https://upload.example/lite");
+    assert.equal(calls[1].init?.method, "PUT");
+    assert.deepEqual(uploadBody, new Uint8Array([1, 2, 3]));
+  });
+
+  it("downloads online lite markdown from markdown_url", async function () {
+    const client = createMinerUClientForSettings({
+      source: "online",
+      mode: "lite",
+      apiKey: "",
+      fetch: async (url) => {
+        if (String(url).includes("/api/v1/agent/parse/")) {
+          return jsonResponse({
+            state: "done",
+            markdown_url: "https://download.example/lite.md",
+          });
+        }
+        throw new Error("Markdown URL should use downloadBinary");
+      },
+      downloadBinary: async (url) =>
+        String(url) === "https://download.example/lite.md"
+          ? new Response("# Lite")
+          : new Response("bad", { status: 404 }),
+    });
+
+    const result = await client.downloadResult("agent-task");
+
+    assert.deepEqual(result, { kind: "lite", markdown: "# Lite" });
+  });
+
   it("submits a local PDF through the official batch upload flow", async function () {
     const calls: Array<{ url: string; init: RequestInit | undefined }> = [];
     const client = createMinerUClient({

@@ -1414,7 +1414,7 @@ git commit -m "feat(mineru): 读取本地解析结果"
 - Modify: `src/modules/mineruClient/factory.ts`
 - Test: `test/mineruClient.test.ts`
 
-- [ ] **Step 1: Add failing online lite tests**
+- [x] **Step 1: Add failing online lite tests**
 
 Add to `test/mineruClient.test.ts`:
 
@@ -1467,7 +1467,7 @@ it("downloads online lite markdown from markdown_url", async function () {
 });
 ```
 
-- [ ] **Step 2: Run focused online lite tests and verify failure**
+- [x] **Step 2: Run focused online lite tests and verify failure**
 
 Run:
 
@@ -1477,7 +1477,11 @@ Run:
 
 Expected: FAIL because online lite client is unsupported.
 
-- [ ] **Step 3: Implement Agent lite client**
+注意：当前 `zotero-plugin-scaffold@0.8.2` 的 `zotero-plugin test` 不支持 `--grep`；此命令是原计划记录，实际验证需使用全量测试命令。
+
+执行记录：已新增 online lite submit/download 测试；`.\node_modules\.bin\tsc.CMD --noEmit` 通过，`.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail` 在实现前按预期失败于 `submits online lite tasks without authorization`，因为 `online/lite` 仍走 unsupported factory 分支。
+
+- [x] **Step 3: Implement Agent lite client**
 
 Create `src/modules/mineruClient/agentLite.ts`:
 
@@ -1486,8 +1490,11 @@ import { requestJson, requestOk } from "./api";
 import { readFileBytes, readPdfBytes } from "./file";
 import {
   createDefaultRequest,
+  fallbackDownloadBinary,
+  fetchDownloadBinary,
   fetchUploadBinary,
   normalizeBinary,
+  xhrDownloadBinary,
   xhrUploadBinary,
 } from "./http";
 import { basename, normalizeBaseURL } from "./path";
@@ -1518,6 +1525,14 @@ export function createOnlineAgentLiteMinerUClient(
   const uploadBinary =
     options.uploadBinary ??
     (options.fetch ? fetchUploadBinary(request) : xhrUploadBinary);
+  const downloadBinary =
+    options.downloadBinary ??
+    (options.fetch
+      ? fetchDownloadBinary(request)
+      : fallbackDownloadBinary(
+          xhrDownloadBinary,
+          fetchDownloadBinary(request),
+        ));
 
   return {
     async submitPdf(filePath) {
@@ -1540,7 +1555,7 @@ export function createOnlineAgentLiteMinerUClient(
       const taskID = response.task_id ?? response.taskId;
       const uploadURL = response.file_url ?? response.fileUrl;
       if (!taskID || !uploadURL) {
-        throw new Error("MinerU Agent submit response missing upload data");
+        throw new MinerUTaskError("MinerU Agent submit response missing upload data");
       }
       const bytes = normalizeBinary(await readPdfBytes(readBinary, filePath));
       await requestOk(() => uploadBinary(uploadURL, bytes), uploadURL, "agent-upload", {
@@ -1576,9 +1591,9 @@ export function createOnlineAgentLiteMinerUClient(
         return { kind: "lite", markdown: "" };
       }
       const markdownResponse = await requestOk(
-        request,
+        () => downloadBinary(markdownURL),
         markdownURL,
-        "agent-download-markdown",
+        "download",
         { method: "GET" },
       );
       return { kind: "lite", markdown: await markdownResponse.text() };
@@ -1587,7 +1602,7 @@ export function createOnlineAgentLiteMinerUClient(
 }
 ```
 
-- [ ] **Step 4: Wire online lite factory branch**
+- [x] **Step 4: Wire online lite factory branch**
 
 In `src/modules/mineruClient/factory.ts`:
 
@@ -1603,7 +1618,7 @@ if (options.source === "online" && options.mode === "lite") {
 }
 ```
 
-- [ ] **Step 5: Run online lite tests**
+- [x] **Step 5: Run online lite tests**
 
 Run:
 
@@ -1613,12 +1628,15 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit online lite client**
+- [x] **Step 6: Commit online lite client**
 
 ```powershell
 git add src\modules\mineruClient\agentLite.ts src\modules\mineruClient\factory.ts test\mineruClient.test.ts
 git commit -m "feat(mineru): 支持在线轻量解析"
 ```
+
+实现说明：
+本轮新增 `agentLite.ts`，实现在线 Agent lite 的提交、上传、轮询和 Markdown 下载流程。提交接口使用 `/api/v1/agent/parse/file`，只发送 JSON 参数和文件名，不添加 `Authorization`，随后将 PDF 字节上传到返回的 `file_url`；轮询和下载均读取 `/api/v1/agent/parse/{taskID}`，成功状态映射为统一任务状态，下载阶段从 `markdown_url`/`markdownUrl` 拉取 Markdown 并返回 `{ kind: "lite", markdown }`。`factory.ts` 已新增 `online/lite` 分支，保留 `online/precise` 优先匹配。审查后补齐两个边界：Markdown URL 下载改用 `downloadBinary`，默认路径与 online precise 一样支持 XHR/fetch fallback；`parseManager` 也把 `agent-submit`/`agent-upload` 映射为上传阶段错误，避免 lite 上传失败落到 generic。验证方面已运行 `.\node_modules\.bin\tsc.CMD --noEmit` 通过，并运行 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，结果为 `148 passed`。
 
 ## Task 8: Copy Full Markdown Fallback
 

@@ -778,6 +778,16 @@ describe("parseManager", function () {
       },
       {
         client: {
+          submitPdf: async () => {
+            throw new MinerURequestError("agent-upload", 403, "bad signature");
+          },
+          pollTask: async () => ({ status: "succeeded" }),
+          downloadResult: async () => ({ kind: "lite", markdown: "# Lite" }),
+        },
+        expected: "parse-error-upload",
+      },
+      {
+        client: {
           submitPdf: async () => ({ taskID: "task-failed" }),
           pollTask: async () => ({
             status: "failed",
