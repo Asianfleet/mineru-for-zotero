@@ -1,4 +1,4 @@
-import { requestJson, requestOk } from "./api";
+import { ensureBusinessSuccess, requestJson, requestOk } from "./api";
 import { MinerUTaskError } from "./errors";
 import { readFileBytes, readPdfBytes } from "./file";
 import {
@@ -20,6 +20,12 @@ type AgentSubmitResponse = {
   fileUrl?: string;
 };
 
+type AgentResponseEnvelope<T extends object> = T & {
+  code?: number;
+  msg?: string;
+  data?: T;
+};
+
 type AgentPollResponse = {
   state?: string;
   status?: string;
@@ -28,6 +34,17 @@ type AgentPollResponse = {
   markdown_url?: string;
   markdownUrl?: string;
 };
+
+/**
+ * 兼容 MinerU Agent API 的标准 data 包裹响应和旧测试中的顶层字段响应。
+ */
+function unwrapAgentData<T extends object>(
+  response: AgentResponseEnvelope<T>,
+  stage: string,
+): T {
+  ensureBusinessSuccess(response, stage);
+  return response.data ?? response;
+}
 
 /**
  * 创建在线 Agent lite 模式的 MinerU client。
@@ -55,7 +72,9 @@ export function createOnlineAgentLiteMinerUClient(
      * 提交在线 lite 任务并上传 PDF 字节。
      */
     async submitPdf(filePath) {
-      const response = await requestJson<AgentSubmitResponse>(
+      const response = await requestJson<
+        AgentResponseEnvelope<AgentSubmitResponse>
+      >(
         request,
         `${baseURL}/api/v1/agent/parse/file`,
         "agent-submit",
@@ -71,8 +90,9 @@ export function createOnlineAgentLiteMinerUClient(
           }),
         },
       );
-      const taskID = response.task_id ?? response.taskId;
-      const uploadURL = response.file_url ?? response.fileUrl;
+      const data = unwrapAgentData(response, "agent-submit");
+      const taskID = data.task_id ?? data.taskId;
+      const uploadURL = data.file_url ?? data.fileUrl;
       if (!taskID || !uploadURL) {
         throw new MinerUTaskError(
           "MinerU Agent submit response missing upload data",
@@ -93,13 +113,16 @@ export function createOnlineAgentLiteMinerUClient(
      * 查询在线 lite 任务状态并转换为统一状态。
      */
     async pollTask(taskID) {
-      const response = await requestJson<AgentPollResponse>(
+      const response = await requestJson<
+        AgentResponseEnvelope<AgentPollResponse>
+      >(
         request,
         `${baseURL}/api/v1/agent/parse/${encodeURIComponent(taskID)}`,
         "agent-poll",
         { method: "GET" },
       );
-      const state = String(response.state ?? response.status ?? "").toLowerCase();
+      const data = unwrapAgentData(response, "agent-poll");
+      const state = String(data.state ?? data.status ?? "").toLowerCase();
       if (["done", "success", "succeeded", "finished"].includes(state)) {
         return { status: "succeeded" };
       }
@@ -107,7 +130,10 @@ export function createOnlineAgentLiteMinerUClient(
         return {
           status: "failed",
           error:
-            response.err_msg || response.message || "MinerU Agent task failed",
+            data.err_msg ||
+            data.message ||
+            response.msg ||
+            "MinerU Agent task failed",
         };
       }
       return { status: "running" };
@@ -117,13 +143,16 @@ export function createOnlineAgentLiteMinerUClient(
      * 下载在线 lite Markdown 结果。
      */
     async downloadResult(taskID) {
-      const response = await requestJson<AgentPollResponse>(
+      const response = await requestJson<
+        AgentResponseEnvelope<AgentPollResponse>
+      >(
         request,
         `${baseURL}/api/v1/agent/parse/${encodeURIComponent(taskID)}`,
         "agent-download",
         { method: "GET" },
       );
-      const markdownURL = response.markdown_url ?? response.markdownUrl;
+      const data = unwrapAgentData(response, "agent-download");
+      const markdownURL = data.markdown_url ?? data.markdownUrl;
       if (!markdownURL) {
         return { kind: "lite", markdown: "" };
       }
