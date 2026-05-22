@@ -1758,7 +1758,7 @@ git commit -m "feat(reader): 复制全文 markdown 支持轻量结果兜底"
 - Modify: only task-related files from Tasks 1-8 if verification exposes a defect
 - Test: full test suite and type/build checks
 
-- [ ] **Step 1: Run type check**
+- [x] **Step 1: Run type check**
 
 Run:
 
@@ -1768,7 +1768,9 @@ Run:
 
 Expected: PASS with no TypeScript errors.
 
-- [ ] **Step 2: Run focused full test suite**
+执行记录：已运行 `.\node_modules\.bin\tsc.CMD --noEmit`，退出码为 0，无 TypeScript 错误。
+
+- [x] **Step 2: Run focused full test suite**
 
 Run:
 
@@ -1778,7 +1780,9 @@ Run:
 
 Expected: PASS. This project does not use Vitest.
 
-- [ ] **Step 3: Check diff for unrelated changes**
+执行记录：已运行 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，结果为 `149 passed`。本项目未运行 Vitest。
+
+- [x] **Step 3: Check diff for unrelated changes**
 
 Run:
 
@@ -1789,7 +1793,9 @@ git diff --stat
 
 Expected: only task-related source, test, locale, and docs changes are present. No generated `.scaffold/build` files or unrelated formatting-only XHTML churn should remain.
 
-- [ ] **Step 4: Run lint check if time allows**
+执行记录：已运行 `git status --short --branch` 和 `git diff --stat`。提交 Task 8 后工作区为 `## feat/api-source-parse-mode`，`git diff --stat` 为空；没有 `.scaffold/build` 或无关 XHTML 格式化 diff。
+
+- [x] **Step 4: Run lint check if time allows**
 
 Run:
 
@@ -1799,7 +1805,9 @@ pnpm run lint:check
 
 Expected: PASS. If lint finds formatting in unrelated XHTML or Markdown, revert unrelated formatting and rerun focused checks.
 
-- [ ] **Step 5: Commit final fixes if any**
+执行记录：已运行 `pnpm run lint:check`，失败于 Prettier 格式检查，列出 17 个文件，包括本计划外文件 `docs/superpowers/plans/2026-05-22-modules-directory-split.md`、多个既有 `src/modules/readerOverlay/*`、`src/modules/storage.ts`、`test/readerToolbar.test.ts` 等。为避免全仓库 `prettier --write` 产生无关格式化 diff，本轮未执行自动格式化；最终以类型检查、全量 scaffold 测试和干净工作区作为验收依据。
+
+- [x] **Step 5: Commit final fixes if any**
 
 If Step 1-4 required fixes, commit them:
 
@@ -1809,6 +1817,9 @@ git commit -m "test(mineru): 覆盖 API 来源与解析模式"
 ```
 
 Use an explicit file list instead of `git add .`.
+
+实现说明：
+本轮没有发现需要修改生产代码或测试代码的最终缺陷，只补充了 Task 9 的验证记录。最终验证命令中，`.\node_modules\.bin\tsc.CMD --noEmit` 通过，`.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail` 为 `149 passed`，`git status --short --branch` 与 `git diff --stat` 确认提交后无未提交任务 diff。`pnpm run lint:check` 未通过，原因是全仓库 Prettier 检查命中多处既有或计划外格式警告；为保持本任务 diff 聚焦，没有进行全仓库格式化。
 
 ## Self-Review
 
