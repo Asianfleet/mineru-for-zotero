@@ -685,7 +685,7 @@ git commit -m "feat(storage): 保存轻量解析 markdown"
 - Modify: `typings/i10n.d.ts`
 - Test: `test/parseManager.test.ts`
 
-- [ ] **Step 1: Add failing parse manager tests**
+- [x] **Step 1: Add failing parse manager tests**
 
 Add to `test/parseManager.test.ts`:
 
@@ -759,7 +759,7 @@ it("writes precise results only for precise client results", async function () {
 
 After production types are changed, update the test helper exactly as described in Step 8: add `getParseSource`, `getParseMode`, and `getLocalApiBaseURL` to `baseDependencies()`, and add `hasLiteResult`, `readPreferredMarkdown`, and `writeLiteResult` to `baseStorage()`.
 
-- [ ] **Step 2: Run focused parse manager tests and verify failure**
+- [x] **Step 2: Run focused parse manager tests and verify failure**
 
 Run:
 
@@ -769,7 +769,11 @@ Run:
 
 Expected: FAIL because parse manager does not understand mode/source or lite results.
 
-- [ ] **Step 3: Extend parse manager dependencies**
+注意：当前 `zotero-plugin-scaffold@0.8.2` 的 `zotero-plugin test` 不支持 `--grep`；此命令是原计划记录，实际验证需使用全量测试命令。
+
+执行记录：当前 `zotero-plugin test` CLI 不支持 `--grep`，该命令先因 `unknown option '--grep'` 失败，未能进入预期的测试用例失败阶段；随后改跑 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，结果按预期在新增测试 `does not require an API key for lite results` 上失败，报错为 `expected false to be true`，确认 red 阶段成立。
+
+- [x] **Step 3: Extend parse manager dependencies**
 
 In `src/modules/parseManager.ts`, import new preference getters:
 
@@ -800,7 +804,7 @@ createClient?: (settings: {
 }) => MinerUClient;
 ```
 
-- [ ] **Step 4: Add helper functions for settings**
+- [x] **Step 4: Add helper functions for settings**
 
 Add helpers near `getClient`:
 
@@ -827,7 +831,7 @@ getLocalApiBaseURL,
 createClient: (settings) => createMinerUClientForSettings(settings),
 ```
 
-- [ ] **Step 5: Make existing-result checks mode-specific**
+- [x] **Step 5: Make existing-result checks mode-specific**
 
 In both single and bulk parse paths, replace unconditional API-key and ready checks with:
 
@@ -857,7 +861,7 @@ async function hasExistingResultForMode(
 
 Use this helper where `hasReadyResult()` is currently used.
 
-- [ ] **Step 6: Branch writes by result kind**
+- [x] **Step 6: Branch writes by result kind**
 
 After `const result = await client.downloadResult(taskID);`, add:
 
@@ -885,7 +889,7 @@ Keep the existing normalize/writeResult flow under the precise branch:
 const boxes = normalizeMinerUBoxes(result.rawResult);
 ```
 
-- [ ] **Step 7: Add locale keys for lite/local errors**
+- [x] **Step 7: Add locale keys for lite/local errors**
 
 Append to `addon/locale/zh-CN/mainWindow.ftl`:
 
@@ -907,7 +911,7 @@ parse-error-local-api-unavailable = Local API service is unavailable: { $message
 
 Update `typings/i10n.d.ts` with those IDs.
 
-- [ ] **Step 8: Update test doubles**
+- [x] **Step 8: Update test doubles**
 
 In `test/parseManager.test.ts`, update `baseDependencies()` with:
 
@@ -927,7 +931,7 @@ writeLiteResult: async () => {},
 
 Update existing fake `downloadResult` return values to include `kind: "precise"` when they include `rawResult`.
 
-- [ ] **Step 9: Run parse manager tests**
+- [x] **Step 9: Run parse manager tests**
 
 Run:
 
@@ -937,12 +941,20 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 10: Commit parse manager branching**
+注意：当前 `zotero-plugin-scaffold@0.8.2` 的 `zotero-plugin test` 不支持 `--grep`；此命令是原计划记录，实际验证需使用全量测试命令。
+
+执行记录：当前 `zotero-plugin test` CLI 不支持 `--grep`，该命令无法作为 focused test 使用；已改跑 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，初始结果为 `132 passed`。审查后补充 bulk lite existing-result、空 lite Markdown、lite 写入失败错误分类，以及 createClient settings 透传用例，并重新验证为 `136 passed`；其中 `parseManager` 分组全部通过，新增 lite 模式分支测试通过。另运行 `.\node_modules\.bin\tsc.CMD --noEmit` 通过。
+
+- [x] **Step 10: Commit parse manager branching**
 
 ```powershell
 git add src\modules\parseManager.ts addon\locale\zh-CN\mainWindow.ftl addon\locale\en-US\mainWindow.ftl typings\i10n.d.ts test\parseManager.test.ts
 git commit -m "feat(parse): 按来源与模式处理解析结果"
 ```
+
+实现说明：
+本轮在 `parseManager` 中补齐了 source/mode 感知：默认依赖改为通过 `createMinerUClientForSettings()` 按当前设置创建 client，并读取 `parseSource`、`parseMode`、`localApiBaseURL` 与 `saveImages`。API key 现在仅在 `online/precise` 时为必需；单个与批量解析的“已有结果”判定也按 mode 区分为 `hasReadyResult()` 或 `hasLiteResult()`。
+同时移除了 Task 2 的临时 lite unsupported guard，改为在 `downloadResult()` 返回 `kind: "lite"` 时直接写入 `storage.writeLiteResult()`，并对空 Markdown 给出 `parse-error-empty-lite-markdown`。审查后将 write 阶段的 overwrite 错误分类收窄到 precise 既有结果，避免 lite 写失败时错误声称旧结果已保留；也新增了 createClient settings 透传测试，确认 `apiKey/source/mode/localApiBaseURL/saveImages` 会完整传给 factory。当前 Task 4 只负责 parseManager 分支接线，`online/lite` 与 `local/*` 的默认 factory 支持由后续 Task 5-7 接上。本轮还补充了 `parse-lite-finished` 等中英文 locale key 与 `typings/i10n.d.ts` ID，同步更新了 `parseManager` 测试桩，新增 lite 不需要 API key、lite 已有结果复用、bulk lite 已有结果复用、空 lite Markdown 不写入、lite 写入失败不报 overwrite、precise 结果写入等覆盖。测试方面，按计划记录了 `--grep` 在当前 scaffold CLI 下不可用，最终使用 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail` 全量验证通过，结果为 `136 passed`；另运行 `.\node_modules\.bin\tsc.CMD --noEmit` 通过。
 
 ## Task 5: Local API Client
 

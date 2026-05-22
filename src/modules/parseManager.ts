@@ -2,7 +2,7 @@ import type { AttachmentRef } from "./domain";
 import type { FluentMessageId } from "../../typings/i10n";
 import { normalizeMinerUBoxes } from "./boxNormalizer";
 import {
-  createMinerUClient,
+  createMinerUClientForSettings,
   MinerUFileAccessError,
   MinerURequestError,
   MinerUTaskError,
@@ -10,7 +10,15 @@ import {
 } from "./mineruClient";
 import { createStorage, type StorageAdapter } from "./storage";
 import { getString } from "../utils/locale";
-import { getApiKey, getSaveImages } from "../utils/prefs";
+import {
+  getApiKey,
+  getLocalApiBaseURL,
+  getParseMode,
+  getParseSource,
+  getSaveImages,
+  type ParseMode,
+  type ParseSource,
+} from "../utils/prefs";
 import { getMinerUStorageRoot } from "./preferenceScript";
 
 const POLL_INTERVAL_MS = 3000;
@@ -20,11 +28,20 @@ export type ReparseChoice = "use-existing" | "reparse";
 
 export interface ParseManagerDependencies {
   getApiKey: () => string;
+  getParseSource?: () => ParseSource;
+  getParseMode?: () => ParseMode;
+  getLocalApiBaseURL?: () => string;
   getSaveImages?: () => boolean;
   storage?: StorageAdapter;
   createStorage?: () => StorageAdapter;
   client?: MinerUClient;
-  createClient?: (apiKey: string) => MinerUClient;
+  createClient?: (settings: {
+    apiKey: string;
+    source: ParseSource;
+    mode: ParseMode;
+    localApiBaseURL: string;
+    saveImages: boolean;
+  }) => MinerUClient;
   showMessage: (id: FluentMessageId, args?: Record<string, string>) => void;
   confirmReparse: () => Promise<ReparseChoice>;
   isFileReadable: (filePath: string) => Promise<boolean>;
@@ -134,8 +151,10 @@ async function parseAttachmentsWithDependencies(
     return;
   }
 
+  const source = getCurrentParseSource(dependencies);
+  const mode = getCurrentParseMode(dependencies);
   const apiKey = dependencies.getApiKey().trim();
-  if (!apiKey) {
+  if (requiresApiKey(source, mode) && !apiKey) {
     dependencies.showMessage("parse-error-missing-api-key");
     return;
   }
@@ -151,6 +170,7 @@ async function parseAttachmentsWithDependencies(
 
   const readyAttachmentIDs = await getReadyAttachmentIDs(
     pdfAttachments,
+    mode,
     dependencies,
   );
   let attachmentsToParse = pdfAttachments;
@@ -177,6 +197,7 @@ async function parseAttachmentsWithDependencies(
 
 async function getReadyAttachmentIDs(
   attachments: Zotero.Item[],
+  mode: ParseMode,
   dependencies: ParseManagerDependencies,
 ): Promise<Set<number>> {
   const storage = getStorage(dependencies);
@@ -193,7 +214,7 @@ async function getReadyAttachmentIDs(
       if (!entry) {
         return null;
       }
-      return (await storage.hasReadyResult(entry.ref))
+      return (await hasExistingResultForMode(entry.ref, mode, storage))
         ? entry.attachment.id
         : null;
     }),
@@ -226,16 +247,22 @@ async function parseAttachmentWithDependencies(
     return;
   }
 
+  const source = getCurrentParseSource(dependencies);
+  const mode = getCurrentParseMode(dependencies);
   const apiKey = dependencies.getApiKey().trim();
-  if (!apiKey) {
+  if (requiresApiKey(source, mode) && !apiKey) {
     dependencies.showMessage("parse-error-missing-api-key");
     return;
   }
 
   const attachmentRef = await toAttachmentRef(attachment, filePath);
   const storage = getStorage(dependencies);
-  const hasReady = await storage.hasReadyResult(attachmentRef);
-  if (hasReady && options?.force !== true) {
+  const hasExistingResult = await hasExistingResultForMode(
+    attachmentRef,
+    mode,
+    storage,
+  );
+  if (hasExistingResult && options?.force !== true) {
     const choice = await dependencies.confirmReparse();
     if (choice === "use-existing") {
       dependencies.showMessage("parse-use-existing-result");
@@ -243,7 +270,16 @@ async function parseAttachmentWithDependencies(
     }
   }
 
-  const client = getClient(apiKey, dependencies);
+  const client = getClient(
+    {
+      apiKey,
+      source,
+      mode,
+      localApiBaseURL: dependencies.getLocalApiBaseURL?.() ?? "",
+      saveImages: dependencies.getSaveImages?.() !== false,
+    },
+    dependencies,
+  );
   let phase: ParsePhase = "submit";
   try {
     dependencies.showMessage("parse-started");
@@ -254,13 +290,18 @@ async function parseAttachmentWithDependencies(
     phase = "download";
     const result = await client.downloadResult(taskID);
     if (result.kind === "lite") {
-      dependencies.log("MinerU lite result is not supported yet", {
-        attachmentID: attachment.id,
-        taskID,
+      phase = "write";
+      if (!result.markdown.trim()) {
+        dependencies.showMessage("parse-error-empty-lite-markdown");
+        return;
+      }
+      await storage.writeLiteResult({
+        attachment: attachmentRef,
+        mineruTaskID: taskID,
+        source,
+        markdown: result.markdown,
       });
-      dependencies.showMessage("parse-error-generic", {
-        message: "Lite parse result is not supported yet",
-      });
+      dependencies.showMessage("parse-lite-finished");
       return;
     }
     const boxes = normalizeMinerUBoxes(result.rawResult);
@@ -298,7 +339,11 @@ async function parseAttachmentWithDependencies(
     }
 
     dependencies.log("MinerU parse failed", attachment.id, error);
-    const failure = getParseFailureMessage(error, phase, hasReady);
+    const failure = getParseFailureMessage(
+      error,
+      phase,
+      mode === "precise" && hasExistingResult,
+    );
     dependencies.showMessage(failure.id, failure.args);
   }
 }
@@ -442,9 +487,12 @@ function showMessage(id: FluentMessageId, args?: Record<string, string>): void {
 function createDefaultDependencies(): ParseManagerDependencies {
   return {
     getApiKey,
+    getParseSource,
+    getParseMode,
+    getLocalApiBaseURL,
     getSaveImages,
     createStorage: () => createStorage(getMinerUStorageRoot()),
-    createClient: (apiKey) => createMinerUClient({ apiKey }),
+    createClient: (settings) => createMinerUClientForSettings(settings),
     showMessage,
     confirmReparse,
     isFileReadable,
@@ -464,16 +512,48 @@ function getStorage(dependencies: ParseManagerDependencies): StorageAdapter {
 }
 
 function getClient(
-  apiKey: string,
+  settings: {
+    apiKey: string;
+    source: ParseSource;
+    mode: ParseMode;
+    localApiBaseURL: string;
+    saveImages: boolean;
+  },
   dependencies: ParseManagerDependencies,
 ): MinerUClient {
   if (dependencies.client) {
     return dependencies.client;
   }
   if (dependencies.createClient) {
-    return dependencies.createClient(apiKey);
+    return dependencies.createClient(settings);
   }
   throw new Error("Parse manager client dependency is missing");
+}
+
+function getCurrentParseSource(
+  dependencies: ParseManagerDependencies,
+): ParseSource {
+  return dependencies.getParseSource?.() ?? "online";
+}
+
+function getCurrentParseMode(
+  dependencies: ParseManagerDependencies,
+): ParseMode {
+  return dependencies.getParseMode?.() ?? "precise";
+}
+
+function requiresApiKey(source: ParseSource, mode: ParseMode): boolean {
+  return source === "online" && mode === "precise";
+}
+
+async function hasExistingResultForMode(
+  attachment: AttachmentRef,
+  mode: ParseMode,
+  storage: StorageAdapter,
+): Promise<boolean> {
+  return mode === "lite"
+    ? await storage.hasLiteResult(attachment)
+    : await storage.hasReadyResult(attachment);
 }
 
 async function getAttachmentFilePath(

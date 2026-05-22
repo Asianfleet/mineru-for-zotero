@@ -67,6 +67,7 @@ describe("parseManager", function () {
         },
         pollTask: async () => ({ status: "succeeded" }),
         downloadResult: async () => ({
+          kind: "precise",
           rawResult: {
             pages: [
               {
@@ -114,6 +115,7 @@ describe("parseManager", function () {
         },
         pollTask: async () => ({ status: "succeeded" }),
         downloadResult: async () => ({
+          kind: "precise",
           rawResult: {
             pages: [
               {
@@ -161,7 +163,11 @@ describe("parseManager", function () {
           throw new Error("submitPdf should not be called");
         },
         pollTask: async () => ({ status: "succeeded" }),
-        downloadResult: async () => ({ rawResult: {}, markdown: "" }),
+        downloadResult: async () => ({
+          kind: "precise",
+          rawResult: {},
+          markdown: "",
+        }),
       },
     });
 
@@ -170,6 +176,231 @@ describe("parseManager", function () {
     assert.isFalse(confirmCalled);
     assert.isFalse(submitCalled);
     assert.include(messages, "parse-error-missing-api-key");
+  });
+
+  it("does not require an API key for lite results", async function () {
+    const messages: string[] = [];
+    let wroteLite = false;
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getApiKey: () => "",
+      getParseSource: () => "online",
+      getParseMode: () => "lite",
+      storage: {
+        ...baseStorage(),
+        hasLiteResult: async () => false,
+        writeLiteResult: async () => {
+          wroteLite = true;
+        },
+      },
+      client: {
+        submitPdf: async () => ({ taskID: "lite-task" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({ kind: "lite", markdown: "# Lite" }),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.isTrue(wroteLite);
+    assert.notInclude(messages, "parse-error-missing-api-key");
+  });
+
+  it("writes precise results only for precise client results", async function () {
+    const messages: string[] = [];
+    let wrotePrecise = false;
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getParseSource: () => "online",
+      getParseMode: () => "precise",
+      storage: {
+        ...baseStorage(),
+        writeResult: async () => {
+          wrotePrecise = true;
+        },
+      },
+      client: {
+        submitPdf: async () => ({ taskID: "precise-task" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({
+          kind: "precise",
+          rawResult: {
+            pages: [
+              {
+                pageNo: 1,
+                width: 1000,
+                height: 1000,
+                blocks: [
+                  { type: "text", bbox: [0, 0, 100, 100], markdown: "A" },
+                ],
+              },
+            ],
+          },
+          markdown: "A",
+        }),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.isTrue(wrotePrecise);
+  });
+
+  it("uses an existing lite result when the user chooses not to reparse", async function () {
+    const messages: string[] = [];
+    let submitCalled = false;
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getParseSource: () => "online",
+      getParseMode: () => "lite",
+      storage: {
+        ...baseStorage(),
+        hasReadyResult: async () => false,
+        hasLiteResult: async () => true,
+      },
+      confirmReparse: async () => "use-existing",
+      client: {
+        submitPdf: async () => {
+          submitCalled = true;
+          throw new Error("submitPdf should not be called");
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({ kind: "lite", markdown: "# Lite" }),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.isFalse(submitCalled);
+    assert.include(messages, "parse-use-existing-result");
+  });
+
+  it("skips existing lite results once in bulk parsing", async function () {
+    const messages: string[] = [];
+    const submitted: string[] = [];
+    let confirmCount = 0;
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getParseSource: () => "online",
+      getParseMode: () => "lite",
+      storage: {
+        ...baseStorage(),
+        hasReadyResult: async () => {
+          throw new Error("hasReadyResult should not be used for lite mode");
+        },
+        hasLiteResult: async (attachment) => attachment.id === 1,
+      },
+      confirmReparse: async () => {
+        confirmCount += 1;
+        return "use-existing";
+      },
+      client: {
+        submitPdf: async (filePath) => {
+          submitted.push(filePath);
+          return { taskID: "lite-task" };
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({ kind: "lite", markdown: "# Lite" }),
+      },
+    });
+
+    await manager.parseAttachments([
+      pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
+      pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
+    ]);
+
+    assert.equal(confirmCount, 1);
+    assert.deepEqual(submitted, ["C:/tmp/b.pdf"]);
+  });
+
+  it("reports empty lite markdown without writing a lite result", async function () {
+    const messages: string[] = [];
+    let wroteLite = false;
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getParseSource: () => "online",
+      getParseMode: () => "lite",
+      storage: {
+        ...baseStorage(),
+        writeLiteResult: async () => {
+          wroteLite = true;
+        },
+      },
+      client: {
+        submitPdf: async () => ({ taskID: "lite-task" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({ kind: "lite", markdown: "  \n" }),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.isFalse(wroteLite);
+    assert.include(messages, "parse-error-empty-lite-markdown");
+  });
+
+  it("does not report lite write failures as kept overwrite errors", async function () {
+    const messages: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getParseSource: () => "online",
+      getParseMode: () => "lite",
+      storage: {
+        ...baseStorage(),
+        hasLiteResult: async () => true,
+        writeLiteResult: async () => {
+          throw new Error("disk full");
+        },
+      },
+      confirmReparse: async () => "reparse",
+      client: {
+        submitPdf: async () => ({ taskID: "lite-task" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({ kind: "lite", markdown: "# Lite" }),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.include(messages, "parse-error-generic");
+    assert.notInclude(messages, "parse-error-overwrite");
+  });
+
+  it("passes parse settings to created clients", async function () {
+    const messages: string[] = [];
+    let receivedSettings: Parameters<
+      NonNullable<ParseManagerDependencies["createClient"]>
+    >[0] | null = null;
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      client: undefined,
+      getApiKey: () => "",
+      getParseSource: () => "local",
+      getParseMode: () => "lite",
+      getLocalApiBaseURL: () => "http://127.0.0.1:9000",
+      getSaveImages: () => false,
+      createClient: (settings) => {
+        receivedSettings = settings;
+        return {
+          submitPdf: async () => ({ taskID: "lite-task" }),
+          pollTask: async () => ({ status: "succeeded" }),
+          downloadResult: async () => ({
+            kind: "lite",
+            markdown: "# Lite",
+          }),
+        };
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.deepEqual(receivedSettings, {
+      apiKey: "",
+      source: "local",
+      mode: "lite",
+      localApiBaseURL: "http://127.0.0.1:9000",
+      saveImages: false,
+    });
   });
 
   it("stops before network calls when the API Key is missing", async function () {
@@ -184,7 +415,11 @@ describe("parseManager", function () {
           throw new Error("submitPdf should not be called");
         },
         pollTask: async () => ({ status: "succeeded" }),
-        downloadResult: async () => ({ rawResult: {}, markdown: "" }),
+        downloadResult: async () => ({
+          kind: "precise",
+          rawResult: {},
+          markdown: "",
+        }),
       },
     });
 
@@ -227,7 +462,11 @@ describe("parseManager", function () {
           throw new MinerUFileAccessError("C:/tmp/a.pdf", "EACCES");
         },
         pollTask: async () => ({ status: "succeeded" }),
-        downloadResult: async () => ({ rawResult: {}, markdown: "" }),
+        downloadResult: async () => ({
+          kind: "precise",
+          rawResult: {},
+          markdown: "",
+        }),
       },
     });
 
@@ -249,7 +488,11 @@ describe("parseManager", function () {
           throw new TypeError("unexpected client bug");
         },
         pollTask: async () => ({ status: "succeeded" }),
-        downloadResult: async () => ({ rawResult: {}, markdown: "" }),
+        downloadResult: async () => ({
+          kind: "precise",
+          rawResult: {},
+          markdown: "",
+        }),
       },
     });
 
@@ -275,7 +518,11 @@ describe("parseManager", function () {
           throw new Error("submitPdf should not be called");
         },
         pollTask: async () => ({ status: "succeeded" }),
-        downloadResult: async () => ({ rawResult: {}, markdown: "" }),
+        downloadResult: async () => ({
+          kind: "precise",
+          rawResult: {},
+          markdown: "",
+        }),
       },
     });
 
@@ -300,6 +547,7 @@ describe("parseManager", function () {
         submitPdf: async () => ({ taskID: "task-empty" }),
         pollTask: async () => ({ status: "succeeded" }),
         downloadResult: async () => ({
+          kind: "precise",
           rawResult: { content_list: [{ type: "text" }] },
           markdown: "# No boxes",
         }),
@@ -330,6 +578,7 @@ describe("parseManager", function () {
         submitPdf: async () => ({ taskID: "task-images" }),
         pollTask: async () => ({ status: "succeeded" }),
         downloadResult: async () => ({
+          kind: "precise",
           rawResult: {
             pages: [
               {
@@ -373,6 +622,7 @@ describe("parseManager", function () {
         submitPdf: async () => ({ taskID: "task-images" }),
         pollTask: async () => ({ status: "succeeded" }),
         downloadResult: async () => ({
+          kind: "precise",
           rawResult: {
             pages: [
               {
@@ -413,6 +663,7 @@ describe("parseManager", function () {
         submitPdf: async () => ({ taskID: "task-empty" }),
         pollTask: async () => ({ status: "succeeded" }),
         downloadResult: async () => ({
+          kind: "precise",
           rawResult: { content_list: [{ type: "text" }] },
           markdown: "# No boxes",
         }),
@@ -443,6 +694,7 @@ describe("parseManager", function () {
         submitPdf: async () => ({ taskID: "task-new" }),
         pollTask: async () => ({ status: "succeeded" }),
         downloadResult: async () => ({
+          kind: "precise",
           rawResult: {
             pages: [
               {
@@ -481,6 +733,7 @@ describe("parseManager", function () {
         submitPdf: async () => ({ taskID: "task-new" }),
         pollTask: async () => ({ status: "succeeded" }),
         downloadResult: async () => ({
+          kind: "precise",
           rawResult: {
             pages: [
               {
@@ -515,7 +768,11 @@ describe("parseManager", function () {
             throw new MinerURequestError("upload", 403, "bad signature");
           },
           pollTask: async () => ({ status: "succeeded" }),
-          downloadResult: async () => ({ rawResult: {}, markdown: "" }),
+          downloadResult: async () => ({
+            kind: "precise",
+            rawResult: {},
+            markdown: "",
+          }),
         },
         expected: "parse-error-upload",
       },
@@ -526,7 +783,11 @@ describe("parseManager", function () {
             status: "failed",
             error: "quota exceeded",
           }),
-          downloadResult: async () => ({ rawResult: {}, markdown: "" }),
+          downloadResult: async () => ({
+            kind: "precise",
+            rawResult: {},
+            markdown: "",
+          }),
         },
         expected: "parse-error-mineru",
       },
@@ -559,11 +820,15 @@ describe("parseManager", function () {
 function baseDependencies(messages: string[]): ParseManagerDependencies {
   return {
     getApiKey: () => "secret-token",
+    getParseSource: () => "online",
+    getParseMode: () => "precise",
+    getLocalApiBaseURL: () => "http://127.0.0.1:8000",
     storage: baseStorage(),
     client: {
       submitPdf: async () => ({ taskID: "task-1" }),
       pollTask: async () => ({ status: "succeeded" }),
       downloadResult: async () => ({
+        kind: "precise",
         rawResult: { pages: [{ pageNo: 1 }] },
         markdown: "",
       }),
@@ -582,12 +847,16 @@ function baseStorage(): ParseManagerDependencies["storage"] {
   return {
     getAttachmentDir: () => "TmpD/mineru-copy/attachments/12-ABC123",
     hasReadyResult: async () => false,
+    hasLiteResult: async () => false,
     readManifest: async () => {
       throw new Error("not needed");
     },
+    readMarkdown: async () => "",
+    readPreferredMarkdown: async () => "",
     readBoxes: async () => normalizedBoxes,
     writeResult: async () => {},
     writeFailedResult: async () => {},
+    writeLiteResult: async () => {},
     countReadyResults: async () => 0,
     openDataFolder: async () => {},
   };
