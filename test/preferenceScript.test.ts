@@ -15,6 +15,24 @@ import {
 } from "../src/utils/prefs";
 
 describe("preferenceScript", function () {
+  it("groups preferences into API service, data storage, and about sections", async function () {
+    const preferences = await fetchPreferencePanelMarkup();
+
+    assertIncreasingIndexes(preferences, [
+      'data-l10n-id="mineruForZotero-pref-api-service-title"',
+      'id="zotero-prefpane-mineruForZotero-api-key"',
+      'id="zotero-prefpane-mineruForZotero-local-api-base-url"',
+      'id="zotero-prefpane-mineruForZotero-parse-source"',
+      'id="zotero-prefpane-mineruForZotero-parse-mode"',
+      'data-l10n-id="mineruForZotero-pref-data-storage-title"',
+      'id="zotero-prefpane-mineruForZotero-save-images"',
+      'id="mineruForZotero-open-data-folder"',
+      'data-l10n-id="mineruForZotero-pref-about-title"',
+    ]);
+    assertAboutSectionInsideMainGroupbox(preferences);
+    assertSectionHeadingLevels(preferences);
+  });
+
   it("opens about links through Zotero's default browser launcher", function () {
     const opened: string[] = [];
     const launcher = {
@@ -186,4 +204,45 @@ function fakePreferenceDocument(
       return [] as unknown as NodeListOf<Element>;
     },
   } as unknown as Document;
+}
+
+function assertIncreasingIndexes(source: string, snippets: string[]): void {
+  let previousIndex = -1;
+  for (const snippet of snippets) {
+    const index = source.indexOf(snippet);
+    assert.isAtLeast(index, 0, `missing snippet: ${snippet}`);
+    assert.isAbove(index, previousIndex, `out-of-order snippet: ${snippet}`);
+    previousIndex = index;
+  }
+}
+
+function assertAboutSectionInsideMainGroupbox(source: string): void {
+  const aboutIndex = source.indexOf(
+    'data-l10n-id="mineruForZotero-pref-about-title"',
+  );
+  const groupboxEndIndex = source.lastIndexOf("</groupbox>");
+  assert.isAtLeast(aboutIndex, 0, "missing about section heading");
+  assert.isAbove(groupboxEndIndex, aboutIndex, "about section is outside groupbox");
+}
+
+function assertSectionHeadingLevels(source: string): void {
+  for (const id of [
+    "mineruForZotero-pref-api-service-title",
+    "mineruForZotero-pref-data-storage-title",
+    "mineruForZotero-pref-about-title",
+  ]) {
+    assert.include(source, `<html:h2 data-l10n-id="${id}"></html:h2>`);
+  }
+}
+
+async function fetchPreferencePanelMarkup(): Promise<string> {
+  return fetchText("chrome://mineruForZotero/content/preferences.xhtml");
+}
+
+async function fetchText(url: string): Promise<string> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${url}: ${response.status}`);
+  }
+  return response.text();
 }
