@@ -32,9 +32,7 @@ export interface MinerUClientOptions {
   readBinary?: (filePath: string) => Promise<Uint8Array>;
   uploadBinary?: (url: string, body: Uint8Array) => Promise<Response>;
   downloadBinary?: (url: string) => Promise<Response>;
-  downloadFileBytes?: (
-    url: string,
-  ) => Promise<Uint8Array | ZipEntries>;
+  downloadFileBytes?: (url: string) => Promise<Uint8Array | ZipEntries>;
   downloadRetryDelayMs?: number;
   maxDownloadAttempts?: number;
 }

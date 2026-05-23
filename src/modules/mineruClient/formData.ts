@@ -19,7 +19,7 @@ export function buildLocalTaskFormData(input: {
   const fields = localTaskFields(input.mode, input.saveImages);
   const parts: Uint8Array[] = [
     encodeText(
-        `--${boundary}\r\n` +
+      `--${boundary}\r\n` +
         `Content-Disposition: form-data; name="files"; filename="${escapeMultipartValue(
           LOCAL_UPLOAD_FILE_NAME,
         )}"\r\n` +

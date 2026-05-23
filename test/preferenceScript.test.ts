@@ -222,7 +222,11 @@ function assertAboutSectionInsideMainGroupbox(source: string): void {
   );
   const groupboxEndIndex = source.lastIndexOf("</groupbox>");
   assert.isAtLeast(aboutIndex, 0, "missing about section heading");
-  assert.isAbove(groupboxEndIndex, aboutIndex, "about section is outside groupbox");
+  assert.isAbove(
+    groupboxEndIndex,
+    aboutIndex,
+    "about section is outside groupbox",
+  );
 }
 
 function assertSectionHeadingLevels(source: string): void {

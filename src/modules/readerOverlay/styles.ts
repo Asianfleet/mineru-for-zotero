@@ -1,7 +1,4 @@
-import {
-  getParentWindow,
-  getWindowDocument,
-} from "./windows";
+import { getParentWindow, getWindowDocument } from "./windows";
 
 export const READER_OVERLAY_STYLE_ID = "mineru-copy-overlay-styles";
 export const READER_OVERLAY_THEME_VARIABLES = [
@@ -221,7 +218,9 @@ export function isSafeCssCustomPropertyValue(value: string): boolean {
 
 /** 兼容测试桩对象，安全读取 getPropertyValue 的返回值。 */
 function getPropertyValue(
-  computedStyle: CSSStyleDeclaration | { getPropertyValue: (name: string) => string },
+  computedStyle:
+    | CSSStyleDeclaration
+    | { getPropertyValue: (name: string) => string },
   name: string,
 ): string {
   return computedStyle.getPropertyValue(name).trim();

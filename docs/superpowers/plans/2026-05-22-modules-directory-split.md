@@ -69,6 +69,7 @@
 ## Task 0: Baseline Checks
 
 **Files:**
+
 - Read: `docs/superpowers/specs/2026-05-22-modules-directory-split-design.md`
 - Read: `src/modules/mineruClient.ts`
 - Read: `src/modules/readerToolbar.ts`
@@ -115,6 +116,7 @@ Stop after Task 4 and wait for user acceptance before starting Checkpoint 2.
 ### Task 1: Move `mineruClient` To A Directory Entrypoint
 
 **Files:**
+
 - Create: `src/modules/mineruClient/index.ts`
 - Delete: `src/modules/mineruClient.ts`
 - Modify: imports inside the moved file
@@ -166,6 +168,7 @@ Expected: exits with code 0. This proves `from "./mineruClient"` and `from "../s
 ### Task 2: Extract `mineruClient` Types, Errors, API Helpers, And Path Helpers
 
 **Files:**
+
 - Create: `src/modules/mineruClient/types.ts`
 - Create: `src/modules/mineruClient/errors.ts`
 - Create: `src/modules/mineruClient/api.ts`
@@ -261,10 +264,7 @@ import {
   requestJson,
   requestOk,
 } from "./api";
-import {
-  MinerUFileAccessError,
-  MinerUTaskError,
-} from "./errors";
+import { MinerUFileAccessError, MinerUTaskError } from "./errors";
 import type { MinerUClient, MinerUClientOptions } from "./types";
 import { basename, normalizeBaseURL } from "./path";
 
@@ -289,6 +289,7 @@ Expected: exits with code 0.
 ### Task 3: Extract `mineruClient` HTTP, Download, ZIP, And Result Modules
 
 **Files:**
+
 - Create: `src/modules/mineruClient/http.ts`
 - Create: `src/modules/mineruClient/download.ts`
 - Create: `src/modules/mineruClient/zip.ts`
@@ -413,6 +414,7 @@ Expected: exits with code 0.
 ### Task 4: Checkpoint 1 Verification And Manual Acceptance
 
 **Files:**
+
 - Verify: `src/modules/mineruClient/*.ts`
 - Verify: `test/mineruClient.test.ts`
 - Verify: `test/parseManager.test.ts`
@@ -474,6 +476,7 @@ Start only after the user accepts Checkpoint 1. Stop after Task 8 and wait for u
 ### Task 5: Move `readerToolbar` To A Directory Entrypoint
 
 **Files:**
+
 - Create: `src/modules/readerToolbar/index.ts`
 - Delete: `src/modules/readerToolbar.ts`
 - Modify: imports inside the moved file
@@ -535,6 +538,7 @@ Expected: exits with code 0.
 ### Task 6: Extract Toolbar Types, Store, Assets, And Panel DOM
 
 **Files:**
+
 - Create: `src/modules/readerToolbar/types.ts`
 - Create: `src/modules/readerToolbar/store.ts`
 - Create: `src/modules/readerToolbar/assets.ts`
@@ -673,6 +677,7 @@ Expected: exits with code 0.
 ### Task 7: Extract Toolbar Registration, Binding, Commands, And Diagnostics
 
 **Files:**
+
 - Create: `src/modules/readerToolbar/registration.ts`
 - Create: `src/modules/readerToolbar/binding.ts`
 - Create: `src/modules/readerToolbar/commands.ts`
@@ -750,6 +755,7 @@ Expected: exits with code 0.
 ### Task 8: Checkpoint 2 Verification And Manual Acceptance
 
 **Files:**
+
 - Verify: `src/modules/readerToolbar/*.ts`
 - Verify: `test/readerToolbar.test.ts`
 - Verify: `src/hooks.ts`
@@ -812,6 +818,7 @@ Start only after the user accepts Checkpoint 2. Stop after Task 12 and wait for 
 ### Task 9: Move `readerOverlay` To A Directory Entrypoint
 
 **Files:**
+
 - Create: `src/modules/readerOverlay/index.ts`
 - Delete: `src/modules/readerOverlay.ts`
 - Modify: imports inside the moved file
@@ -869,6 +876,7 @@ Expected: exits with code 0.
 ### Task 10: Extract Overlay Types, State, Windows, Styles, And Diagnostics
 
 **Files:**
+
 - Create: `src/modules/readerOverlay/types.ts`
 - Create: `src/modules/readerOverlay/state.ts`
 - Create: `src/modules/readerOverlay/windows.ts`
@@ -973,6 +981,7 @@ Expected: exits with code 0.
 ### Task 11: Extract Overlay Render, Selection, Positioning, Copy, And Notice Modules
 
 **Files:**
+
 - Create: `src/modules/readerOverlay/render.ts`
 - Create: `src/modules/readerOverlay/selection.ts`
 - Create: `src/modules/readerOverlay/positioning.ts`
@@ -1092,6 +1101,7 @@ Expected: exits with code 0.
 ### Task 12: Checkpoint 3 Verification And Final Acceptance
 
 **Files:**
+
 - Verify: `src/modules/readerOverlay/*.ts`
 - Verify: `test/readerOverlay.test.ts`
 - Verify: `test/readerToolbar.test.ts`

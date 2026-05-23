@@ -33,7 +33,9 @@ export function readRawResultFromZip(zip: ZipEntries): unknown | null {
 /**
  * 从 MinerU 结果 ZIP 中提取可保存的图片资源。
  */
-export function readImagesFromZip(zip: ZipEntries): MinerUImageFile[] | undefined {
+export function readImagesFromZip(
+  zip: ZipEntries,
+): MinerUImageFile[] | undefined {
   const images: MinerUImageFile[] = [];
   for (const [name, entry] of zip) {
     const imagePath = getZipImagePath(name);
@@ -50,9 +52,7 @@ export function readImagesFromZip(zip: ZipEntries): MinerUImageFile[] | undefine
  */
 export function shouldKeepZipEntry(name: string): boolean {
   return (
-    name.endsWith(".md") ||
-    name.endsWith(".json") ||
-    isZipImageEntry(name)
+    name.endsWith(".md") || name.endsWith(".json") || isZipImageEntry(name)
   );
 }
 

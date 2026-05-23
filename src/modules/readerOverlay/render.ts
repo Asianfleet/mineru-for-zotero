@@ -2,10 +2,7 @@ import { formatBoxesForCopy, formatFormulaForCopy } from "../copyFormatter";
 import { safeReaderOverlayCleanup } from "./diagnostics";
 import { readerOverlayString } from "./notice";
 import { copyText } from "./copy";
-import {
-  setBoxSelectedClass,
-  selectBoxRange,
-} from "./selection";
+import { setBoxSelectedClass, selectBoxRange } from "./selection";
 import type {
   NormalizedBox,
   OverlayMode,
@@ -194,7 +191,9 @@ export function isFormulaBox(box: NormalizedBox): boolean {
 }
 
 /** 过滤出当前页真正需要渲染的 box 集合。 */
-export function getRenderablePageBoxes(boxes: NormalizedBox[]): NormalizedBox[] {
+export function getRenderablePageBoxes(
+  boxes: NormalizedBox[],
+): NormalizedBox[] {
   return boxes.filter((box) => !isStructuralReferenceContainerBox(box, boxes));
 }
 
@@ -275,7 +274,9 @@ export function formatBoxTypeLabel(type: string): string {
     unknown: { id: "reader-box-type-unknown", fallback: "Unknown" },
   };
   const label = labels[normalized];
-  return label ? readerOverlayString(label.id as never, label.fallback) : normalized;
+  return label
+    ? readerOverlayString(label.id as never, label.fallback)
+    : normalized;
 }
 
 /** 判断当前 type 是否属于 reference 类 box。 */

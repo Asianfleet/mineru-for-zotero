@@ -118,10 +118,7 @@ describe("mineruClient", function () {
             return jsonResponse({ status: "healthy" });
           }
           submittedBody = init?.body as Uint8Array;
-          submittedContentType = headerValue(
-            init?.headers,
-            "Content-Type",
-          );
+          submittedContentType = headerValue(init?.headers, "Content-Type");
           return jsonResponse({ task_id: "local-task" }, 202);
         },
       });
@@ -1445,10 +1442,7 @@ function jsonResponse(value: unknown, status = 200): Response {
   });
 }
 
-function headerValue(
-  headers: HeadersInit | undefined,
-  name: string,
-): string {
+function headerValue(headers: HeadersInit | undefined, name: string): string {
   if (!headers) {
     return "";
   }
@@ -1620,7 +1614,7 @@ function deflateRawStoredBlock(bytes: Uint8Array): Uint8Array {
   result[0] = 0x01;
   result[1] = bytes.length & 0xff;
   result[2] = (bytes.length >>> 8) & 0xff;
-  const inverted = (~bytes.length) & 0xffff;
+  const inverted = ~bytes.length & 0xffff;
   result[3] = inverted & 0xff;
   result[4] = (inverted >>> 8) & 0xff;
   result.set(bytes, 5);

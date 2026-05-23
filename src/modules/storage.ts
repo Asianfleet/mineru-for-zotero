@@ -542,7 +542,11 @@ function normalizePath(path: string): string {
 
 function normalizeSafeRelativePath(path: string): string | null {
   const normalized = normalizePath(path);
-  if (!normalized || normalized.startsWith("/") || /^[a-z]:/i.test(normalized)) {
+  if (
+    !normalized ||
+    normalized.startsWith("/") ||
+    /^[a-z]:/i.test(normalized)
+  ) {
     return null;
   }
   const parts = normalized.split("/");

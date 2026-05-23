@@ -426,9 +426,7 @@ describe("readerToolbar", function () {
       menu: HTMLDivElement,
       sync: () => void,
       options?: {
-        applyMode?: (
-          mode: "all" | "hover" | "off",
-        ) => void | Promise<unknown>;
+        applyMode?: (mode: "all" | "hover" | "off") => void | Promise<unknown>;
       },
     ) => void;
 
@@ -452,7 +450,10 @@ describe("readerToolbar", function () {
         findToolbarButtonByLabel(menu, "Disable plugin features").className,
         "active",
       );
-      assert.equal(findToolbarButtonByLabel(menu, "Show all boxes").className, "");
+      assert.equal(
+        findToolbarButtonByLabel(menu, "Show all boxes").className,
+        "",
+      );
 
       resolveApply?.();
       await Promise.resolve();
@@ -463,7 +464,10 @@ describe("readerToolbar", function () {
         findToolbarButtonByLabel(menu, "Disable plugin features").className,
         "active",
       );
-      assert.equal(findToolbarButtonByLabel(menu, "Show all boxes").className, "");
+      assert.equal(
+        findToolbarButtonByLabel(menu, "Show all boxes").className,
+        "",
+      );
     } finally {
       restoreLocale();
     }
@@ -659,16 +663,13 @@ function installReaderToolbarLocale(): () => void {
             const values: Record<string, string> = {
               "mineruForZotero-reader-mode-group-label": "Mode",
               "mineruForZotero-reader-show-all-boxes": "Show all boxes",
-              "mineruForZotero-reader-show-hover-box":
-                "Show only hovered box",
+              "mineruForZotero-reader-show-hover-box": "Show only hovered box",
               "mineruForZotero-reader-disable-plugin":
                 "Disable plugin features",
-              "mineruForZotero-reader-selected-boxes-label":
-                "Selected content",
+              "mineruForZotero-reader-selected-boxes-label": "Selected content",
               "mineruForZotero-reader-copy-selected-boxes":
                 "Copy selected content",
-              "mineruForZotero-reader-copy-full-markdown":
-                "Copy full markdown",
+              "mineruForZotero-reader-copy-full-markdown": "Copy full markdown",
               "mineruForZotero-reader-clear-selection": "Clear selection",
             };
             return messages.map(({ id }) => ({

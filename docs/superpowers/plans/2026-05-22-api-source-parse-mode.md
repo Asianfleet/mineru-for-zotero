@@ -36,6 +36,7 @@
 ## Task 1: Preferences And Locale Surface
 
 **Files:**
+
 - Modify: `typings/prefs.d.ts`
 - Modify: `addon/prefs.js`
 - Modify: `src/utils/prefs.ts`
@@ -249,6 +250,7 @@ git commit -m "feat(prefs): 增加 API 来源与解析模式设置"
 ## Task 2: Client Result Types And Factory
 
 **Files:**
+
 - Modify: `src/modules/mineruClient/types.ts`
 - Create: `src/modules/mineruClient/onlinePrecise.ts`
 - Create: `src/modules/mineruClient/factory.ts`
@@ -274,7 +276,10 @@ it("creates the online precise client by default", async function () {
       if (String(url).endsWith("/api/v4/file-urls/batch")) {
         return jsonResponse({
           code: 0,
-          data: { batch_id: "batch-1", file_urls: ["https://upload.example/a"] },
+          data: {
+            batch_id: "batch-1",
+            file_urls: ["https://upload.example/a"],
+          },
         });
       }
       return new Response("", { status: 200 });
@@ -390,7 +395,9 @@ export function createMinerUClientForSettings(
   if (options.source === "online" && options.mode === "precise") {
     return createOnlinePreciseMinerUClient(options);
   }
-  throw new Error(`Unsupported MinerU client mode: ${options.source}/${options.mode}`);
+  throw new Error(
+    `Unsupported MinerU client mode: ${options.source}/${options.mode}`,
+  );
 }
 ```
 
@@ -458,6 +465,7 @@ git commit -m "refactor(mineru): 拆分在线精准 client"
 ## Task 3: Storage Lite Results And Preferred Markdown
 
 **Files:**
+
 - Modify: `src/modules/domain.ts`
 - Modify: `src/modules/storage.ts`
 - Test: `test/storage.test.ts`
@@ -613,7 +621,10 @@ async writeLiteResult(input) {
 If TypeScript rejects `this.readMarkdown(ref)` inside the object, use a local helper:
 
 ```ts
-async function readReadyMarkdown(root: string, ref: AttachmentKeyRef): Promise<string> {
+async function readReadyMarkdown(
+  root: string,
+  ref: AttachmentKeyRef,
+): Promise<string> {
   const dir = getAttachmentDir(root, ref);
   const manifest = await readManifestFile(dir);
   if (manifest.status !== "ready") {
@@ -636,7 +647,10 @@ await preserveLiteFiles(targetDir, tempDir);
 Add helper:
 
 ```ts
-async function preserveLiteFiles(sourceDir: string, targetDir: string): Promise<void> {
+async function preserveLiteFiles(
+  sourceDir: string,
+  targetDir: string,
+): Promise<void> {
   for (const fileName of [LITE_CONTENT_FILE, LITE_MANIFEST_FILE]) {
     const source = joinPath(sourceDir, fileName);
     if (!(await exists(source))) {
@@ -679,6 +693,7 @@ git commit -m "feat(storage): 保存轻量解析 markdown"
 ## Task 4: Parse Manager Mode Branching
 
 **Files:**
+
 - Modify: `src/modules/parseManager.ts`
 - Modify: `addon/locale/zh-CN/mainWindow.ftl`
 - Modify: `addon/locale/en-US/mainWindow.ftl`
@@ -809,11 +824,15 @@ createClient?: (settings: {
 Add helpers near `getClient`:
 
 ```ts
-function getCurrentParseSource(dependencies: ParseManagerDependencies): ParseSource {
+function getCurrentParseSource(
+  dependencies: ParseManagerDependencies,
+): ParseSource {
   return dependencies.getParseSource?.() ?? "online";
 }
 
-function getCurrentParseMode(dependencies: ParseManagerDependencies): ParseMode {
+function getCurrentParseMode(
+  dependencies: ParseManagerDependencies,
+): ParseMode {
   return dependencies.getParseMode?.() ?? "precise";
 }
 
@@ -959,6 +978,7 @@ git commit -m "feat(parse): 按来源与模式处理解析结果"
 ## Task 5: Local API Client
 
 **Files:**
+
 - Create: `src/modules/mineruClient/formData.ts`
 - Create: `src/modules/mineruClient/local.ts`
 - Modify: `src/modules/mineruClient/factory.ts`
@@ -1061,11 +1081,23 @@ export function buildLocalTaskFormData(input: {
   form.append("table_enable", "true");
   form.append("image_analysis", "true");
   form.append("return_md", "true");
-  form.append("return_middle_json", input.mode === "precise" ? "true" : "false");
+  form.append(
+    "return_middle_json",
+    input.mode === "precise" ? "true" : "false",
+  );
   form.append("return_model_output", "false");
-  form.append("return_content_list", input.mode === "precise" ? "true" : "false");
-  form.append("return_images", input.mode === "precise" && input.saveImages ? "true" : "false");
-  form.append("response_format_zip", input.mode === "precise" ? "true" : "false");
+  form.append(
+    "return_content_list",
+    input.mode === "precise" ? "true" : "false",
+  );
+  form.append(
+    "return_images",
+    input.mode === "precise" && input.saveImages ? "true" : "false",
+  );
+  form.append(
+    "response_format_zip",
+    input.mode === "precise" ? "true" : "false",
+  );
   form.append("return_original_file", "false");
   form.append("start_page_id", "0");
   form.append("end_page_id", "99999");
@@ -1083,7 +1115,11 @@ import { buildLocalTaskFormData } from "./formData";
 import { readFileBytes, readPdfBytes } from "./file";
 import { createDefaultRequest, normalizeBinary } from "./http";
 import { normalizeBaseURL } from "./path";
-import type { MinerUClient, MinerUClientOptions, MinerUParseMode } from "./types";
+import type {
+  MinerUClient,
+  MinerUClientOptions,
+  MinerUParseMode,
+} from "./types";
 
 type LocalTaskResponse = {
   task_id?: string;
@@ -1137,11 +1173,18 @@ export function createLocalMinerUClient(
         { method: "GET" },
       );
       const status = String(response.status ?? "").toLowerCase();
-      if (["done", "success", "succeeded", "finished", "completed"].includes(status)) {
+      if (
+        ["done", "success", "succeeded", "finished", "completed"].includes(
+          status,
+        )
+      ) {
         return { status: "succeeded" };
       }
       if (["failed", "fail", "error"].includes(status)) {
-        return { status: "failed", error: response.message || "Local MinerU task failed" };
+        return {
+          status: "failed",
+          error: response.message || "Local MinerU task failed",
+        };
       }
       return { status: "running" };
     },
@@ -1203,6 +1246,7 @@ git commit -m "feat(mineru): 提交本地异步解析任务"
 ## Task 6: Local API Result Download
 
 **Files:**
+
 - Modify: `src/modules/mineruClient/local.ts`
 - Modify: `src/modules/mineruClient/result.ts`
 - Test: `test/mineruClient.test.ts`
@@ -1232,7 +1276,9 @@ it("downloads local lite markdown from JSON results", async function () {
 });
 
 it("downloads local precise markdown and raw result from JSON results", async function () {
-  const raw = { pdf_info: [{ page_idx: 0, page_size: [100, 200], para_blocks: [] }] };
+  const raw = {
+    pdf_info: [{ page_idx: 0, page_size: [100, 200], para_blocks: [] }],
+  };
   const client = createMinerUClientForSettings({
     source: "local",
     mode: "precise",
@@ -1279,12 +1325,15 @@ In `src/modules/mineruClient/local.ts`, add:
 
 ```ts
 type LocalResultResponse = {
-  results?: Record<string, {
-    md_content?: string;
-    middle_json?: unknown;
-    content_list?: unknown;
-    images?: Record<string, string>;
-  }>;
+  results?: Record<
+    string,
+    {
+      md_content?: string;
+      middle_json?: unknown;
+      content_list?: unknown;
+      images?: Record<string, string>;
+    }
+  >;
 };
 
 function firstLocalResult(response: LocalResultResponse) {
@@ -1338,7 +1387,9 @@ if (options.mode === "lite") {
 return {
   kind: "precise",
   markdown,
-  rawResult: parseMaybeJson(result.middle_json ?? result.content_list ?? response),
+  rawResult: parseMaybeJson(
+    result.middle_json ?? result.content_list ?? response,
+  ),
   images: decodeDataURLImages(result.images),
 };
 ```
@@ -1372,13 +1423,19 @@ Add helper functions in `local.ts` or `result.ts`:
 
 ```ts
 function readLocalZipMarkdown(zip: ZipEntries): string {
-  const entry = Array.from(zip.values()).find((item) => item.name.endsWith(".md"));
+  const entry = Array.from(zip.values()).find((item) =>
+    item.name.endsWith(".md"),
+  );
   return entry ? decodeText(entry.bytes) : "";
 }
 
 function readLocalZipRawResult(zip: ZipEntries): unknown {
-  const middle = Array.from(zip.values()).find((item) => item.name.endsWith("_middle.json"));
-  const content = Array.from(zip.values()).find((item) => item.name.endsWith("_content_list.json"));
+  const middle = Array.from(zip.values()).find((item) =>
+    item.name.endsWith("_middle.json"),
+  );
+  const content = Array.from(zip.values()).find((item) =>
+    item.name.endsWith("_content_list.json"),
+  );
   const entry = middle ?? content;
   return entry ? JSON.parse(decodeText(entry.bytes)) : {};
 }
@@ -1410,6 +1467,7 @@ git commit -m "feat(mineru): 读取本地解析结果"
 ## Task 7: Online Agent Lite Client
 
 **Files:**
+
 - Create: `src/modules/mineruClient/agentLite.ts`
 - Modify: `src/modules/mineruClient/factory.ts`
 - Test: `test/mineruClient.test.ts`
@@ -1441,7 +1499,10 @@ it("submits online lite tasks without authorization", async function () {
   await client.submitPdf("C:/tmp/a.pdf");
 
   assert.equal(calls[0].url, "https://mineru.net/api/v1/agent/parse/file");
-  assert.isUndefined((calls[0].init?.headers as Record<string, string> | undefined)?.Authorization);
+  assert.isUndefined(
+    (calls[0].init?.headers as Record<string, string> | undefined)
+      ?.Authorization,
+  );
   assert.equal(calls[1].url, "https://upload.example/lite");
 });
 
@@ -1555,12 +1616,19 @@ export function createOnlineAgentLiteMinerUClient(
       const taskID = response.task_id ?? response.taskId;
       const uploadURL = response.file_url ?? response.fileUrl;
       if (!taskID || !uploadURL) {
-        throw new MinerUTaskError("MinerU Agent submit response missing upload data");
+        throw new MinerUTaskError(
+          "MinerU Agent submit response missing upload data",
+        );
       }
       const bytes = normalizeBinary(await readPdfBytes(readBinary, filePath));
-      await requestOk(() => uploadBinary(uploadURL, bytes), uploadURL, "agent-upload", {
-        method: "PUT",
-      });
+      await requestOk(
+        () => uploadBinary(uploadURL, bytes),
+        uploadURL,
+        "agent-upload",
+        {
+          method: "PUT",
+        },
+      );
       return { taskID };
     },
     async pollTask(taskID) {
@@ -1570,12 +1638,18 @@ export function createOnlineAgentLiteMinerUClient(
         "agent-poll",
         { method: "GET" },
       );
-      const state = String(response.state ?? response.status ?? "").toLowerCase();
+      const state = String(
+        response.state ?? response.status ?? "",
+      ).toLowerCase();
       if (["done", "success", "succeeded", "finished"].includes(state)) {
         return { status: "succeeded" };
       }
       if (["failed", "fail", "error"].includes(state)) {
-        return { status: "failed", error: response.err_msg || response.message || "MinerU Agent task failed" };
+        return {
+          status: "failed",
+          error:
+            response.err_msg || response.message || "MinerU Agent task failed",
+        };
       }
       return { status: "running" };
     },
@@ -1641,6 +1715,7 @@ git commit -m "feat(mineru): 支持在线轻量解析"
 ## Task 8: Copy Full Markdown Fallback
 
 **Files:**
+
 - Modify: `src/modules/readerOverlay/copy.ts`
 - Test: `test/readerOverlay.test.ts`
 
@@ -1755,6 +1830,7 @@ git commit -m "feat(reader): 复制全文 markdown 支持轻量结果兜底"
 ## Task 9: Final Integration And Verification
 
 **Files:**
+
 - Modify: only task-related files from Tasks 1-8 if verification exposes a defect
 - Test: full test suite and type/build checks
 
@@ -1826,6 +1902,7 @@ Use an explicit file list instead of `git add .`.
 ## Task 10: Runtime Preference Sync
 
 **Files:**
+
 - Modify: `src/modules/preferenceScript.ts`
 - Test: `test/preferenceScript.test.ts`
 
@@ -1847,6 +1924,7 @@ Use an explicit file list instead of `git add .`.
 ## Task 11: Runtime-Safe Local Multipart Submit
 
 **Files:**
+
 - Modify: `src/modules/mineruClient/formData.ts`
 - Modify: `src/modules/mineruClient/local.ts`
 - Test: `test/mineruClient.test.ts`
@@ -1869,6 +1947,7 @@ Use an explicit file list instead of `git add .`.
 ## Task 12: Normalize File URLs Before File Access
 
 **Files:**
+
 - Modify: `src/modules/mineruClient/path.ts`
 - Modify: `src/modules/parseManager.ts`
 - Test: `test/mineruClient.test.ts`
@@ -1896,6 +1975,7 @@ Use an explicit file list instead of `git add .`.
 ## Task 13: Short Local Upload Filename
 
 **Files:**
+
 - Modify: `src/modules/mineruClient/formData.ts`
 - Test: `test/mineruClient.test.ts`
 

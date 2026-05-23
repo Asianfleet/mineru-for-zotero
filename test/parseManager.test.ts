@@ -368,9 +368,9 @@ describe("parseManager", function () {
 
   it("passes parse settings to created clients", async function () {
     const messages: string[] = [];
-    let receivedSettings: Parameters<
-      NonNullable<ParseManagerDependencies["createClient"]>
-    >[0] | null = null;
+    let receivedSettings:
+      | Parameters<NonNullable<ParseManagerDependencies["createClient"]>>[0]
+      | null = null;
     const manager = createParseManager({
       ...baseDependencies(messages),
       client: undefined,
@@ -583,9 +583,7 @@ describe("parseManager", function () {
 
   it("passes downloaded images to storage when the preference is enabled", async function () {
     const messages: string[] = [];
-    let savedImages:
-      | Array<{ path: string; bytes: Uint8Array }>
-      | undefined;
+    let savedImages: Array<{ path: string; bytes: Uint8Array }> | undefined;
     const manager = createParseManager({
       ...baseDependencies(messages),
       getSaveImages: () => true,
@@ -627,9 +625,7 @@ describe("parseManager", function () {
 
   it("does not pass downloaded images to storage when the preference is disabled", async function () {
     const messages: string[] = [];
-    let savedImages:
-      | Array<{ path: string; bytes: Uint8Array }>
-      | undefined;
+    let savedImages: Array<{ path: string; bytes: Uint8Array }> | undefined;
     const manager = createParseManager({
       ...baseDependencies(messages),
       getSaveImages: () => false,

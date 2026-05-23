@@ -328,9 +328,8 @@ async function parseAttachmentWithDependencies(
       rawResult: result.rawResult,
       markdown: result.markdown,
       boxes,
-      images: dependencies.getSaveImages?.() !== false
-        ? result.images
-        : undefined,
+      images:
+        dependencies.getSaveImages?.() !== false ? result.images : undefined,
     });
     dependencies.showMessage("parse-finished");
   } catch (error) {
@@ -603,10 +602,7 @@ function getParseFailureMessage(
   hasReadyResult: boolean,
 ): { id: FluentMessageId; args?: Record<string, string> } {
   const message = error instanceof Error ? error.message : String(error);
-  if (
-    error instanceof MinerURequestError &&
-    error.stage.startsWith("local-")
-  ) {
+  if (error instanceof MinerURequestError && error.stage.startsWith("local-")) {
     return { id: "parse-error-local-api-unavailable", args: { message } };
   }
   if (

@@ -1,33 +1,60 @@
 <linkset>
   <html:link rel="localization" href="__addonRef__-preferences.ftl" />
 </linkset>
-<groupbox onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })">
+<groupbox
+  onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })"
+>
   <vbox>
     <label>
       <html:h2 data-l10n-id="pref-api-service-title"></html:h2>
     </label>
     <hbox align="center" style="gap: 6px">
-      <label for="zotero-prefpane-__addonRef__-api-key" data-l10n-id="pref-api-key"></label>
-      <html:input type="password" id="zotero-prefpane-__addonRef__-api-key" preference="apiKey"></html:input>
+      <label
+        for="zotero-prefpane-__addonRef__-api-key"
+        data-l10n-id="pref-api-key"
+      ></label>
+      <html:input
+        type="password"
+        id="zotero-prefpane-__addonRef__-api-key"
+        preference="apiKey"
+      ></html:input>
     </hbox>
     <hbox align="center" style="gap: 6px">
-      <label for="zotero-prefpane-__addonRef__-local-api-base-url" data-l10n-id="pref-local-api-base-url"></label>
-      <html:input type="text" id="zotero-prefpane-__addonRef__-local-api-base-url" preference="localApiBaseURL">
+      <label
+        for="zotero-prefpane-__addonRef__-local-api-base-url"
+        data-l10n-id="pref-local-api-base-url"
+      ></label>
+      <html:input
+        type="text"
+        id="zotero-prefpane-__addonRef__-local-api-base-url"
+        preference="localApiBaseURL"
+      >
       </html:input>
     </hbox>
     <hbox align="center" style="gap: 6px">
       <label data-l10n-id="pref-api-source-title"></label>
-      <radiogroup id="zotero-prefpane-__addonRef__-parse-source" orient="horizontal" native="true"
-        preference="parseSource">
+      <radiogroup
+        id="zotero-prefpane-__addonRef__-parse-source"
+        orient="horizontal"
+        native="true"
+        preference="parseSource"
+      >
         <radio data-l10n-id="pref-api-source-online" value="online" />
         <radio data-l10n-id="pref-api-source-local" value="local" />
       </radiogroup>
     </hbox>
     <hbox align="top" style="gap: 6px">
-      <label data-l10n-id="pref-parse-mode-title" style="margin-top: 8px;"></label>
-      <vbox style="margin-left: 8px;">
-        <radiogroup id="zotero-prefpane-__addonRef__-parse-mode" orient="horizontal" native="true"
-          preference="parseMode">
+      <label
+        data-l10n-id="pref-parse-mode-title"
+        style="margin-top: 8px"
+      ></label>
+      <vbox style="margin-left: 8px">
+        <radiogroup
+          id="zotero-prefpane-__addonRef__-parse-mode"
+          orient="horizontal"
+          native="true"
+          preference="parseMode"
+        >
           <radio data-l10n-id="pref-parse-mode-precise" value="precise" />
           <radio data-l10n-id="pref-parse-mode-lite" value="lite" />
         </radiogroup>
@@ -40,14 +67,24 @@
       <html:h2 data-l10n-id="pref-data-storage-title"></html:h2>
     </label>
     <vbox>
-      <checkbox id="zotero-prefpane-__addonRef__-save-images" data-l10n-id="pref-save-images" native="true"
-        preference="saveImages" />
-      <html:div data-l10n-id="pref-save-images-help" style="margin-left: 24px;"></html:div>
+      <checkbox
+        id="zotero-prefpane-__addonRef__-save-images"
+        data-l10n-id="pref-save-images"
+        native="true"
+        preference="saveImages"
+      />
+      <html:div
+        data-l10n-id="pref-save-images-help"
+        style="margin-left: 24px"
+      ></html:div>
     </vbox>
     <vbox>
       <html:h2 data-l10n-id="pref-data-folder-title"></html:h2>
       <hbox>
-        <html:button id="__addonRef__-open-data-folder" data-l10n-id="pref-open-data-folder"></html:button>
+        <html:button
+          id="__addonRef__-open-data-folder"
+          data-l10n-id="pref-open-data-folder"
+        ></html:button>
       </hbox>
       <html:div id="__addonRef__-data-folder-path"></html:div>
       <html:div id="__addonRef__-parsed-count"></html:div>
@@ -57,12 +94,20 @@
     <label>
       <html:h2 data-l10n-id="pref-about-title"></html:h2>
     </label>
-    <html:label data-l10n-id="pref-help"
-      data-l10n-args='{"time": "__buildTime__","name": "__addonName__","version":"__buildVersion__"}'></html:label>
+    <html:label
+      data-l10n-id="pref-help"
+      data-l10n-args='{"time": "__buildTime__","name": "__addonName__","version":"__buildVersion__"}'
+    ></html:label>
     <html:div>
-      <html:a id="__addonRef__-github-link" href="https://github.com/Asianfleet/mineru-for-zotero">Github</html:a>
+      <html:a
+        id="__addonRef__-github-link"
+        href="https://github.com/Asianfleet/mineru-for-zotero"
+        >Github</html:a
+      >
       <html:span> · </html:span>
-      <html:a id="__addonRef__-mineru-link" href="https://mineru.net/">MinerU</html:a>
+      <html:a id="__addonRef__-mineru-link" href="https://mineru.net/"
+        >MinerU</html:a
+      >
     </html:div>
   </vbox>
 </groupbox>

@@ -5,7 +5,9 @@ import type { ExtractResultsBatchResponse, FetchLike } from "./types";
 /**
  * 从 MinerU 返回的字符串或对象形式 file URL 中取出实际上传地址。
  */
-export function getUploadURL(value: string | { url?: string } | undefined): string {
+export function getUploadURL(
+  value: string | { url?: string } | undefined,
+): string {
   if (typeof value === "string") {
     return value;
   }

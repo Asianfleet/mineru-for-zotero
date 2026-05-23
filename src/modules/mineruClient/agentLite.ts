@@ -66,8 +66,7 @@ export function createOnlineAgentLiteMinerUClient(
           xhrDownloadBinary,
           fetchDownloadBinary(request),
         ));
-  const downloadFileBytes =
-    options.downloadFileBytes ?? downloadPlainFileBytes;
+  const downloadFileBytes = options.downloadFileBytes ?? downloadPlainFileBytes;
 
   return {
     /**
@@ -76,22 +75,17 @@ export function createOnlineAgentLiteMinerUClient(
     async submitPdf(filePath) {
       const response = await requestJson<
         AgentResponseEnvelope<AgentSubmitResponse>
-      >(
-        request,
-        `${baseURL}/api/v1/agent/parse/file`,
-        "agent-submit",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            file_name: basename(filePath),
-            language: "ch",
-            enable_table: false,
-            enable_formula: false,
-            is_ocr: false,
-          }),
-        },
-      );
+      >(request, `${baseURL}/api/v1/agent/parse/file`, "agent-submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          file_name: basename(filePath),
+          language: "ch",
+          enable_table: false,
+          enable_formula: false,
+          is_ocr: false,
+        }),
+      });
       const data = unwrapAgentData(response, "agent-submit");
       const taskID = data.task_id ?? data.taskId;
       const uploadURL = data.file_url ?? data.fileUrl;

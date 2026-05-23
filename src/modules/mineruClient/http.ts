@@ -83,7 +83,10 @@ export function fallbackDownloadBinary(
 /**
  * 使用 XMLHttpRequest 向预签名 URL 上传 PDF 字节。
  */
-export function xhrUploadBinary(url: string, body: Uint8Array): Promise<Response> {
+export function xhrUploadBinary(
+  url: string,
+  body: Uint8Array,
+): Promise<Response> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url);
@@ -166,7 +169,10 @@ export function xhrToResponse(xhr: XMLHttpRequest): Response {
 /**
  * 标准化 XHR 状态码，兼容本地运行时可能返回的 status 0。
  */
-export function normalizeResponseStatus(status: number, response: unknown): number {
+export function normalizeResponseStatus(
+  status: number,
+  response: unknown,
+): number {
   if (status !== 0) {
     return status;
   }
@@ -298,7 +304,9 @@ export function normalizeHeaders(
 /**
  * 解析 XHR 原始响应头字符串为键值对象。
  */
-export function parseResponseHeaders(rawHeaders: string): Record<string, string> {
+export function parseResponseHeaders(
+  rawHeaders: string,
+): Record<string, string> {
   const headers: Record<string, string> = {};
   for (const line of rawHeaders.trim().split(/[\r\n]+/)) {
     if (!line) {

@@ -235,7 +235,10 @@ async function createTemporaryPath(fileName: string): Promise<string> {
 /**
  * 写入临时 ZIP 字节供 nsIZipReader 读取。
  */
-async function writeTemporaryZip(path: string, bytes: Uint8Array): Promise<void> {
+async function writeTemporaryZip(
+  path: string,
+  bytes: Uint8Array,
+): Promise<void> {
   if (typeof IOUtils !== "undefined") {
     await IOUtils.write(path, bytes, { tmpPath: `${path}.tmp` });
     return;

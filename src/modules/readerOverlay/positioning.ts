@@ -68,10 +68,14 @@ export function createReaderOverlayPositioningController(
       passive: false,
     },
   );
-  readerDocumentEventTarget?.addEventListener("mousedown", onReaderModifiedDown, {
-    capture: true,
-    passive: false,
-  });
+  readerDocumentEventTarget?.addEventListener(
+    "mousedown",
+    onReaderModifiedDown,
+    {
+      capture: true,
+      passive: false,
+    },
+  );
   for (const container of scrollContainers) {
     container.addEventListener("scroll", schedule, true);
   }
