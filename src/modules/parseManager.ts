@@ -559,7 +559,7 @@ export function resolveReparseChoiceFromPromptButton(
 }
 
 function showMessage(id: FluentMessageId, args?: Record<string, string>): void {
-  const text = getMessageText(id, args);
+  const text = normalizeProgressWindowText(getMessageText(id, args));
   new ztoolkit.ProgressWindow(addon.data.config.addonName, {
     closeTime: 4000,
   })
@@ -569,6 +569,10 @@ function showMessage(id: FluentMessageId, args?: Record<string, string>): void {
       progress: 100,
     })
     .show();
+}
+
+export function normalizeProgressWindowText(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
 }
 
 function createDefaultDependencies(): ParseManagerDependencies {

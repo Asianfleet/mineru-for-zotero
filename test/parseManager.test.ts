@@ -1,6 +1,7 @@
 import { assert } from "chai";
 import {
   createParseManager,
+  normalizeProgressWindowText,
   resolveReparseChoiceFromPromptButton,
   type ParseManagerDependencies,
 } from "../src/modules/parseManager";
@@ -11,6 +12,15 @@ import {
 import { normalizedBoxes } from "./domainFixtures";
 
 describe("parseManager", function () {
+  it("normalizes multiline progress window text into one visible line", function () {
+    assert.equal(
+      normalizeProgressWindowText(
+        "已提交 MinerU 文档解析任务\n    [在线 API · 精准]",
+      ),
+      "已提交 MinerU 文档解析任务 [在线 API · 精准]",
+    );
+  });
+
   it("treats prompt close and cancel position as use-existing", function () {
     assert.equal(resolveReparseChoiceFromPromptButton(1), "use-existing");
     assert.equal(resolveReparseChoiceFromPromptButton(0), "reparse");
