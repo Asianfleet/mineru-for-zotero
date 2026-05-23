@@ -35,6 +35,7 @@
 ### Task 1: Parse Notice Helper
 
 **Files:**
+
 - Create: `src/modules/parseNotice.ts`
 - Test: `test/parseManager.test.ts`
 
@@ -43,110 +44,110 @@
 Add this block near the top of `test/parseManager.test.ts`, after the selected regular item test and before bulk parsing tests. These tests override `showMessage` locally so existing string-only assertions do not need to change.
 
 ```ts
-  it("reports online precise parse notices with source and mode context", async function () {
-    const notices: Array<{
-      id: string;
-      args?: Record<string, string>;
-    }> = [];
+it("reports online precise parse notices with source and mode context", async function () {
+  const notices: Array<{
+    id: string;
+    args?: Record<string, string>;
+  }> = [];
+  const manager = createParseManager({
+    ...baseDependencies([]),
+    showMessage: (id, args) => {
+      notices.push({ id, args });
+    },
+    storage: {
+      ...baseStorage(),
+      writeResult: async () => {},
+    },
+    client: successfulPreciseClient(),
+  });
+
+  await manager.parseAttachment(pdfAttachment());
+
+  assert.deepEqual(notices, [
+    {
+      id: "parse-task-submitted",
+      args: {
+        source: "online",
+        mode: "precise",
+      },
+    },
+    {
+      id: "parse-task-finished",
+      args: {
+        source: "online",
+        mode: "precise",
+      },
+    },
+  ]);
+});
+
+it("reports all source and mode combinations in parse notices", async function () {
+  const cases: Array<{
+    source: "online" | "local";
+    mode: "precise" | "lite";
+    result:
+      | {
+          kind: "precise";
+          rawResult: unknown;
+          markdown: string;
+        }
+      | { kind: "lite"; markdown: string };
+  }> = [
+    {
+      source: "online",
+      mode: "precise",
+      result: preciseResultFixture(),
+    },
+    {
+      source: "online",
+      mode: "lite",
+      result: { kind: "lite", markdown: "# Lite" },
+    },
+    {
+      source: "local",
+      mode: "precise",
+      result: preciseResultFixture(),
+    },
+    {
+      source: "local",
+      mode: "lite",
+      result: { kind: "lite", markdown: "# Lite" },
+    },
+  ];
+
+  for (const entry of cases) {
+    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
     const manager = createParseManager({
       ...baseDependencies([]),
+      getParseSource: () => entry.source,
+      getParseMode: () => entry.mode,
       showMessage: (id, args) => {
         notices.push({ id, args });
       },
-      storage: {
-        ...baseStorage(),
-        writeResult: async () => {},
+      client: {
+        submitPdf: async () => ({ taskID: "task-1" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => entry.result,
       },
-      client: successfulPreciseClient(),
     });
 
     await manager.parseAttachment(pdfAttachment());
 
-    assert.deepEqual(notices, [
-      {
-        id: "parse-task-submitted",
-        args: {
-          source: "online",
-          mode: "precise",
+    assert.deepEqual(
+      notices.map((notice) => notice.args),
+      [
+        {
+          source: entry.source,
+          mode: entry.mode,
         },
-      },
-      {
-        id: "parse-task-finished",
-        args: {
-          source: "online",
-          mode: "precise",
+        {
+          source: entry.source,
+          mode: entry.mode,
         },
-      },
-    ]);
-  });
-
-  it("reports all source and mode combinations in parse notices", async function () {
-    const cases: Array<{
-      source: "online" | "local";
-      mode: "precise" | "lite";
-      result:
-        | {
-            kind: "precise";
-            rawResult: unknown;
-            markdown: string;
-          }
-        | { kind: "lite"; markdown: string };
-    }> = [
-      {
-        source: "online",
-        mode: "precise",
-        result: preciseResultFixture(),
-      },
-      {
-        source: "online",
-        mode: "lite",
-        result: { kind: "lite", markdown: "# Lite" },
-      },
-      {
-        source: "local",
-        mode: "precise",
-        result: preciseResultFixture(),
-      },
-      {
-        source: "local",
-        mode: "lite",
-        result: { kind: "lite", markdown: "# Lite" },
-      },
-    ];
-
-    for (const entry of cases) {
-      const notices: Array<{ id: string; args?: Record<string, string> }> = [];
-      const manager = createParseManager({
-        ...baseDependencies([]),
-        getParseSource: () => entry.source,
-        getParseMode: () => entry.mode,
-        showMessage: (id, args) => {
-          notices.push({ id, args });
-        },
-        client: {
-          submitPdf: async () => ({ taskID: "task-1" }),
-          pollTask: async () => ({ status: "succeeded" }),
-          downloadResult: async () => entry.result,
-        },
-      });
-
-      await manager.parseAttachment(pdfAttachment());
-
-      assert.deepEqual(
-        notices.map((notice) => notice.args),
-        [
-          {
-            source: entry.source,
-            mode: entry.mode,
-          },
-          {
-            source: entry.source,
-            mode: entry.mode,
-          },
-        ],
-      );
-    }
-  });
+      ],
+    );
+  }
+});
 ```
 
 Add helper functions near the bottom of `test/parseManager.test.ts`, before `baseDependencies()`:
@@ -245,7 +246,10 @@ export function createParseSubmittedNotice(
   if (context.batch && context.batch.total > 1) {
     return {
       id: "parse-task-submitted-total",
-      args: { ...createNoticeArgs(context), total: String(context.batch.total) },
+      args: {
+        ...createNoticeArgs(context),
+        total: String(context.batch.total),
+      },
     };
   }
   return {
@@ -317,44 +321,44 @@ async function parseAttachmentWithDependencies(
 After `source`, `mode`, and `apiKey` are computed, add:
 
 ```ts
-  const currentNoticeContext =
-    noticeContext ?? createParseNoticeContext({ source, mode });
+const currentNoticeContext =
+  noticeContext ?? createParseNoticeContext({ source, mode });
 ```
 
 Replace:
 
 ```ts
-    dependencies.showMessage("parse-started");
+dependencies.showMessage("parse-started");
 ```
 
 with:
 
 ```ts
-    showParseNotice(dependencies, createParseSubmittedNotice(currentNoticeContext));
+showParseNotice(dependencies, createParseSubmittedNotice(currentNoticeContext));
 ```
 
 Replace the lite success notice:
 
 ```ts
-      dependencies.showMessage("parse-lite-finished");
+dependencies.showMessage("parse-lite-finished");
 ```
 
 with:
 
 ```ts
-      showParseNotice(dependencies, createParseFinishedNotice(currentNoticeContext));
+showParseNotice(dependencies, createParseFinishedNotice(currentNoticeContext));
 ```
 
 Replace the precise success notice:
 
 ```ts
-    dependencies.showMessage("parse-finished");
+dependencies.showMessage("parse-finished");
 ```
 
 with:
 
 ```ts
-    showParseNotice(dependencies, createParseFinishedNotice(currentNoticeContext));
+showParseNotice(dependencies, createParseFinishedNotice(currentNoticeContext));
 ```
 
 Add this helper near `getClient()`:
@@ -394,6 +398,7 @@ Expected: commit succeeds.
 ### Task 2: Batch Progress Notices
 
 **Files:**
+
 - Modify: `src/modules/parseManager.ts`
 - Modify: `test/parseManager.test.ts`
 
@@ -402,172 +407,172 @@ Expected: commit succeeds.
 Add these tests after the existing `"parses multiple attachments in parallel and confirms existing results once"` test:
 
 ```ts
-  it("reports batch parse notices with total and completion progress", async function () {
-    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
-    const releaseByPath = new Map<string, () => void>();
-    const waitByPath = new Map<string, Promise<void>>();
-    for (const path of ["C:\\tmp\\a.pdf", "C:\\tmp\\b.pdf"]) {
-      waitByPath.set(
-        path,
-        new Promise<void>((resolve) => {
-          releaseByPath.set(path, resolve);
-        }),
-      );
-    }
-    const manager = createParseManager({
-      ...baseDependencies([]),
-      showMessage: (id, args) => {
-        notices.push({ id, args });
-      },
-      client: {
-        submitPdf: async (filePath) => ({ taskID: filePath }),
-        pollTask: async (taskID) => {
-          await waitByPath.get(taskID);
-          return { status: "succeeded" };
-        },
-        downloadResult: async () => preciseResultFixture(),
-      },
-    });
-
-    const parsing = manager.parseAttachments([
-      pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
-      pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
-    ]);
-
-    await Promise.resolve();
-    releaseByPath.get("C:\\tmp\\b.pdf")?.();
-    await Promise.resolve();
-    releaseByPath.get("C:\\tmp\\a.pdf")?.();
-    await parsing;
-
-    assert.deepEqual(
-      notices.filter((notice) => notice.id === "parse-task-submitted-total"),
-      [
-        {
-          id: "parse-task-submitted-total",
-          args: {
-            source: "online",
-            mode: "precise",
-            total: "2",
-          },
-        },
-        {
-          id: "parse-task-submitted-total",
-          args: {
-            source: "online",
-            mode: "precise",
-            total: "2",
-          },
-        },
-      ],
+it("reports batch parse notices with total and completion progress", async function () {
+  const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+  const releaseByPath = new Map<string, () => void>();
+  const waitByPath = new Map<string, Promise<void>>();
+  for (const path of ["C:\\tmp\\a.pdf", "C:\\tmp\\b.pdf"]) {
+    waitByPath.set(
+      path,
+      new Promise<void>((resolve) => {
+        releaseByPath.set(path, resolve);
+      }),
     );
-    assert.deepEqual(
-      notices.filter((notice) => notice.id === "parse-task-finished-progress"),
-      [
-        {
-          id: "parse-task-finished-progress",
-          args: {
-            source: "online",
-            mode: "precise",
-            total: "2",
-            completed: "1",
-          },
-        },
-        {
-          id: "parse-task-finished-progress",
-          args: {
-            source: "online",
-            mode: "precise",
-            total: "2",
-            completed: "2",
-          },
-        },
-      ],
-    );
+  }
+  const manager = createParseManager({
+    ...baseDependencies([]),
+    showMessage: (id, args) => {
+      notices.push({ id, args });
+    },
+    client: {
+      submitPdf: async (filePath) => ({ taskID: filePath }),
+      pollTask: async (taskID) => {
+        await waitByPath.get(taskID);
+        return { status: "succeeded" };
+      },
+      downloadResult: async () => preciseResultFixture(),
+    },
   });
 
-  it("excludes skipped existing results from batch notice totals", async function () {
-    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
-    const manager = createParseManager({
-      ...baseDependencies([]),
-      showMessage: (id, args) => {
-        notices.push({ id, args });
-      },
-      storage: {
-        ...baseStorage(),
-        hasReadyResult: async (attachment) => attachment.id === 1,
-      },
-      confirmReparse: async () => "use-existing",
-      client: successfulPreciseClient(),
-    });
+  const parsing = manager.parseAttachments([
+    pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
+    pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
+  ]);
 
-    await manager.parseAttachments([
-      pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
-      pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
-    ]);
+  await Promise.resolve();
+  releaseByPath.get("C:\\tmp\\b.pdf")?.();
+  await Promise.resolve();
+  releaseByPath.get("C:\\tmp\\a.pdf")?.();
+  await parsing;
 
-    assert.deepEqual(notices, [
-      { id: "parse-use-existing-result", args: undefined },
+  assert.deepEqual(
+    notices.filter((notice) => notice.id === "parse-task-submitted-total"),
+    [
       {
-        id: "parse-task-submitted",
+        id: "parse-task-submitted-total",
         args: {
           source: "online",
           mode: "precise",
+          total: "2",
         },
       },
       {
-        id: "parse-task-finished",
+        id: "parse-task-submitted-total",
         args: {
           source: "online",
           mode: "precise",
+          total: "2",
         },
       },
-    ]);
+    ],
+  );
+  assert.deepEqual(
+    notices.filter((notice) => notice.id === "parse-task-finished-progress"),
+    [
+      {
+        id: "parse-task-finished-progress",
+        args: {
+          source: "online",
+          mode: "precise",
+          total: "2",
+          completed: "1",
+        },
+      },
+      {
+        id: "parse-task-finished-progress",
+        args: {
+          source: "online",
+          mode: "precise",
+          total: "2",
+          completed: "2",
+        },
+      },
+    ],
+  );
+});
+
+it("excludes skipped existing results from batch notice totals", async function () {
+  const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+  const manager = createParseManager({
+    ...baseDependencies([]),
+    showMessage: (id, args) => {
+      notices.push({ id, args });
+    },
+    storage: {
+      ...baseStorage(),
+      hasReadyResult: async (attachment) => attachment.id === 1,
+    },
+    confirmReparse: async () => "use-existing",
+    client: successfulPreciseClient(),
   });
+
+  await manager.parseAttachments([
+    pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
+    pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
+  ]);
+
+  assert.deepEqual(notices, [
+    { id: "parse-use-existing-result", args: undefined },
+    {
+      id: "parse-task-submitted",
+      args: {
+        source: "online",
+        mode: "precise",
+      },
+    },
+    {
+      id: "parse-task-finished",
+      args: {
+        source: "online",
+        mode: "precise",
+      },
+    },
+  ]);
+});
 ```
 
 Add this test after the MinerU failure mapping tests:
 
 ```ts
-  it("counts only successful completions in batch progress notices", async function () {
-    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
-    const manager = createParseManager({
-      ...baseDependencies([]),
-      showMessage: (id, args) => {
-        notices.push({ id, args });
+it("counts only successful completions in batch progress notices", async function () {
+  const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+  const manager = createParseManager({
+    ...baseDependencies([]),
+    showMessage: (id, args) => {
+      notices.push({ id, args });
+    },
+    client: {
+      submitPdf: async (filePath) => ({ taskID: filePath }),
+      pollTask: async (taskID) => {
+        if (taskID.includes("b.pdf")) {
+          return { status: "failed", error: "parse failed" };
+        }
+        return { status: "succeeded" };
       },
-      client: {
-        submitPdf: async (filePath) => ({ taskID: filePath }),
-        pollTask: async (taskID) => {
-          if (taskID.includes("b.pdf")) {
-            return { status: "failed", error: "parse failed" };
-          }
-          return { status: "succeeded" };
-        },
-        downloadResult: async () => preciseResultFixture(),
-      },
-    });
-
-    await manager.parseAttachments([
-      pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
-      pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
-    ]);
-
-    assert.deepEqual(
-      notices.filter((notice) => notice.id === "parse-task-finished-progress"),
-      [
-        {
-          id: "parse-task-finished-progress",
-          args: {
-            source: "online",
-            mode: "precise",
-            total: "2",
-            completed: "1",
-          },
-        },
-      ],
-    );
+      downloadResult: async () => preciseResultFixture(),
+    },
   });
+
+  await manager.parseAttachments([
+    pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
+    pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
+  ]);
+
+  assert.deepEqual(
+    notices.filter((notice) => notice.id === "parse-task-finished-progress"),
+    [
+      {
+        id: "parse-task-finished-progress",
+        args: {
+          source: "online",
+          mode: "precise",
+          total: "2",
+          completed: "1",
+        },
+      },
+    ],
+  );
+});
 ```
 
 - [ ] **Step 2: Run the targeted batch tests and verify they fail**
@@ -585,76 +590,76 @@ Expected: FAIL because bulk parsing does not pass a shared notice context yet.
 In `src/modules/parseManager.ts`, replace the final `Promise.all()` in `parseAttachmentsWithDependencies()`:
 
 ```ts
-  await Promise.all(
-    attachmentsToParse.map((attachment) =>
-      parseAttachmentWithDependencies(
-        attachment,
-        { ...options, force: true },
-        dependencies,
-      ),
+await Promise.all(
+  attachmentsToParse.map((attachment) =>
+    parseAttachmentWithDependencies(
+      attachment,
+      { ...options, force: true },
+      dependencies,
     ),
-  );
+  ),
+);
 ```
 
 with:
 
 ```ts
-  if (attachmentsToParse.length === 0) {
-    return;
-  }
+if (attachmentsToParse.length === 0) {
+  return;
+}
 
-  const noticeContext =
-    attachmentsToParse.length > 1
-      ? createParseNoticeContext({
-          source,
-          mode,
-          total: attachmentsToParse.length,
-        })
-      : undefined;
+const noticeContext =
+  attachmentsToParse.length > 1
+    ? createParseNoticeContext({
+        source,
+        mode,
+        total: attachmentsToParse.length,
+      })
+    : undefined;
 
-  await Promise.all(
-    attachmentsToParse.map((attachment) =>
-      parseAttachmentWithDependencies(
-        attachment,
-        { ...options, force: true },
-        dependencies,
-        noticeContext,
-      ),
+await Promise.all(
+  attachmentsToParse.map((attachment) =>
+    parseAttachmentWithDependencies(
+      attachment,
+      { ...options, force: true },
+      dependencies,
+      noticeContext,
     ),
-  );
+  ),
+);
 ```
 
 In the `options?.force === true` branch, keep current behavior for direct forced parsing unless the input has multiple PDFs. Replace:
 
 ```ts
-    await Promise.all(
-      pdfAttachments.map((attachment) =>
-        parseAttachmentWithDependencies(attachment, options, dependencies),
-      ),
-    );
+await Promise.all(
+  pdfAttachments.map((attachment) =>
+    parseAttachmentWithDependencies(attachment, options, dependencies),
+  ),
+);
 ```
 
 with:
 
 ```ts
-    const noticeContext =
-      pdfAttachments.length > 1
-        ? createParseNoticeContext({
-            source,
-            mode,
-            total: pdfAttachments.length,
-          })
-        : undefined;
-    await Promise.all(
-      pdfAttachments.map((attachment) =>
-        parseAttachmentWithDependencies(
-          attachment,
-          options,
-          dependencies,
-          noticeContext,
-        ),
-      ),
-    );
+const noticeContext =
+  pdfAttachments.length > 1
+    ? createParseNoticeContext({
+        source,
+        mode,
+        total: pdfAttachments.length,
+      })
+    : undefined;
+await Promise.all(
+  pdfAttachments.map((attachment) =>
+    parseAttachmentWithDependencies(
+      attachment,
+      options,
+      dependencies,
+      noticeContext,
+    ),
+  ),
+);
 ```
 
 This preserves concurrent execution and the existing bulk control flow. `parseAttachmentWithDependencies()` catches parse failures and reports the existing error messages, so already-started concurrent tasks can still finish.
@@ -695,6 +700,7 @@ Expected: commit succeeds.
 ### Task 3: Locale Messages and Typings
 
 **Files:**
+
 - Modify: `addon/locale/zh-CN/mainWindow.ftl`
 - Modify: `addon/locale/en-US/mainWindow.ftl`
 - Modify: `typings/i10n.d.ts`
@@ -860,6 +866,7 @@ Expected: commit succeeds.
 ### Task 4: Full Verification and Cleanup
 
 **Files:**
+
 - Verify all changed files from Tasks 1-3.
 
 - [ ] **Step 1: Inspect working tree**
@@ -946,4 +953,3 @@ feat(parse): 优化解析任务提示进度
 - Type consistency:
   - `ParseNoticeContext`、`ParseNoticeBatchProgress`、`createParseNoticeContext()`、`createParseSubmittedNotice()`、`createParseFinishedNotice()` 在任务间命名一致。
   - 新 Fluent ids 在测试、locale 与 typings 中保持一致。
-

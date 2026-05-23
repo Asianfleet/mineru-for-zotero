@@ -55,7 +55,7 @@ MinerU 文档解析任务完成
 - `local + precise`: `本地 API · 精准`
 - `local + lite`: `本地 API · 轻量`
 
-英文 locale 保持相同信息结构，使用英文标签和 ` · ` 分隔：
+英文 locale 保持相同信息结构，使用英文标签和 `·` 分隔：
 
 ```text
 MinerU document parse task submitted
