@@ -418,6 +418,58 @@ describe("parseManager", function () {
     ]);
   });
 
+  it("excludes unreadable files from batch notice totals", async function () {
+    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+    const submitted: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+      },
+      isFileReadable: async (filePath) => !filePath.endsWith("a.pdf"),
+      client: {
+        submitPdf: async (filePath) => {
+          submitted.push(filePath);
+          return { taskID: "task-readable" };
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachments([
+      pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
+      pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
+    ]);
+
+    assert.deepEqual(submitted, ["C:\\tmp\\b.pdf"]);
+    assert.notInclude(
+      notices.map((notice) => notice.id),
+      "parse-task-submitted-total",
+    );
+    assert.notInclude(
+      notices.map((notice) => notice.id),
+      "parse-task-finished-progress",
+    );
+    assert.deepEqual(notices, [
+      { id: "parse-error-file-access", args: undefined },
+      {
+        id: "parse-task-submitted",
+        args: {
+          source: "online",
+          mode: "precise",
+        },
+      },
+      {
+        id: "parse-task-finished",
+        args: {
+          source: "online",
+          mode: "precise",
+        },
+      },
+    ]);
+  });
+
   it("skips existing results after a single bulk use-existing choice", async function () {
     const messages: string[] = [];
     const submitted: string[] = [];

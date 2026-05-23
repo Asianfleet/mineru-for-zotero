@@ -167,16 +167,24 @@ async function parseAttachmentsWithDependencies(
   }
 
   if (options?.force === true) {
+    const attachmentsToParse = await getSubmittableAttachments(
+      pdfAttachments,
+      dependencies,
+    );
+    if (attachmentsToParse.length === 0) {
+      return;
+    }
+
     const noticeContext =
-      pdfAttachments.length > 1
+      attachmentsToParse.length > 1
         ? createParseNoticeContext({
             source,
             mode,
-            total: pdfAttachments.length,
+            total: attachmentsToParse.length,
           })
         : undefined;
     await Promise.all(
-      pdfAttachments.map((attachment) =>
+      attachmentsToParse.map((attachment) =>
         parseAttachmentWithDependencies(
           attachment,
           options,
@@ -204,6 +212,10 @@ async function parseAttachmentsWithDependencies(
     }
   }
 
+  attachmentsToParse = await getSubmittableAttachments(
+    attachmentsToParse,
+    dependencies,
+  );
   if (attachmentsToParse.length === 0) {
     return;
   }
@@ -226,6 +238,35 @@ async function parseAttachmentsWithDependencies(
         noticeContext,
       ),
     ),
+  );
+}
+
+async function getSubmittableAttachments(
+  attachments: Zotero.Item[],
+  dependencies: ParseManagerDependencies,
+): Promise<Zotero.Item[]> {
+  const checkedAttachments = await Promise.all(
+    attachments.map(async (attachment) => {
+      const rawFilePath = await getAttachmentFilePath(attachment, dependencies);
+      if (!rawFilePath) {
+        logFileAccessFailure(attachment, "<missing>", dependencies);
+        dependencies.showMessage("parse-error-file-access");
+        return null;
+      }
+
+      const filePath = toNativePath(rawFilePath);
+      if (!(await dependencies.isFileReadable(filePath))) {
+        logFileAccessFailure(attachment, filePath, dependencies);
+        dependencies.showMessage("parse-error-file-access");
+        return null;
+      }
+
+      return attachment;
+    }),
+  );
+
+  return checkedAttachments.filter(
+    (attachment): attachment is Zotero.Item => attachment !== null,
   );
 }
 
