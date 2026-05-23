@@ -80,10 +80,18 @@ describe("mineruClient", function () {
     await client.submitPdf("C:/tmp/a.pdf");
 
     const fields = parseMultipartFields(submittedBody);
+    assert.equal(fields.backend, "pipeline");
+    assert.equal(fields.parse_method, "auto");
+    assert.equal(fields.formula_enable, "false");
+    assert.equal(fields.table_enable, "false");
+    assert.equal(fields.image_analysis, "false");
     assert.equal(fields.return_md, "true");
     assert.equal(fields.return_middle_json, "false");
+    assert.equal(fields.return_model_output, "false");
+    assert.equal(fields.return_content_list, "false");
     assert.equal(fields.return_images, "false");
     assert.equal(fields.response_format_zip, "false");
+    assert.equal(fields.return_original_file, "false");
   });
 
   it("submits local lite tasks without global FormData or Blob", async function () {

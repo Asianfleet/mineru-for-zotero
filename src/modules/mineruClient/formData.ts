@@ -53,11 +53,11 @@ function localTaskFields(
   const precise = mode === "precise";
   return [
     ["lang_list", "ch"],
-    ["backend", "hybrid-auto-engine"],
+    ["backend", precise ? "hybrid-auto-engine" : "pipeline"],
     ["parse_method", "auto"],
-    ["formula_enable", "true"],
-    ["table_enable", "true"],
-    ["image_analysis", "true"],
+    ["formula_enable", precise ? "true" : "false"],
+    ["table_enable", precise ? "true" : "false"],
+    ["image_analysis", precise ? "true" : "false"],
     ["return_md", "true"],
     ["return_middle_json", precise ? "true" : "false"],
     ["return_model_output", "false"],
