@@ -11,42 +11,16 @@ parse-error-mineru = MinerU 解析失败：{ $message }
 parse-error-download = 结果下载失败：{ $message }。可以重新下载或重新解析。
 parse-error-overwrite = 重新解析覆盖失败，已保留旧结果：{ $message }
 parse-error-generic = MinerU 解析失败：{ $message }
-parse-task-submitted =
-    已提交 MinerU 文档解析任务
-    [{ $source ->
-        [local] 本地 API
-       *[online] 在线 API
-    } · { $mode ->
-        [lite] 轻量
-       *[precise] 精准
-    }]
-parse-task-submitted-total =
-    已提交 MinerU 文档解析任务
-    [{ $source ->
-        [local] 本地 API
-       *[online] 在线 API
-    } · { $mode ->
-        [lite] 轻量
-       *[precise] 精准
-    } · 共 { $total } 个]
-parse-task-finished =
-    MinerU 文档解析任务完成
-    [{ $source ->
-        [local] 本地 API
-       *[online] 在线 API
-    } · { $mode ->
-        [lite] 轻量
-       *[precise] 精准
-    }]
-parse-task-finished-progress =
-    MinerU 文档解析任务完成
-    [{ $source ->
-        [local] 本地 API
-       *[online] 在线 API
-    } · { $mode ->
-        [lite] 轻量
-       *[precise] 精准
-    } · { $completed }/{ $total }]
+parse-notice-mode-lite = 轻量
+parse-notice-mode-precise = 精准
+parse-notice-source-local = 本地 API
+parse-notice-source-online = 在线 API
+parse-task-detail = [{ $sourceLabel } · { $modeLabel }]
+parse-task-detail-progress = [{ $sourceLabel } · { $modeLabel } · { $completed }/{ $total }]
+parse-task-submitted = 已提交 MinerU 文档解析任务
+parse-task-submitted-total = 已提交 MinerU 文档解析任务
+parse-task-finished = MinerU 文档解析任务完成
+parse-task-finished-progress = MinerU 文档解析任务完成
 parse-error-empty-lite-markdown = 轻量解析没有返回 Markdown
 parse-error-local-api-url = 请先配置有效的本地 API 地址
 parse-error-local-api-unavailable = 本地 API 服务不可用：{ $message }

@@ -30,6 +30,8 @@ import { getMinerUStorageRoot } from "./preferenceScript";
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_COUNT = 120;
+export const TRANSPARENT_PROGRESS_ICON_URI =
+  "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIvPg==";
 
 export type ReparseChoice = "use-existing" | "reparse";
 
@@ -559,20 +561,117 @@ export function resolveReparseChoiceFromPromptButton(
 }
 
 function showMessage(id: FluentMessageId, args?: Record<string, string>): void {
-  const text = normalizeProgressWindowText(getMessageText(id, args));
-  new ztoolkit.ProgressWindow(addon.data.config.addonName, {
-    closeTime: 4000,
-  })
-    .createLine({
-      text,
-      type: "default",
-      progress: 100,
-    })
-    .show();
+  const lines = createProgressWindowTexts(id, args, getMessageText);
+  const progressWindow = new ztoolkit.ProgressWindow(
+    addon.data.config.addonName,
+    {
+      closeTime: 4000,
+    },
+  );
+  for (const line of createProgressWindowLineOptions(lines)) {
+    progressWindow.createLine(line);
+  }
+  progressWindow.show();
 }
 
 export function normalizeProgressWindowText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
+}
+
+type ProgressWindowText = { icon?: string; text: string };
+
+type ProgressWindowLineOption = ProgressWindowText & {
+  progress: number;
+  type?: "default";
+};
+
+/**
+ * 转换为 ztoolkit ProgressWindow 行参数，避免自定义 icon 被默认 type 覆盖。
+ */
+export function createProgressWindowLineOptions(
+  lines: ProgressWindowText[],
+): ProgressWindowLineOption[] {
+  return lines.map((line) => ({
+    ...line,
+    ...(line.icon ? {} : { type: "default" as const }),
+    progress: 100,
+  }));
+}
+
+export function createProgressWindowTexts(
+  id: FluentMessageId,
+  args: Record<string, string> | undefined,
+  resolveMessage: (
+    id: FluentMessageId,
+    args?: Record<string, string>,
+  ) => string,
+): ProgressWindowText[] {
+  const mainText = normalizeProgressWindowText(resolveMessage(id, args));
+  const detailText = createParseTaskDetailText(id, args, resolveMessage);
+  return detailText
+    ? [
+        { text: mainText },
+        { icon: TRANSPARENT_PROGRESS_ICON_URI, text: detailText },
+      ]
+    : [{ text: mainText }];
+}
+
+function createParseTaskDetailText(
+  id: FluentMessageId,
+  args: Record<string, string> | undefined,
+  resolveMessage: (
+    id: FluentMessageId,
+    args?: Record<string, string>,
+  ) => string,
+): string | null {
+  if (!isParseTaskNotice(id) || !args) {
+    return null;
+  }
+
+  const detailID =
+    id === "parse-task-submitted-total" || id === "parse-task-finished-progress"
+      ? "parse-task-detail-progress"
+      : "parse-task-detail";
+  return normalizeProgressWindowText(
+    resolveMessage(detailID, {
+      ...args,
+      modeLabel: resolveParseNoticeModeLabel(args.mode, resolveMessage),
+      sourceLabel: resolveParseNoticeSourceLabel(args.source, resolveMessage),
+    }),
+  );
+}
+
+function isParseTaskNotice(id: FluentMessageId): boolean {
+  return (
+    id === "parse-task-finished" ||
+    id === "parse-task-finished-progress" ||
+    id === "parse-task-submitted" ||
+    id === "parse-task-submitted-total"
+  );
+}
+
+function resolveParseNoticeModeLabel(
+  mode: string | undefined,
+  resolveMessage: (
+    id: FluentMessageId,
+    args?: Record<string, string>,
+  ) => string,
+): string {
+  return mode === "lite"
+    ? resolveMessage("parse-notice-mode-lite")
+    : resolveMessage("parse-notice-mode-precise");
+}
+
+function resolveParseNoticeSourceLabel(
+  source: string | undefined,
+  resolveMessage: (
+    id: FluentMessageId,
+    args?: Record<string, string>,
+  ) => string,
+): string {
+  return source === "local"
+    ? resolveMessage("parse-notice-source-local")
+    : resolveMessage("parse-notice-source-online");
 }
 
 function createDefaultDependencies(): ParseManagerDependencies {
