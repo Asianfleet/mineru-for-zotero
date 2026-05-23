@@ -1,5 +1,7 @@
 import { config } from "../../package.json";
 import {
+  getParseMode,
+  getParseSource,
   setApiKey,
   setLocalApiBaseURL,
   setParseMode,
@@ -14,6 +16,10 @@ const STORAGE_ROOT = "ProfD/mineru-copy";
 
 interface ZoteroURLLauncher {
   launchURL(url: string): void;
+}
+
+interface ChoicePreferenceElement extends Element {
+  value?: string;
 }
 
 export async function registerPrefsScripts(_window: Window) {
@@ -62,16 +68,18 @@ export function registerPreferenceValueSync(document: Document): void {
     `zotero-prefpane-${config.addonRef}-api-key`,
     setApiKey,
   );
-  registerSelectPreferenceSync<ParseSource>(
+  registerChoicePreferenceSync<ParseSource>(
     document,
     `zotero-prefpane-${config.addonRef}-parse-source`,
     ["online", "local"],
+    getParseSource,
     setParseSource,
   );
-  registerSelectPreferenceSync<ParseMode>(
+  registerChoicePreferenceSync<ParseMode>(
     document,
     `zotero-prefpane-${config.addonRef}-parse-mode`,
     ["precise", "lite"],
+    getParseMode,
     setParseMode,
   );
   registerTextPreferenceSync(
@@ -120,21 +128,39 @@ function registerTextPreferenceSync(
 }
 
 /**
- * 注册 select 控件的 preference 写入逻辑，并忽略未知值。
+ * 注册枚举控件的 preference 同步逻辑，并忽略未知值。
  */
-function registerSelectPreferenceSync<T extends string>(
+function registerChoicePreferenceSync<T extends string>(
   document: Document,
   id: string,
   allowedValues: readonly T[],
+  read: () => T,
   persist: (value: T) => void,
 ): void {
-  const element = document.getElementById(id) as HTMLSelectElement | null;
-  element?.addEventListener("change", () => {
-    const value = element.value;
+  const element = document.getElementById(id) as ChoicePreferenceElement | null;
+  if (!element) {
+    return;
+  }
+
+  setChoiceValue(element, read());
+  const syncValue = () => {
+    const value = getChoiceValue(element);
     if (allowedValues.includes(value as T)) {
       persist(value as T);
     }
-  });
+  };
+
+  element.addEventListener("command", syncValue);
+  element.addEventListener("change", syncValue);
+}
+
+function getChoiceValue(element: ChoicePreferenceElement): string {
+  return element.value ?? element.getAttribute("value") ?? "";
+}
+
+function setChoiceValue(element: ChoicePreferenceElement, value: string): void {
+  element.value = value;
+  element.setAttribute("value", value);
 }
 
 /**

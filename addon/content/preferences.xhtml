@@ -18,36 +18,40 @@
   </vbox>
   <vbox>
     <html:h3 data-l10n-id="pref-api-source-title"></html:h3>
-    <html:select
+    <radiogroup
       id="zotero-prefpane-__addonRef__-parse-source"
+      orient="horizontal"
+      native="true"
       preference="parseSource"
     >
-      <html:option
-        value="online"
+      <radio
         data-l10n-id="pref-api-source-online"
-      ></html:option>
-      <html:option
-        value="local"
+        value="online"
+      />
+      <radio
         data-l10n-id="pref-api-source-local"
-      ></html:option>
-    </html:select>
+        value="local"
+      />
+    </radiogroup>
     <html:div data-l10n-id="pref-api-source-help"></html:div>
   </vbox>
   <vbox>
     <html:h3 data-l10n-id="pref-parse-mode-title"></html:h3>
-    <html:select
+    <radiogroup
       id="zotero-prefpane-__addonRef__-parse-mode"
+      orient="horizontal"
+      native="true"
       preference="parseMode"
     >
-      <html:option
-        value="precise"
+      <radio
         data-l10n-id="pref-parse-mode-precise"
-      ></html:option>
-      <html:option
-        value="lite"
+        value="precise"
+      />
+      <radio
         data-l10n-id="pref-parse-mode-lite"
-      ></html:option>
-    </html:select>
+        value="lite"
+      />
+    </radiogroup>
     <html:div data-l10n-id="pref-parse-mode-help"></html:div>
   </vbox>
   <vbox>

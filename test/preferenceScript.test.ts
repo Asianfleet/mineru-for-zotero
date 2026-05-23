@@ -80,19 +80,59 @@ describe("preferenceScript", function () {
       setParseMode("precise");
     }
   });
+
+  it("persists parse source and mode changes from radiogroups immediately", function () {
+    const parseSource = fakePreferenceElement("online", "", "radiogroup");
+    const parseMode = fakePreferenceElement("precise", "", "radiogroup");
+    const document = fakePreferenceDocument({
+      "zotero-prefpane-mineruForZotero-parse-source": parseSource,
+      "zotero-prefpane-mineruForZotero-parse-mode": parseMode,
+    });
+
+    try {
+      setParseSource("online");
+      setParseMode("precise");
+      registerPreferenceValueSync(document);
+
+      parseSource.value = "local";
+      parseSource.emit("command");
+      parseMode.value = "lite";
+      parseMode.emit("command");
+
+      assert.equal(getParseSource(), "local");
+      assert.equal(getParseMode(), "lite");
+    } finally {
+      setParseSource("online");
+      setParseMode("precise");
+    }
+  });
 });
 
 interface FakePreferenceElement {
   checked: boolean;
+  name: string;
+  type: string;
   value: string;
   addEventListener(type: string, listener: EventListener): void;
   emit(type: string): void;
+  getAttribute(name: string): string | null;
+  setAttribute(name: string, value: string): void;
 }
 
-function fakePreferenceElement(value: string): FakePreferenceElement {
+function fakePreferenceElement(
+  value: string,
+  name = "",
+  type = "text",
+): FakePreferenceElement {
   const listeners = new Map<string, EventListener[]>();
+  const attributes = new Map<string, string>([
+    ["type", type],
+    ["value", value],
+  ]);
   return {
     checked: value === "true",
+    name,
+    type,
     value,
     addEventListener(type, listener) {
       listeners.set(type, [...(listeners.get(type) ?? []), listener]);
@@ -100,6 +140,15 @@ function fakePreferenceElement(value: string): FakePreferenceElement {
     emit(type) {
       for (const listener of listeners.get(type) ?? []) {
         listener({ type } as Event);
+      }
+    },
+    getAttribute(name) {
+      return attributes.get(name) ?? null;
+    },
+    setAttribute(name, value) {
+      attributes.set(name, value);
+      if (name === "value") {
+        this.value = value;
       }
     },
   };
@@ -111,6 +160,9 @@ function fakePreferenceDocument(
   return {
     getElementById(id: string) {
       return elements[id] ?? null;
+    },
+    getElementsByName() {
+      return [] as unknown as NodeListOf<Element>;
     },
   } as unknown as Document;
 }
