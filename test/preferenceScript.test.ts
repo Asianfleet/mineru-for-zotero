@@ -40,6 +40,27 @@ describe("preferenceScript", function () {
     assert.isTrue(getSaveImages());
   });
 
+  it("initializes and persists save-images changes from a native checkbox", function () {
+    const saveImages = fakePreferenceElement("false", "", "checkbox");
+    const document = fakePreferenceDocument({
+      "zotero-prefpane-mineruForZotero-save-images": saveImages,
+    });
+
+    try {
+      setSaveImages(true);
+      registerPreferenceValueSync(document);
+
+      assert.isTrue(saveImages.checked);
+
+      saveImages.checked = false;
+      saveImages.emit("command");
+
+      assert.isFalse(getSaveImages());
+    } finally {
+      setSaveImages(true);
+    }
+  });
+
   it("defaults parse source, parse mode, and local API URL", function () {
     assert.equal(getParseSource(), "online");
     assert.equal(getParseMode(), "precise");

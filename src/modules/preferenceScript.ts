@@ -1,5 +1,6 @@
 import { config } from "../../package.json";
 import {
+  getSaveImages,
   getParseMode,
   getParseSource,
   setApiKey,
@@ -20,6 +21,10 @@ interface ZoteroURLLauncher {
 
 interface ChoicePreferenceElement extends Element {
   value?: string;
+}
+
+interface CheckboxPreferenceElement extends Element {
+  checked?: boolean;
 }
 
 export async function registerPrefsScripts(_window: Window) {
@@ -90,6 +95,7 @@ export function registerPreferenceValueSync(document: Document): void {
   registerCheckboxPreferenceSync(
     document,
     `zotero-prefpane-${config.addonRef}-save-images`,
+    getSaveImages,
     setSaveImages,
   );
 }
@@ -169,12 +175,38 @@ function setChoiceValue(element: ChoicePreferenceElement, value: string): void {
 function registerCheckboxPreferenceSync(
   document: Document,
   id: string,
+  read: () => boolean,
   persist: (value: boolean) => void,
 ): void {
-  const element = document.getElementById(id) as HTMLInputElement | null;
-  element?.addEventListener("change", () => {
-    persist(element.checked);
-  });
+  const element = document.getElementById(
+    id,
+  ) as CheckboxPreferenceElement | null;
+  if (!element) {
+    return;
+  }
+
+  setCheckboxChecked(element, read());
+  const syncChecked = () => {
+    persist(getCheckboxChecked(element));
+  };
+
+  element.addEventListener("command", syncChecked);
+  element.addEventListener("change", syncChecked);
+}
+
+function getCheckboxChecked(element: CheckboxPreferenceElement): boolean {
+  if (typeof element.checked === "boolean") {
+    return element.checked;
+  }
+  return element.getAttribute("checked") === "true";
+}
+
+function setCheckboxChecked(
+  element: CheckboxPreferenceElement,
+  checked: boolean,
+): void {
+  element.checked = checked;
+  element.setAttribute("checked", String(checked));
 }
 
 async function updateParsedCount(
