@@ -43,7 +43,7 @@ export function createParseSubmittedNotice(
 ): ParseNotice {
   if (context.batch && context.batch.total > 1) {
     return {
-      id: "parse-task-submitted-total" as FluentMessageId,
+      id: "parse-task-submitted-total",
       args: {
         ...createNoticeArgs(context),
         total: String(context.batch.total),
@@ -51,7 +51,7 @@ export function createParseSubmittedNotice(
     };
   }
   return {
-    id: "parse-task-submitted" as FluentMessageId,
+    id: "parse-task-submitted",
     args: createNoticeArgs(context),
   };
 }
@@ -65,7 +65,7 @@ export function createParseFinishedNotice(
   if (context.batch && context.batch.total > 1) {
     const completed = incrementCompletedCount(context.batch);
     return {
-      id: "parse-task-finished-progress" as FluentMessageId,
+      id: "parse-task-finished-progress",
       args: {
         ...createNoticeArgs(context),
         total: String(context.batch.total),
@@ -74,7 +74,7 @@ export function createParseFinishedNotice(
     };
   }
   return {
-    id: "parse-task-finished" as FluentMessageId,
+    id: "parse-task-finished",
     args: createNoticeArgs(context),
   };
 }

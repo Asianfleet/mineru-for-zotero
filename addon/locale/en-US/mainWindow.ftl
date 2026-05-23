@@ -11,9 +11,42 @@ parse-error-mineru = MinerU parsing failed: { $message }
 parse-error-download = Result download failed: { $message }. You can download again or reparse.
 parse-error-overwrite = Reparse overwrite failed. The old result was kept: { $message }
 parse-error-generic = MinerU parsing failed: { $message }
-parse-started = MinerU parse task submitted
-parse-finished = MinerU parsing finished
-parse-lite-finished = Lite parse finished
+parse-task-submitted =
+    MinerU document parse task submitted
+    [{ $source ->
+        [local] Local API
+       *[online] Online API
+    } · { $mode ->
+        [lite] Lite
+       *[precise] Precise
+    }]
+parse-task-submitted-total =
+    MinerU document parse task submitted
+    [{ $source ->
+        [local] Local API
+       *[online] Online API
+    } · { $mode ->
+        [lite] Lite
+       *[precise] Precise
+    } · { $total } total]
+parse-task-finished =
+    MinerU document parse task finished
+    [{ $source ->
+        [local] Local API
+       *[online] Online API
+    } · { $mode ->
+        [lite] Lite
+       *[precise] Precise
+    }]
+parse-task-finished-progress =
+    MinerU document parse task finished
+    [{ $source ->
+        [local] Local API
+       *[online] Online API
+    } · { $mode ->
+        [lite] Lite
+       *[precise] Precise
+    } · { $completed }/{ $total }]
 parse-error-empty-lite-markdown = Lite parse returned no Markdown
 parse-error-local-api-url = Configure a valid local API URL first
 parse-error-local-api-unavailable = Local API service is unavailable: { $message }
