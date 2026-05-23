@@ -230,6 +230,194 @@ describe("parseManager", function () {
     assert.sameMembers(started, ["C:\\tmp\\a.pdf", "C:\\tmp\\b.pdf"]);
   });
 
+  it("reports batch parse notices with total and completion progress", async function () {
+    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+    const writeOrder: number[] = [];
+    const completionEvents: Array<{
+      attachmentID: number;
+      completed: string;
+    }> = [];
+    const startedPolls: string[] = [];
+    let releasePollStart: (() => void) | undefined;
+    const bothPollsStarted = new Promise<void>((resolve) => {
+      releasePollStart = resolve;
+    });
+    const releaseByPath = new Map<string, () => void>();
+    const waitByPath = new Map<string, Promise<void>>();
+    for (const path of ["C:\\tmp\\a.pdf", "C:\\tmp\\b.pdf"]) {
+      waitByPath.set(
+        path,
+        new Promise<void>((resolve) => {
+          releaseByPath.set(path, resolve);
+        }),
+      );
+    }
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+        if (id === "parse-task-finished-progress" && args) {
+          const attachmentID = writeOrder[completionEvents.length];
+          completionEvents.push({
+            attachmentID,
+            completed: args.completed,
+          });
+        }
+      },
+      storage: {
+        ...baseStorage(),
+        writeResult: async (input) => {
+          writeOrder.push(input.attachment.id);
+        },
+      },
+      client: {
+        submitPdf: async (filePath) => ({ taskID: filePath }),
+        pollTask: async (taskID) => {
+          startedPolls.push(taskID);
+          if (startedPolls.length === 2) {
+            releasePollStart?.();
+          }
+          await waitByPath.get(taskID);
+          return { status: "succeeded" };
+        },
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    const parsing = manager.parseAttachments([
+      pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
+      pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
+    ]);
+
+    await bothPollsStarted;
+    releaseByPath.get("C:\\tmp\\b.pdf")?.();
+    await Promise.resolve();
+    releaseByPath.get("C:\\tmp\\a.pdf")?.();
+    await parsing;
+
+    assert.deepEqual(
+      notices.filter((notice) => notice.id === "parse-task-submitted-total"),
+      [
+        {
+          id: "parse-task-submitted-total",
+          args: {
+            source: "online",
+            mode: "precise",
+            total: "2",
+          },
+        },
+        {
+          id: "parse-task-submitted-total",
+          args: {
+            source: "online",
+            mode: "precise",
+            total: "2",
+          },
+        },
+      ],
+    );
+    assert.deepEqual(
+      notices.filter((notice) => notice.id === "parse-task-finished-progress"),
+      [
+        {
+          id: "parse-task-finished-progress",
+          args: {
+            source: "online",
+            mode: "precise",
+            total: "2",
+            completed: "1",
+          },
+        },
+        {
+          id: "parse-task-finished-progress",
+          args: {
+            source: "online",
+            mode: "precise",
+            total: "2",
+            completed: "2",
+          },
+        },
+      ],
+    );
+    assert.deepEqual(completionEvents, [
+      { attachmentID: 2, completed: "1" },
+      { attachmentID: 1, completed: "2" },
+    ]);
+  });
+
+  it("excludes skipped existing results from batch notice totals", async function () {
+    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+      },
+      storage: {
+        ...baseStorage(),
+        hasReadyResult: async (attachment) => attachment.id === 1,
+      },
+      confirmReparse: async () => "use-existing",
+      client: successfulPreciseClient(),
+    });
+
+    await manager.parseAttachments([
+      pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
+      pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
+    ]);
+
+    assert.deepEqual(notices, [
+      { id: "parse-use-existing-result", args: undefined },
+      {
+        id: "parse-task-submitted",
+        args: {
+          source: "online",
+          mode: "precise",
+        },
+      },
+      {
+        id: "parse-task-finished",
+        args: {
+          source: "online",
+          mode: "precise",
+        },
+      },
+    ]);
+  });
+
+  it("does not emit batch notices when all existing results are kept", async function () {
+    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+    let submitCalled = false;
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+      },
+      storage: {
+        ...baseStorage(),
+        hasReadyResult: async () => true,
+      },
+      confirmReparse: async () => "use-existing",
+      client: {
+        submitPdf: async () => {
+          submitCalled = true;
+          throw new Error("submitPdf should not be called");
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachments([
+      pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
+      pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
+    ]);
+
+    assert.isFalse(submitCalled);
+    assert.deepEqual(notices, [
+      { id: "parse-use-existing-result", args: undefined },
+    ]);
+  });
+
   it("skips existing results after a single bulk use-existing choice", async function () {
     const messages: string[] = [];
     const submitted: string[] = [];
@@ -977,6 +1165,46 @@ describe("parseManager", function () {
 
       assert.include(messages, testCase.expected);
     }
+  });
+
+  it("counts only successful completions in batch progress notices", async function () {
+    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+      },
+      client: {
+        submitPdf: async (filePath) => ({ taskID: filePath }),
+        pollTask: async (taskID) => {
+          if (taskID.includes("b.pdf")) {
+            return { status: "failed", error: "parse failed" };
+          }
+          return { status: "succeeded" };
+        },
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachments([
+      pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
+      pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
+    ]);
+
+    assert.deepEqual(
+      notices.filter((notice) => notice.id === "parse-task-finished-progress"),
+      [
+        {
+          id: "parse-task-finished-progress",
+          args: {
+            source: "online",
+            mode: "precise",
+            total: "2",
+            completed: "1",
+          },
+        },
+      ],
+    );
   });
 
   it("maps local API request failures to local unavailable messages", async function () {

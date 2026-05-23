@@ -167,9 +167,22 @@ async function parseAttachmentsWithDependencies(
   }
 
   if (options?.force === true) {
+    const noticeContext =
+      pdfAttachments.length > 1
+        ? createParseNoticeContext({
+            source,
+            mode,
+            total: pdfAttachments.length,
+          })
+        : undefined;
     await Promise.all(
       pdfAttachments.map((attachment) =>
-        parseAttachmentWithDependencies(attachment, options, dependencies),
+        parseAttachmentWithDependencies(
+          attachment,
+          options,
+          dependencies,
+          noticeContext,
+        ),
       ),
     );
     return;
@@ -191,12 +204,26 @@ async function parseAttachmentsWithDependencies(
     }
   }
 
+  if (attachmentsToParse.length === 0) {
+    return;
+  }
+
+  const noticeContext =
+    attachmentsToParse.length > 1
+      ? createParseNoticeContext({
+          source,
+          mode,
+          total: attachmentsToParse.length,
+        })
+      : undefined;
+
   await Promise.all(
     attachmentsToParse.map((attachment) =>
       parseAttachmentWithDependencies(
         attachment,
         { ...options, force: true },
         dependencies,
+        noticeContext,
       ),
     ),
   );
