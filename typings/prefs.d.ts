@@ -8,6 +8,9 @@ declare namespace _ZoteroTypes {
   interface Prefs {
     PluginPrefsMap: {
       "apiKey": string;
+      "parseSource": string;
+      "parseMode": string;
+      "localApiBaseURL": string;
       "saveImages": boolean;
     };
   }

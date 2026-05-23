@@ -1,5 +1,6 @@
 import type {
   AttachmentRef,
+  LiteParseManifest,
   MinerUImageFile,
   NormalizedBox,
   ParseManifest,
@@ -11,8 +12,10 @@ type AttachmentKeyRef = Pick<AttachmentRef, "libraryID" | "key">;
 export interface StorageAdapter {
   getAttachmentDir(ref: AttachmentKeyRef): string;
   hasReadyResult(ref: AttachmentKeyRef): Promise<boolean>;
+  hasLiteResult(ref: AttachmentKeyRef): Promise<boolean>;
   readManifest(ref: AttachmentKeyRef): Promise<ParseManifest>;
   readMarkdown(ref: AttachmentKeyRef): Promise<string>;
+  readPreferredMarkdown(ref: AttachmentKeyRef): Promise<string>;
   readBoxes(ref: AttachmentKeyRef): Promise<NormalizedBox[]>;
   writeResult(input: {
     attachment: AttachmentRef;
@@ -29,6 +32,12 @@ export interface StorageAdapter {
     markdown: string;
     error: string;
   }): Promise<void>;
+  writeLiteResult(input: {
+    attachment: AttachmentRef;
+    mineruTaskID: string;
+    source: "online" | "local";
+    markdown: string;
+  }): Promise<void>;
   countReadyResults(): Promise<number>;
   openDataFolder(): Promise<void>;
 }
@@ -37,6 +46,8 @@ const ATTACHMENTS_DIR = "attachments";
 const MANIFEST_FILE = "manifest.json";
 const RAW_RESULT_FILE = "mineru-result.json";
 const CONTENT_FILE = "content.md";
+const LITE_CONTENT_FILE = "lite-content.md";
+const LITE_MANIFEST_FILE = "lite-manifest.json";
 const BOXES_FILE = "boxes.normalized.json";
 const IMAGES_DIR = "images";
 
@@ -58,17 +69,28 @@ export function createStorage(rootDir: string): StorageAdapter {
       }
     },
 
+    async hasLiteResult(ref) {
+      try {
+        await readReadyLiteMarkdown(fsRoot, ref);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+
     async readManifest(ref) {
       return readManifestFile(getAttachmentDir(fsRoot, ref));
     },
 
     async readMarkdown(ref) {
-      const dir = getAttachmentDir(fsRoot, ref);
-      const manifest = await readManifestFile(dir);
-      if (manifest.status !== "ready") {
-        throw new Error(`MinerU result is not ready: ${manifest.status}`);
+      return readReadyMarkdown(fsRoot, ref);
+    },
+
+    async readPreferredMarkdown(ref) {
+      if (await hasReadyPreciseResult(fsRoot, ref)) {
+        return await readReadyMarkdown(fsRoot, ref);
       }
-      return readText(joinPath(dir, CONTENT_FILE));
+      return await readReadyLiteMarkdown(fsRoot, ref);
     },
 
     async readBoxes(ref) {
@@ -127,6 +149,28 @@ export function createStorage(rootDir: string): StorageAdapter {
         markdown: input.markdown,
         boxes: [],
       });
+    },
+
+    async writeLiteResult(input) {
+      if (!input.markdown.trim()) {
+        throw new Error("MinerU lite markdown is empty");
+      }
+      const dir = getAttachmentDir(fsRoot, input.attachment);
+      const manifest: LiteParseManifest = {
+        attachmentID: input.attachment.id,
+        attachmentKey: input.attachment.key,
+        libraryID: input.attachment.libraryID,
+        fileName: input.attachment.fileName,
+        pdfMtime: input.attachment.mtime,
+        parsedAt: new Date().toISOString(),
+        mineruTaskID: input.mineruTaskID,
+        resultVersion: 1,
+        source: input.source,
+        mode: "lite",
+        status: "ready",
+      };
+      await writeText(joinPath(dir, LITE_CONTENT_FILE), input.markdown);
+      await writeJson(joinPath(dir, LITE_MANIFEST_FILE), manifest);
     },
 
     async countReadyResults() {
@@ -188,6 +232,7 @@ async function writeAttachmentResultDir(
     await writeJson(joinPath(tempDir, BOXES_FILE), input.boxes);
     await writeImages(joinPath(tempDir, IMAGES_DIR), input.images ?? []);
     await input.validate?.(tempDir);
+    await preserveLiteFiles(targetDir, tempDir);
   } catch (error) {
     await removePath(tempDir);
     throw error;
@@ -216,8 +261,68 @@ function isTransientResultDir(name: string): boolean {
   return name.includes(".tmp-") || name.includes(".bak-");
 }
 
+async function readReadyMarkdown(
+  root: string,
+  ref: AttachmentKeyRef,
+): Promise<string> {
+  const dir = getAttachmentDir(root, ref);
+  const manifest = await readManifestFile(dir);
+  if (manifest.status !== "ready") {
+    throw new Error(`MinerU result is not ready: ${manifest.status}`);
+  }
+  return readText(joinPath(dir, CONTENT_FILE));
+}
+
+async function hasReadyPreciseResult(
+  root: string,
+  ref: AttachmentKeyRef,
+): Promise<boolean> {
+  const dir = getAttachmentDir(root, ref);
+  if (!(await exists(joinPath(dir, MANIFEST_FILE)))) {
+    return false;
+  }
+  const manifest = await readManifestFile(dir);
+  return manifest.status === "ready";
+}
+
+async function readReadyLiteMarkdown(
+  root: string,
+  ref: AttachmentKeyRef,
+): Promise<string> {
+  const dir = getAttachmentDir(root, ref);
+  const manifest = (await readJson(
+    joinPath(dir, LITE_MANIFEST_FILE),
+  )) as Partial<LiteParseManifest>;
+  if (manifest.status !== "ready" || manifest.mode !== "lite") {
+    throw new Error("MinerU lite result is not ready");
+  }
+  const markdown = await readText(joinPath(dir, LITE_CONTENT_FILE));
+  if (!markdown.trim()) {
+    throw new Error("MinerU lite result is empty");
+  }
+  return markdown;
+}
+
 function getAttachmentDir(root: string, ref: AttachmentKeyRef): string {
   return joinPath(root, ATTACHMENTS_DIR, `${ref.libraryID}-${ref.key}`);
+}
+
+async function preserveLiteFiles(
+  sourceDir: string,
+  targetDir: string,
+): Promise<void> {
+  const contentPath = joinPath(sourceDir, LITE_CONTENT_FILE);
+  const manifestPath = joinPath(sourceDir, LITE_MANIFEST_FILE);
+  if (!(await exists(contentPath)) || !(await exists(manifestPath))) {
+    return;
+  }
+  JSON.parse(await readText(manifestPath));
+  for (const fileName of [LITE_CONTENT_FILE, LITE_MANIFEST_FILE]) {
+    await writeText(
+      joinPath(targetDir, fileName),
+      await readText(joinPath(sourceDir, fileName)),
+    );
+  }
 }
 
 async function validateReadyDir(dir: string): Promise<void> {

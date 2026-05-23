@@ -18,7 +18,7 @@ export async function copySelectedBoxesForReader(
   const storage = createStorage(getMinerUStorageRoot());
   const text =
     state.selectedRawIndexes.size === 0
-      ? await storage.readMarkdown(attachment)
+      ? await storage.readPreferredMarkdown(attachment)
       : formatSelectedBoxesForCopy(
           await storage.readBoxes(attachment),
           state.selectedRawIndexes,

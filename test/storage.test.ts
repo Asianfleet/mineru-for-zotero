@@ -54,6 +54,183 @@ describe("storage", function () {
     );
   });
 
+  it("writes and detects lite markdown without ready precise result", async function () {
+    const storage = createStorage("TmpD/mineru-copy-broken-precise-test");
+    const attachment = {
+      id: 1,
+      key: "LITE",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+
+    await storage.writeLiteResult({
+      attachment,
+      mineruTaskID: "lite-task",
+      source: "online",
+      markdown: "# Lite",
+    });
+
+    assert.isTrue(await storage.hasLiteResult(attachment));
+    assert.isFalse(await storage.hasReadyResult(attachment));
+    assert.equal(await storage.readPreferredMarkdown(attachment), "# Lite");
+  });
+
+  it("prefers precise markdown over lite markdown", async function () {
+    const storage = createStorage("TmpD/mineru-copy-partial-lite-test");
+    const attachment = {
+      id: 1,
+      key: "PREFER",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+
+    await storage.writeLiteResult({
+      attachment,
+      mineruTaskID: "lite-task",
+      source: "local",
+      markdown: "# Lite",
+    });
+    await storage.writeResult({
+      attachment,
+      mineruTaskID: "precise-task",
+      rawResult: { pages: [{ pageNo: 1 }] },
+      markdown: "# Precise",
+      boxes: normalizedBoxes,
+    });
+
+    assert.equal(await storage.readPreferredMarkdown(attachment), "# Precise");
+  });
+
+  it("keeps lite markdown files when writing a precise result", async function () {
+    const storage = createStorage("TmpD/mineru-copy-broken-precise-test");
+    const attachment = {
+      id: 1,
+      key: "KEEP-LITE",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+
+    await storage.writeLiteResult({
+      attachment,
+      mineruTaskID: "lite-task",
+      source: "online",
+      markdown: "# Lite",
+    });
+    await writeResultOrFail(storage, {
+      attachment,
+      mineruTaskID: "precise-task",
+      rawResult: { ok: true },
+      markdown: "# Precise",
+      boxes: normalizedBoxes,
+    });
+
+    const dir = resolveTmpPath(storage.getAttachmentDir(attachment));
+    assert.isTrue(await storage.hasLiteResult(attachment));
+    assert.equal(await storage.readPreferredMarkdown(attachment), "# Precise");
+    assert.equal(await readText(joinPath(dir, "lite-content.md")), "# Lite");
+  });
+
+  it("does not fall back to lite markdown when ready precise content is broken", async function () {
+    const storage = createStorage("TmpD/mineru-copy-test");
+    const attachment = {
+      id: 1,
+      key: "BROKEN-PRECISE",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+
+    await storage.writeLiteResult({
+      attachment,
+      mineruTaskID: "lite-task",
+      source: "online",
+      markdown: "# Lite",
+    });
+    await writeResultOrFail(storage, {
+      attachment,
+      mineruTaskID: "precise-task",
+      rawResult: { ok: true },
+      markdown: "# Precise",
+      boxes: normalizedBoxes,
+    });
+
+    const dir = resolveTmpPath(storage.getAttachmentDir(attachment));
+    await removeFile(joinPath(dir, "content.md"));
+    assert.isFalse(await exists(joinPath(dir, "content.md")));
+
+    await assertRejects(() => storage.readPreferredMarkdown(attachment));
+  });
+
+  it("does not preserve incomplete lite files during precise writes", async function () {
+    const storage = createStorage("TmpD/mineru-copy-partial-lite-test");
+    const attachment = {
+      id: 1,
+      key: "PARTIAL-LITE",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    const dir = resolveTmpPath(storage.getAttachmentDir(attachment));
+    await writeText(joinPath(dir, "lite-content.md"), "# Partial Lite");
+
+    await writeResultOrFail(storage, {
+      attachment,
+      mineruTaskID: "precise-task",
+      rawResult: { ok: true },
+      markdown: "# Precise",
+      boxes: normalizedBoxes,
+    });
+
+    assert.isFalse(await exists(joinPath(dir, "lite-content.md")));
+    assert.isFalse(await exists(joinPath(dir, "lite-manifest.json")));
+  });
+
+  it("does not treat lite markdown without manifest as ready", async function () {
+    const storage = createStorage("TmpD/mineru-copy-partial-lite-test");
+    const attachment = {
+      id: 1,
+      key: "CONTENT-ONLY-LITE",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    const dir = resolveTmpPath(storage.getAttachmentDir(attachment));
+    await writeText(joinPath(dir, "lite-content.md"), "# Partial Lite");
+
+    assert.isFalse(await storage.hasLiteResult(attachment));
+    await assertRejects(() => storage.readPreferredMarkdown(attachment));
+  });
+
+  it("does not treat lite markdown with failed manifest as ready", async function () {
+    const storage = createStorage("TmpD/mineru-copy-partial-lite-test");
+    const attachment = {
+      id: 1,
+      key: "FAILED-LITE",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    const dir = resolveTmpPath(storage.getAttachmentDir(attachment));
+    await writeText(joinPath(dir, "lite-content.md"), "# Failed Lite");
+    await writeText(
+      joinPath(dir, "lite-manifest.json"),
+      `${JSON.stringify({ status: "failed" })}\n`,
+    );
+
+    assert.isFalse(await storage.hasLiteResult(attachment));
+    await assertRejects(() => storage.readPreferredMarkdown(attachment));
+  });
+
   it("writes MinerU images under the attachment images directory", async function () {
     const storage = createStorage(rootDir);
     const attachment = {
@@ -381,13 +558,19 @@ function describeError(error: unknown): string {
 
 async function assertRejects(
   callback: () => Promise<unknown>,
-  expectedMessage: string,
+  expectedMessage?: string,
 ): Promise<void> {
+  let rejectedError: unknown;
   try {
     await callback();
-    assert.fail("Expected promise to reject");
   } catch (error) {
-    assert.include(describeError(error), expectedMessage);
+    rejectedError = error;
+  }
+  if (!rejectedError) {
+    assert.fail("Expected promise to reject");
+  }
+  if (expectedMessage) {
+    assert.include(describeError(rejectedError), expectedMessage);
   }
 }
 
@@ -519,6 +702,20 @@ async function writeText(path: string, value: string): Promise<void> {
     encoding: "utf-8",
     tmpPath: `${path}.tmp`,
   });
+}
+
+async function removeFile(path: string): Promise<void> {
+  if (typeof IOUtils !== "undefined") {
+    await IOUtils.remove(path, { ignoreAbsent: true });
+    return;
+  }
+  const runtime = globalThis as typeof globalThis & { OS?: typeof OS };
+  if (!runtime.OS) {
+    throw new Error("No file remover is available");
+  }
+  if (await runtime.OS.File.exists(path)) {
+    await runtime.OS.File.remove(path);
+  }
 }
 
 async function exists(path: string): Promise<boolean> {

@@ -17,6 +17,56 @@
     <html:div data-l10n-id="pref-api-key-help"></html:div>
   </vbox>
   <vbox>
+    <html:h3 data-l10n-id="pref-api-source-title"></html:h3>
+    <radiogroup
+      id="zotero-prefpane-__addonRef__-parse-source"
+      orient="horizontal"
+      native="true"
+      preference="parseSource"
+    >
+      <radio
+        data-l10n-id="pref-api-source-online"
+        value="online"
+      />
+      <radio
+        data-l10n-id="pref-api-source-local"
+        value="local"
+      />
+    </radiogroup>
+    <html:div data-l10n-id="pref-api-source-help"></html:div>
+  </vbox>
+  <vbox>
+    <html:h3 data-l10n-id="pref-parse-mode-title"></html:h3>
+    <radiogroup
+      id="zotero-prefpane-__addonRef__-parse-mode"
+      orient="horizontal"
+      native="true"
+      preference="parseMode"
+    >
+      <radio
+        data-l10n-id="pref-parse-mode-precise"
+        value="precise"
+      />
+      <radio
+        data-l10n-id="pref-parse-mode-lite"
+        value="lite"
+      />
+    </radiogroup>
+    <html:div data-l10n-id="pref-parse-mode-help"></html:div>
+  </vbox>
+  <vbox>
+    <html:h3
+      for="zotero-prefpane-__addonRef__-local-api-base-url"
+      data-l10n-id="pref-local-api-base-url"
+    ></html:h3>
+    <html:input
+      type="text"
+      id="zotero-prefpane-__addonRef__-local-api-base-url"
+      preference="localApiBaseURL"
+    ></html:input>
+    <html:div data-l10n-id="pref-local-api-base-url-help"></html:div>
+  </vbox>
+  <vbox>
     <html:label>
       <html:input
         type="checkbox"

@@ -1,15 +1,28 @@
 import type { MinerUImageFile } from "../domain";
 
+export type MinerUParseSource = "online" | "local";
+export type MinerUParseMode = "precise" | "lite";
+
+export type MinerUPreciseResult = {
+  kind: "precise";
+  rawResult: unknown;
+  markdown: string;
+  images?: MinerUImageFile[];
+};
+
+export type MinerULiteResult = {
+  kind: "lite";
+  markdown: string;
+};
+
+export type MinerUParseResult = MinerUPreciseResult | MinerULiteResult;
+
 export interface MinerUClient {
   submitPdf(filePath: string): Promise<{ taskID: string }>;
   pollTask(
     taskID: string,
   ): Promise<{ status: "running" | "succeeded" | "failed"; error?: string }>;
-  downloadResult(taskID: string): Promise<{
-    rawResult: unknown;
-    markdown: string;
-    images?: MinerUImageFile[];
-  }>;
+  downloadResult(taskID: string): Promise<MinerUParseResult>;
 }
 
 export interface MinerUClientOptions {
@@ -24,6 +37,13 @@ export interface MinerUClientOptions {
   ) => Promise<Uint8Array | ZipEntries>;
   downloadRetryDelayMs?: number;
   maxDownloadAttempts?: number;
+}
+
+export interface MinerUClientFactoryOptions extends MinerUClientOptions {
+  source: MinerUParseSource;
+  mode: MinerUParseMode;
+  localApiBaseURL?: string;
+  saveImages?: boolean;
 }
 
 export type FetchLike = typeof fetch;

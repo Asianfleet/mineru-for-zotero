@@ -36,7 +36,7 @@ export function readZipFile(path: string): ZipEntries | null {
       if (shouldReadZipEntry(name)) {
         entries.set(name, {
           name,
-          bytes: readZipEntryBytes(reader, name),
+          bytes: readZipEntryBytes(reader, name, classes, interfaces),
         });
       }
     }
@@ -49,12 +49,17 @@ export function readZipFile(path: string): ZipEntries | null {
 /**
  * 从 nsIZipReader 中读取单个 ZIP 条目的完整字节。
  */
-export function readZipEntryBytes(reader: nsIZipReader, name: string): Uint8Array {
+export function readZipEntryBytes(
+  reader: nsIZipReader,
+  name: string,
+  classes: typeof Components.classes = Components.classes,
+  interfaces: typeof Components.interfaces = Components.interfaces,
+): Uint8Array {
   const input = reader.getInputStream(name);
-  const classMap = Components.classes as typeof Components.classes &
+  const classMap = classes as typeof Components.classes &
     Record<string, { createInstance: (iid: unknown) => nsISupports }>;
   const binary = classMap["@mozilla.org/binaryinputstream;1"].createInstance(
-    Components.interfaces.nsIBinaryInputStream,
+    interfaces.nsIBinaryInputStream,
   ) as nsIBinaryInputStream;
   try {
     binary.setInputStream(input);
@@ -100,6 +105,40 @@ export async function readZip(buffer: ArrayBuffer): Promise<ZipEntries> {
   }
 
   return entries;
+}
+
+/**
+ * 先直接解析 ZIP；失败时写入临时文件并使用 nsIZipReader 回退解析。
+ */
+export async function readZipWithFileFallback(
+  buffer: ArrayBuffer,
+  fileName = "mineru-result.zip",
+): Promise<ZipEntries> {
+  try {
+    return await readZip(buffer);
+  } catch (zipError) {
+    const path = await createTemporaryPath(fileName);
+    try {
+      await writeTemporaryZip(path, new Uint8Array(buffer));
+      const entries = readZipFile(path);
+      if (entries) {
+        return entries;
+      }
+      throw new MinerUTaskError(
+        `${errorText(zipError)}; nsIZipReader fallback returned no readable entries`,
+        { cause: zipError },
+      );
+    } catch (fallbackError) {
+      throw new MinerUTaskError(
+        `${errorText(zipError)}; nsIZipReader fallback failed: ${errorText(
+          fallbackError,
+        )}`,
+        { cause: zipError },
+      );
+    } finally {
+      await removeTemporaryZip(path);
+    }
+  }
 }
 
 /**
@@ -180,11 +219,55 @@ export function decodeText(bytes: Uint8Array): string {
 }
 
 /**
+ * 在系统临时目录下创建 ZIP 回退读取使用的临时文件路径。
+ */
+async function createTemporaryPath(fileName: string): Promise<string> {
+  const baseDir =
+    typeof PathUtils !== "undefined"
+      ? PathUtils.tempDir
+      : OS.Constants.Path.tmpDir;
+  const name = `${Date.now()}-${Math.random().toString(16).slice(2)}-${fileName}`;
+  return typeof PathUtils !== "undefined"
+    ? PathUtils.join(baseDir, name)
+    : OS.Path.join(baseDir, name);
+}
+
+/**
+ * 写入临时 ZIP 字节供 nsIZipReader 读取。
+ */
+async function writeTemporaryZip(path: string, bytes: Uint8Array): Promise<void> {
+  if (typeof IOUtils !== "undefined") {
+    await IOUtils.write(path, bytes, { tmpPath: `${path}.tmp` });
+    return;
+  }
+  await OS.File.writeAtomic(path, bytes, { tmpPath: `${path}.tmp` });
+}
+
+/**
+ * 删除 ZIP 回退读取产生的临时文件。
+ */
+async function removeTemporaryZip(path: string): Promise<void> {
+  try {
+    if (typeof IOUtils !== "undefined") {
+      await IOUtils.remove(path, { ignoreAbsent: true });
+      return;
+    }
+    await OS.File.remove(path, { ignoreAbsent: true });
+  } catch {
+    // 临时文件清理失败不应覆盖 ZIP 解析结果或原始错误。
+  }
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
  * 判断 ZIP 条目是否需要读取到内存。
  */
 function shouldReadZipEntry(name: string): boolean {
   return (
-    name === "full.md" ||
+    name.endsWith(".md") ||
     name.endsWith(".json") ||
     isReadableZipImageEntry(name)
   );

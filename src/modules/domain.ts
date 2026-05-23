@@ -41,5 +41,19 @@ export interface ParseManifest {
   error?: string;
 }
 
+export interface LiteParseManifest {
+  attachmentID: number;
+  attachmentKey: string;
+  libraryID: number;
+  fileName: string;
+  pdfMtime: number;
+  parsedAt: string;
+  mineruTaskID: string;
+  resultVersion: 1;
+  source: "online" | "local";
+  mode: "lite";
+  status: "ready";
+}
+
 export type OverlayMode = "all" | "hover" | "off";
 export type FormulaCopyMode = "with-dollar" | "without-dollar";
