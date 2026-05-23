@@ -16,6 +16,7 @@ parse-notice-mode-precise = 精准
 parse-notice-source-local = 本地 API
 parse-notice-source-online = 在线 API
 parse-task-detail = [{ $sourceLabel } · { $modeLabel }]
+parse-task-detail-total = [{ $sourceLabel } · { $modeLabel } · 共 { $total } 个]
 parse-task-detail-progress = [{ $sourceLabel } · { $modeLabel } · { $completed }/{ $total }]
 parse-task-submitted = 已提交 MinerU 文档解析任务
 parse-task-submitted-total = 已提交 MinerU 文档解析任务

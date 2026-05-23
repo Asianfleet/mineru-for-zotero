@@ -16,6 +16,7 @@ parse-notice-mode-precise = Precise
 parse-notice-source-local = Local API
 parse-notice-source-online = Online API
 parse-task-detail = [{ $sourceLabel } · { $modeLabel }]
+parse-task-detail-total = [{ $sourceLabel } · { $modeLabel } · { $total } total]
 parse-task-detail-progress = [{ $sourceLabel } · { $modeLabel } · { $completed }/{ $total }]
 parse-task-submitted = MinerU document parse task submitted
 parse-task-submitted-total = MinerU document parse task submitted

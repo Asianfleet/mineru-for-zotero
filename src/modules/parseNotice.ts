@@ -4,6 +4,7 @@ import type { ParseMode, ParseSource } from "../utils/prefs";
 export interface ParseNoticeBatchProgress {
   readonly total: number;
   completed: number;
+  submitted: boolean;
 }
 
 export interface ParseNoticeContext {
@@ -30,7 +31,7 @@ export function createParseNoticeContext(input: {
     mode: input.mode,
     batch:
       typeof input.total === "number"
-        ? { total: input.total, completed: 0 }
+        ? { total: input.total, completed: 0, submitted: false }
         : undefined,
   };
 }
@@ -40,8 +41,12 @@ export function createParseNoticeContext(input: {
  */
 export function createParseSubmittedNotice(
   context: ParseNoticeContext,
-): ParseNotice {
+): ParseNotice | null {
   if (context.batch && context.batch.total > 1) {
+    if (context.batch.submitted) {
+      return null;
+    }
+    context.batch.submitted = true;
     return {
       id: "parse-task-submitted-total",
       args: {

@@ -30,8 +30,6 @@ import { getMinerUStorageRoot } from "./preferenceScript";
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_COUNT = 120;
-export const TRANSPARENT_PROGRESS_ICON_URI =
-  "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIvPg==";
 
 export type ReparseChoice = "use-existing" | "reparse";
 
@@ -562,40 +560,127 @@ export function resolveReparseChoiceFromPromptButton(
 
 function showMessage(id: FluentMessageId, args?: Record<string, string>): void {
   const lines = createProgressWindowTexts(id, args, getMessageText);
+  const lineOptions = createProgressWindowLineOptions(lines);
+  const labelLines = createProgressWindowLabelLines(lines);
   const progressWindow = new ztoolkit.ProgressWindow(
     addon.data.config.addonName,
     {
       closeTime: 4000,
     },
   );
-  for (const line of createProgressWindowLineOptions(lines)) {
+  for (const line of lineOptions) {
     progressWindow.createLine(line);
   }
+  applyProgressWindowMultilineLabel(progressWindow, labelLines);
   progressWindow.show();
+  applyProgressWindowMultilineLabel(progressWindow, labelLines);
+  setTimeout(() => {
+    applyProgressWindowMultilineLabel(progressWindow, labelLines);
+  }, 75);
 }
 
 export function normalizeProgressWindowText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-type ProgressWindowText = { icon?: string; text: string };
+type ProgressWindowText = { text: string };
 
 type ProgressWindowLineOption = ProgressWindowText & {
   progress: number;
-  type?: "default";
+  type: "default";
 };
 
 /**
- * 转换为 ztoolkit ProgressWindow 行参数，避免自定义 icon 被默认 type 覆盖。
+ * 转换为 ztoolkit ProgressWindow 行参数，并保留详情行的默认 icon 槽位。
  */
 export function createProgressWindowLineOptions(
   lines: ProgressWindowText[],
 ): ProgressWindowLineOption[] {
-  return lines.map((line) => ({
-    ...line,
-    ...(line.icon ? {} : { type: "default" as const }),
-    progress: 100,
-  }));
+  return [
+    {
+      text: lines[0]?.text ?? "",
+      type: "default" as const,
+      progress: 100,
+    },
+  ];
+}
+
+export function createProgressWindowDisplayText(
+  lines: ProgressWindowText[],
+): string {
+  return lines.map((line) => line.text).join("\n");
+}
+
+export function createProgressWindowLabelLines(
+  lines: ProgressWindowText[],
+): string[] {
+  return lines.map((line) => line.text);
+}
+
+function applyProgressWindowMultilineLabel(
+  progressWindow: unknown,
+  labelLines: string[],
+): void {
+  if (labelLines.length <= 1) {
+    return;
+  }
+
+  const lines = (
+    progressWindow as unknown as {
+      lines?: Array<{ _image?: HTMLElement }>;
+    }
+  ).lines;
+  const image = lines?.[0]?._image;
+  const parent = image?.parentElement;
+  if (!parent) {
+    return;
+  }
+
+  renderProgressWindowLabelLines(parent, labelLines);
+}
+
+export function renderProgressWindowLabelLines(
+  parent: Element,
+  labelLines: string[],
+): boolean {
+  const document = parent.ownerDocument;
+  if (!document) {
+    return false;
+  }
+
+  const existing = parent.querySelector(
+    "[data-mineru-progress-label-container='true'], .zotero-progress-item-label",
+  );
+  if (!existing) {
+    return false;
+  }
+
+  const container = createProgressWindowXULElement(document, "vbox");
+  container.setAttribute("data-mineru-progress-label-container", "true");
+  container.setAttribute("flex", "1");
+
+  for (const text of labelLines) {
+    const label = createProgressWindowXULElement(document, "description");
+    label.classList.add("zotero-progress-item-label");
+    label.textContent = text;
+    label.removeAttribute("crop");
+    container.append(label);
+  }
+
+  existing.replaceWith(container);
+  return true;
+}
+
+function createProgressWindowXULElement(
+  document: Document,
+  tagName: string,
+): Element {
+  const documentWithXUL = document as Document & {
+    createXULElement?: (tagName: string) => Element;
+  };
+  return documentWithXUL.createXULElement
+    ? documentWithXUL.createXULElement(tagName)
+    : document.createElement(tagName);
 }
 
 export function createProgressWindowTexts(
@@ -609,10 +694,7 @@ export function createProgressWindowTexts(
   const mainText = normalizeProgressWindowText(resolveMessage(id, args));
   const detailText = createParseTaskDetailText(id, args, resolveMessage);
   return detailText
-    ? [
-        { text: mainText },
-        { icon: TRANSPARENT_PROGRESS_ICON_URI, text: detailText },
-      ]
+    ? [{ text: mainText }, { text: detailText }]
     : [{ text: mainText }];
 }
 
@@ -628,10 +710,7 @@ function createParseTaskDetailText(
     return null;
   }
 
-  const detailID =
-    id === "parse-task-submitted-total" || id === "parse-task-finished-progress"
-      ? "parse-task-detail-progress"
-      : "parse-task-detail";
+  const detailID = getParseTaskDetailID(id);
   return normalizeProgressWindowText(
     resolveMessage(detailID, {
       ...args,
@@ -639,6 +718,16 @@ function createParseTaskDetailText(
       sourceLabel: resolveParseNoticeSourceLabel(args.source, resolveMessage),
     }),
   );
+}
+
+function getParseTaskDetailID(id: FluentMessageId): FluentMessageId {
+  if (id === "parse-task-submitted-total") {
+    return "parse-task-detail-total";
+  }
+  if (id === "parse-task-finished-progress") {
+    return "parse-task-detail-progress";
+  }
+  return "parse-task-detail";
 }
 
 function isParseTaskNotice(id: FluentMessageId): boolean {
@@ -722,8 +811,11 @@ function getClient(
 
 function showParseNotice(
   dependencies: ParseManagerDependencies,
-  notice: { id: FluentMessageId; args: Record<string, string> },
+  notice: { id: FluentMessageId; args: Record<string, string> } | null,
 ): void {
+  if (!notice) {
+    return;
+  }
   dependencies.showMessage(notice.id, notice.args);
 }
 

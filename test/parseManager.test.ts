@@ -1,10 +1,12 @@
 import { assert } from "chai";
 import {
+  createProgressWindowDisplayText,
+  createProgressWindowLabelLines,
   createProgressWindowLineOptions,
   createProgressWindowTexts,
   createParseManager,
+  renderProgressWindowLabelLines,
   normalizeProgressWindowText,
-  TRANSPARENT_PROGRESS_ICON_URI,
   resolveReparseChoiceFromPromptButton,
   type ParseManagerDependencies,
 } from "../src/modules/parseManager";
@@ -36,7 +38,24 @@ describe("parseManager", function () {
 
     assert.deepEqual(texts, [
       { text: "已提交 MinerU 文档解析任务" },
-      { icon: TRANSPARENT_PROGRESS_ICON_URI, text: "[在线 API · 精准]" },
+      { text: "[在线 API · 精准]" },
+    ]);
+  });
+
+  it("creates submitted batch detail text without a completed placeholder", function () {
+    const texts = createProgressWindowTexts(
+      "parse-task-submitted-total",
+      {
+        source: "online",
+        mode: "precise",
+        total: "2",
+      },
+      resolveProgressWindowTestMessage,
+    );
+
+    assert.deepEqual(texts, [
+      { text: "已提交 MinerU 文档解析任务" },
+      { text: "[在线 API · 精准 · 共 2 个]" },
     ]);
   });
 
@@ -55,16 +74,15 @@ describe("parseManager", function () {
     assert.deepEqual(texts, [
       { text: "MinerU 文档解析任务完成" },
       {
-        icon: TRANSPARENT_PROGRESS_ICON_URI,
         text: "[本地 API · 轻量 · 2/3]",
       },
     ]);
   });
 
-  it("keeps the detail line icon from being overridden by the default type", function () {
+  it("creates one progress window item so the detail text shares the main icon", function () {
     const options = createProgressWindowLineOptions([
       { text: "已提交 MinerU 文档解析任务" },
-      { icon: TRANSPARENT_PROGRESS_ICON_URI, text: "[在线 API · 精准]" },
+      { text: "[在线 API · 精准]" },
     ]);
 
     assert.deepEqual(options, [
@@ -73,19 +91,85 @@ describe("parseManager", function () {
         type: "default",
         progress: 100,
       },
-      {
-        icon: TRANSPARENT_PROGRESS_ICON_URI,
-        text: "[在线 API · 精准]",
-        progress: 100,
-      },
     ]);
   });
 
-  it("uses an empty SVG as the invisible progress icon placeholder", function () {
+  it("preserves progress window detail text as a label newline", function () {
     assert.equal(
-      TRANSPARENT_PROGRESS_ICON_URI,
-      "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIvPg==",
+      createProgressWindowDisplayText([
+        { text: "已提交 MinerU 文档解析任务" },
+        { text: "[在线 API · 精准]" },
+      ]),
+      "已提交 MinerU 文档解析任务\n[在线 API · 精准]",
     );
+  });
+
+  it("creates one progress window line for generic notices", function () {
+    assert.deepEqual(
+      createProgressWindowLineOptions([{ text: "已提交 MinerU 文档解析任务" }]),
+      [
+        {
+          text: "已提交 MinerU 文档解析任务",
+          type: "default",
+          progress: 100,
+        },
+      ],
+    );
+  });
+
+  it("keeps progress window text normalization for Fluent values", function () {
+    assert.equal(
+      createProgressWindowDisplayText([
+        {
+          text: normalizeProgressWindowText(
+            "已提交 MinerU 文档解析任务\n    [在线 API · 精准]",
+          ),
+        },
+      ]),
+      "已提交 MinerU 文档解析任务 [在线 API · 精准]",
+    );
+  });
+
+  it("creates one progress window line for parse task detail text", function () {
+    const options = createProgressWindowLineOptions([
+      { text: "已提交 MinerU 文档解析任务" },
+      { text: "[在线 API · 精准]" },
+    ]);
+
+    assert.lengthOf(options, 1);
+  });
+
+  it("renders progress window detail text as separate label descriptions", function () {
+    const parent = document.createElement("hbox");
+    const icon = document.createElement("hbox");
+    const label = document.createElement("description");
+    label.className = "zotero-progress-item-label";
+    label.textContent = "已提交 MinerU 文档解析任务";
+    label.setAttribute("crop", "end");
+    parent.append(icon, label);
+
+    const rendered = renderProgressWindowLabelLines(
+      parent,
+      createProgressWindowLabelLines([
+        { text: "已提交 MinerU 文档解析任务" },
+        { text: "[在线 API · 精准]" },
+      ]),
+    );
+
+    const container = parent.querySelector(
+      "[data-mineru-progress-label-container='true']",
+    );
+    const labels = Array.from(
+      parent.querySelectorAll(".zotero-progress-item-label"),
+    );
+
+    assert.isTrue(rendered);
+    assert.exists(container);
+    assert.deepEqual(
+      labels.map((element) => element.textContent),
+      ["已提交 MinerU 文档解析任务", "[在线 API · 精准]"],
+    );
+    assert.isFalse(labels.some((element) => element.hasAttribute("crop")));
   });
 
   it("treats prompt close and cancel position as use-existing", function () {
@@ -375,14 +459,6 @@ describe("parseManager", function () {
     assert.deepEqual(
       notices.filter((notice) => notice.id === "parse-task-submitted-total"),
       [
-        {
-          id: "parse-task-submitted-total",
-          args: {
-            source: "online",
-            mode: "precise",
-            total: "2",
-          },
-        },
         {
           id: "parse-task-submitted-total",
           args: {
@@ -1469,10 +1545,14 @@ function resolveProgressWindowTestMessage(
     "parse-notice-source-online": "在线 API",
     "parse-task-finished-progress": "MinerU 文档解析任务完成",
     "parse-task-submitted": "已提交 MinerU 文档解析任务",
+    "parse-task-submitted-total": "已提交 MinerU 文档解析任务",
   };
 
   if (id === "parse-task-detail") {
     return `[${args?.sourceLabel} · ${args?.modeLabel}]`;
+  }
+  if (id === "parse-task-detail-total") {
+    return `[${args?.sourceLabel} · ${args?.modeLabel} · 共 ${args?.total} 个]`;
   }
   if (id === "parse-task-detail-progress") {
     return `[${args?.sourceLabel} · ${args?.modeLabel} · ${args?.completed}/${args?.total}]`;

@@ -32,6 +32,7 @@ export type FluentMessageId =
   | 'parse-pdf-menuitem'
   | 'parse-task-detail'
   | 'parse-task-detail-progress'
+  | 'parse-task-detail-total'
   | 'parse-task-finished'
   | 'parse-task-finished-progress'
   | 'parse-task-submitted'
