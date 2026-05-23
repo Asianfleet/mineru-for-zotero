@@ -38,6 +38,142 @@ describe("parseManager", function () {
     );
   });
 
+  it("reports online precise parse notices with source and mode context", async function () {
+    const notices: Array<{
+      id: string;
+      args?: Record<string, string>;
+    }> = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+      },
+      storage: {
+        ...baseStorage(),
+        writeResult: async () => {},
+      },
+      client: successfulPreciseClient(),
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.deepEqual(notices, [
+      {
+        id: "parse-task-submitted",
+        args: {
+          source: "online",
+          mode: "precise",
+        },
+      },
+      {
+        id: "parse-task-finished",
+        args: {
+          source: "online",
+          mode: "precise",
+        },
+      },
+    ]);
+  });
+
+  it("reports all source and mode combinations in parse notices", async function () {
+    const cases: Array<{
+      source: "online" | "local";
+      mode: "precise" | "lite";
+      result:
+        | {
+            kind: "precise";
+            rawResult: unknown;
+            markdown: string;
+          }
+        | { kind: "lite"; markdown: string };
+    }> = [
+      {
+        source: "online",
+        mode: "precise",
+        result: preciseResultFixture(),
+      },
+      {
+        source: "online",
+        mode: "lite",
+        result: { kind: "lite", markdown: "# Lite" },
+      },
+      {
+        source: "local",
+        mode: "precise",
+        result: preciseResultFixture(),
+      },
+      {
+        source: "local",
+        mode: "lite",
+        result: { kind: "lite", markdown: "# Lite" },
+      },
+    ];
+
+    for (const entry of cases) {
+      const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+      const manager = createParseManager({
+        ...baseDependencies([]),
+        getParseSource: () => entry.source,
+        getParseMode: () => entry.mode,
+        showMessage: (id, args) => {
+          notices.push({ id, args });
+        },
+        client: {
+          submitPdf: async () => ({ taskID: "task-1" }),
+          pollTask: async () => ({ status: "succeeded" }),
+          downloadResult: async () => entry.result,
+        },
+      });
+
+      await manager.parseAttachment(pdfAttachment());
+
+      assert.deepEqual(
+        notices.map((notice) => notice.args),
+        [
+          {
+            source: entry.source,
+            mode: entry.mode,
+          },
+          {
+            source: entry.source,
+            mode: entry.mode,
+          },
+        ],
+      );
+    }
+  });
+
+  it("does not report submitted notice when submit upload fails", async function () {
+    const notices: Array<{
+      id: string;
+      args?: Record<string, string>;
+    }> = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+      },
+      client: {
+        submitPdf: async () => {
+          throw new MinerURequestError("upload", 403, "bad signature");
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.notInclude(
+      notices.map((notice) => notice.id),
+      "parse-task-submitted",
+    );
+    assert.deepInclude(notices, {
+      id: "parse-error-upload",
+      args: { message: "MinerU upload request failed: bad signature" },
+    });
+  });
+
   it("parses multiple attachments in parallel and confirms existing results once", async function () {
     const messages: string[] = [];
     const started: string[] = [];
@@ -863,6 +999,37 @@ describe("parseManager", function () {
     assert.include(messages, "parse-error-local-api-unavailable");
   });
 });
+
+function successfulPreciseClient(): NonNullable<
+  ParseManagerDependencies["client"]
+> {
+  return {
+    submitPdf: async () => ({ taskID: "task-1" }),
+    pollTask: async () => ({ status: "succeeded" }),
+    downloadResult: async () => preciseResultFixture(),
+  };
+}
+
+function preciseResultFixture(): {
+  kind: "precise";
+  rawResult: unknown;
+  markdown: string;
+} {
+  return {
+    kind: "precise",
+    rawResult: {
+      pages: [
+        {
+          pageNo: 1,
+          width: 1000,
+          height: 1000,
+          blocks: [{ type: "text", bbox: [0, 0, 100, 100], markdown: "A" }],
+        },
+      ],
+    },
+    markdown: "A",
+  };
+}
 
 function baseDependencies(messages: string[]): ParseManagerDependencies {
   return {

@@ -8,6 +8,12 @@ import {
   MinerUTaskError,
   type MinerUClient,
 } from "./mineruClient";
+import {
+  createParseFinishedNotice,
+  createParseNoticeContext,
+  createParseSubmittedNotice,
+  type ParseNoticeContext,
+} from "./parseNotice";
 import { toNativePath } from "./mineruClient/path";
 import { createStorage, type StorageAdapter } from "./storage";
 import { getString } from "../utils/locale";
@@ -229,6 +235,7 @@ async function parseAttachmentWithDependencies(
   attachment: Zotero.Item,
   options: { force?: boolean } | undefined,
   dependencies: ParseManagerDependencies,
+  noticeContext?: ParseNoticeContext,
 ): Promise<void> {
   if (!attachment.isPDFAttachment()) {
     dependencies.showMessage("parse-error-not-pdf");
@@ -252,6 +259,8 @@ async function parseAttachmentWithDependencies(
   const source = getCurrentParseSource(dependencies);
   const mode = getCurrentParseMode(dependencies);
   const apiKey = dependencies.getApiKey().trim();
+  const currentNoticeContext =
+    noticeContext ?? createParseNoticeContext({ source, mode });
   if (requiresApiKey(source, mode) && !apiKey) {
     dependencies.showMessage("parse-error-missing-api-key");
     return;
@@ -284,10 +293,13 @@ async function parseAttachmentWithDependencies(
   );
   let phase: ParsePhase = "submit";
   try {
-    dependencies.showMessage("parse-started");
     phase = "submit";
     const { taskID } = await client.submitPdf(filePath);
     phase = "poll";
+    showParseNotice(
+      dependencies,
+      createParseSubmittedNotice(currentNoticeContext),
+    );
     await waitForTask(client, taskID, dependencies.delay);
     phase = "download";
     const result = await client.downloadResult(taskID);
@@ -303,7 +315,10 @@ async function parseAttachmentWithDependencies(
         source,
         markdown: result.markdown,
       });
-      dependencies.showMessage("parse-lite-finished");
+      showParseNotice(
+        dependencies,
+        createParseFinishedNotice(currentNoticeContext),
+      );
       return;
     }
     const boxes = normalizeMinerUBoxes(result.rawResult);
@@ -331,7 +346,10 @@ async function parseAttachmentWithDependencies(
       images:
         dependencies.getSaveImages?.() !== false ? result.images : undefined,
     });
-    dependencies.showMessage("parse-finished");
+    showParseNotice(
+      dependencies,
+      createParseFinishedNotice(currentNoticeContext),
+    );
   } catch (error) {
     if (error instanceof MinerUFileAccessError) {
       logFileAccessFailure(attachment, filePath, dependencies, error);
@@ -529,6 +547,13 @@ function getClient(
     return dependencies.createClient(settings);
   }
   throw new Error("Parse manager client dependency is missing");
+}
+
+function showParseNotice(
+  dependencies: ParseManagerDependencies,
+  notice: { id: FluentMessageId; args: Record<string, string> },
+): void {
+  dependencies.showMessage(notice.id, notice.args);
 }
 
 function getCurrentParseSource(
