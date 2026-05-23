@@ -15,6 +15,8 @@ Core feature modules currently include `mineruClient.ts` for the official MinerU
 - `npm run lint:fix`: formats files and applies safe ESLint fixes.
 - `npm run release`: starts the configured release flow for versioning, packaging, tags, and GitHub release assets.
 
+Treat `npm run lint:check` as the local equivalent of the CI lint gate. Before any commit, run it after all file edits are complete and fix every reported Prettier or ESLint issue. Do not tell the user a change is ready to commit, push, or merge while `npm run lint:check` is failing or has not been run after the latest edit.
+
 ## Coding Style & Naming Conventions
 
 Use TypeScript ES modules and follow the existing two-space indentation. Prettier is configured with `printWidth: 80`, `tabWidth: 2`, and LF line endings. Keep module filenames descriptive and lower camel case where the project already does so, for example `preferenceScript.ts` or `mineruClient.ts`. Prefer small modules with explicit exported functions or classes over broad utility files. Locale keys belong in Fluent files, not inline UI strings.
@@ -34,6 +36,14 @@ This project does not use Vitest. Do not look for or run `.\node_modules\.bin\vi
 For small edits to existing XHTML files such as `addon/content/preferences.xhtml`, avoid running `prettier --write` unless formatting is part of the task. It can reflow unrelated long tags and expand the diff; if it happens during validation, restore unrelated formatting before final verification.
 
 For user-facing Markdown documents such as `README.md` and `README_zh.md`, do not manually hard-wrap paragraphs or list items to 80 columns unless the surrounding document already uses that style. Preserve natural single-line sentences so later content edits stay readable and diffs stay focused.
+
+For generated or agent-maintained Markdown under `docs/superpowers/`, especially `docs/superpowers/plans/*.md` and `docs/superpowers/specs/*.md`, always run Prettier on the touched files before final lint verification:
+
+```powershell
+pnpm exec prettier --write docs/superpowers/plans/<file>.md docs/superpowers/specs/<file>.md
+```
+
+If multiple Markdown files were created or edited, include all of them in that command. This rule exists because unformatted plan/spec Markdown has repeatedly caused GitHub Actions `npm run lint:check` failures.
 
 ## Project Notes
 
@@ -61,3 +71,5 @@ For user-facing Markdown documents such as `README.md` and `README_zh.md`, do no
 ## Commit & Pull Request Guidelines
 
 Recent history follows Conventional Commits, such as `feat(mineru): add official api client boundary` and `test(mineru): add domain formatter normalizer coverage`. Use a short imperative subject with a meaningful scope. Pull requests should describe the behavioral change, list test results, link related issues, and include screenshots or recordings for visible Zotero UI changes. Do not commit local secrets from `.env`; use `.env.example` for documented configuration.
+
+Before suggesting or making a commit, explicitly confirm the latest `npm run lint:check` result in the final response. If the command was not run, state that clearly and do not provide a commit-ready summary.
