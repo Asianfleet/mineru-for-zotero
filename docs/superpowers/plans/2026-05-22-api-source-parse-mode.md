@@ -1844,6 +1844,80 @@ Use an explicit file list instead of `git add .`.
 实现说明：
 本轮真实根因是 preferences.xhtml 的隐式 `preference="parseMode"` 绑定没有保证在当前 Zotero 运行期内立刻写入 `Zotero.Prefs`，导致用户从轻量解析切到精准解析后，不重启时 `parseManager` 仍读取到旧的 `parseMode = "lite"`，从而继续走 online lite Agent client；重启后 preferences 才被提交，所以同一 PDF 再走精准解析就成功。修复后，设置页控件变化会即时同步到 `Zotero.Prefs`，`parseManager` 下一次解析会读取到最新的 `precise` 模式。
 
+## Task 11: Runtime-Safe Local Multipart Submit
+
+**Files:**
+- Modify: `src/modules/mineruClient/formData.ts`
+- Modify: `src/modules/mineruClient/local.ts`
+- Test: `test/mineruClient.test.ts`
+
+- [x] **Step 1: Reproduce local submit without FormData/Blob**
+
+新增 `submits local lite tasks without global FormData or Blob` 测试，临时移除 `globalThis.FormData` 和 `globalThis.Blob` 后提交 local/lite 任务。实现前运行 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，按预期失败在新增用例，复现 Zotero 运行时报出的 `FormData is not defined`。
+
+- [x] **Step 2: Build multipart/form-data as bytes**
+
+将 `buildLocalTaskFormData()` 从直接返回 `FormData` 改为返回 `{ body: Uint8Array, contentType: string }`，手工生成 `multipart/form-data` boundary、PDF 文件 part，以及 `return_md`、`return_middle_json`、`return_content_list`、`return_images`、`response_format_zip` 等本地 MinerU 表单字段。`local.ts` 提交 `/tasks` 时显式设置 `Content-Type: multipart/form-data; boundary=...` 并发送字节体，不再依赖运行时存在 `FormData` 或 `Blob`。
+
+- [x] **Step 3: Verify local multipart submit**
+
+已运行 `.\node_modules\.bin\tsc.CMD --noEmit`，退出码为 0；已运行 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，结果为 `158 passed`。本轮还把既有 local/lite 与 local/precise submit 测试从 `FormData.get()` 断言改为解析 multipart 文本字段，继续覆盖轻量和精准模式的表单参数差异。
+
+实现说明：
+本轮真实根因是 local client 复用了浏览器/Node 测试环境里的 `FormData`/`Blob` 能力，但 Zotero 插件脚本运行时没有保证提供这些全局对象。官方本地 `mineru-api` 的 `/tasks` 和 `/file_parse` 仍然要求 `multipart/form-data`，因此修复没有改 API 协议，而是改为手工构造 multipart 字节体，并通过已有 fetch/XHR/Zotero HTTP 适配器提交。这样 local/lite 与 local/precise 都不会再在提交阶段因 `FormData is not defined` 崩溃。
+
+## Task 12: Normalize File URLs Before File Access
+
+**Files:**
+- Modify: `src/modules/mineruClient/path.ts`
+- Modify: `src/modules/parseManager.ts`
+- Test: `test/mineruClient.test.ts`
+- Test: `test/parseManager.test.ts`
+
+- [x] **Step 1: Reproduce encoded file URL access failure**
+
+新增 `reads PDF bytes from file URLs with encoded Windows paths` 测试，模拟 `IOUtils.read()` 接收 `file:///D:/Workspace/zotero%20plugin/a.pdf`。实现前运行 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，按预期失败，显示旧实现把 `file:///...` 原样传给 `IOUtils.read()`，没有解码为空格，也没有转成 Windows 原生路径。
+
+- [x] **Step 2: Reproduce parseManager preflight path mismatch**
+
+新增 `normalizes file URLs before checking readability` 测试，模拟 attachment `getFilePathAsync()` 返回 `file:///D:/Workspace/zotero%20plugin/a.pdf`。实现前全量测试按预期失败，显示 `isFileReadable()` 收到的仍是原始 file URL，因此会导致 `IOUtils.exists()`/`OS.File.exists()` 预检失败并提示“文件访问失败”。
+
+- [x] **Step 3: Normalize file URLs at both preflight and read boundaries**
+
+扩展 `src/modules/mineruClient/path.ts` 的 `toNativePath()`，支持 `file://` URL，先解析并 `decodeURIComponent()`，再把 Windows 盘符路径从 `D:/...` 转为 `D:\...`。`parseManager` 改为复用该共享函数，并在预检、attachment ref、client submit 前使用规范化后的路径，避免预检和实际读取使用不同路径语义。
+
+- [x] **Step 4: Verify file URL path handling**
+
+已运行 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，结果为 `160 passed`；已运行 `.\node_modules\.bin\tsc.CMD --noEmit`，退出码为 0。
+
+实现说明：
+本轮真实根因是 Zotero/Firefox 运行时可能把附件路径表示为 `file:///...` URL，且路径中包含 `%20` 等 URI 编码；旧的 `toNativePath()` 只处理 `C:/...` 这类盘符斜杠路径，导致 `IOUtils.exists()`、`IOUtils.read()` 或 `OS.File.*` 拿到 `file:///...` 字符串后访问失败。修复后，本地和在线 client 读取 PDF 字节前都会把 file URL 转为原生 Windows 路径；`parseManager` 的预检也使用同一套转换逻辑，避免“预检失败但真实文件存在”的误报。
+
+## Task 13: Short Local Upload Filename
+
+**Files:**
+- Modify: `src/modules/mineruClient/formData.ts`
+- Test: `test/mineruClient.test.ts`
+
+- [x] **Step 1: Diagnose local task failure from MinerU service log**
+
+读取用户提供的 `error.txt`，确认本地 MinerU 服务已经收到文件并进入解析流程，但在 `_process_output()` 写 Markdown 时抛出 `FileNotFoundError`。失败路径为 `D:\Workspace\output\<task_id>\<long-paper-title>\hybrid_auto\<long-paper-title>.md`，同一个长论文标题同时出现在目录名和文件名中，路径长度约 283，超过 Windows 常见路径限制风险。插件端显示的 `Local MinerU task failed` 来自轮询到本地任务 `status = failed`，不是插件提交或下载阶段误判。
+
+- [x] **Step 2: Reproduce long filename in multipart submit**
+
+新增 `uses a short upload filename for local tasks` 测试，使用长论文标题路径提交 local/lite 任务，断言 multipart `files` part 不应包含原始长文件名，而应使用短上传名。实现前全量测试按预期失败，显示旧实现把长标题作为 `filename="..."` 发送给本地 MinerU。
+
+- [x] **Step 3: Use a stable short local upload filename**
+
+将本地 multipart 文件 part 的 `filename` 固定为 `mineru-local.pdf`。插件自己的 `AttachmentRef.fileName`、存储目录和 manifest 仍由 Zotero attachment 元数据决定，不受这个上传文件名影响；该短名只用于避免本地 MinerU 服务把超长标题扩展成服务端输出路径。
+
+- [x] **Step 4: Verify local short filename submit**
+
+已运行 `.\node_modules\.bin\tsc.CMD --noEmit`，退出码为 0；已运行 `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`，结果为 `161 passed`。
+
+实现说明：
+本轮真实根因是本地 MinerU 服务会使用 multipart `filename` 的 stem 作为输出目录名和结果文件名。对于长论文标题，服务端输出路径在 Windows 下变得过长，导致解析完成后写 `.md` 文件失败，任务状态变为 `failed`。修复后，插件对 local API 始终上传短文件名 `mineru-local.pdf`，避免触发本地服务的长路径失败；插件结果存储仍保留 Zotero attachment 的原始文件名。
+
 ## Self-Review
 
 - Spec coverage: preferences, four API combinations, async local API, `/health`, lite storage, precise-vs-lite overwrite rules, preferred Markdown copy, API-key rules, and tests all map to tasks above.

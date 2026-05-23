@@ -91,7 +91,7 @@ describe("parseManager", function () {
     ]);
 
     assert.equal(confirmCount, 1);
-    assert.sameMembers(started, ["C:/tmp/a.pdf", "C:/tmp/b.pdf"]);
+    assert.sameMembers(started, ["C:\\tmp\\a.pdf", "C:\\tmp\\b.pdf"]);
   });
 
   it("skips existing results after a single bulk use-existing choice", async function () {
@@ -139,7 +139,7 @@ describe("parseManager", function () {
     ]);
 
     assert.equal(confirmCount, 1);
-    assert.deepEqual(submitted, ["C:/tmp/b.pdf"]);
+    assert.deepEqual(submitted, ["C:\\tmp\\b.pdf"]);
   });
 
   it("stops bulk parsing before confirmation when the API Key is missing", async function () {
@@ -310,7 +310,7 @@ describe("parseManager", function () {
     ]);
 
     assert.equal(confirmCount, 1);
-    assert.deepEqual(submitted, ["C:/tmp/b.pdf"]);
+    assert.deepEqual(submitted, ["C:\\tmp\\b.pdf"]);
   });
 
   it("reports empty lite markdown without writing a lite result", async function () {
@@ -445,8 +445,29 @@ describe("parseManager", function () {
     assert.include(messages, "parse-error-file-access");
     assert.deepInclude(logs[0][1] as Record<string, unknown>, {
       attachmentID: 1,
-      filePath: "C:/tmp/a.pdf",
+      filePath: "C:\\tmp\\a.pdf",
     });
+  });
+
+  it("normalizes file URLs before checking readability", async function () {
+    const messages: string[] = [];
+    const checkedPaths: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      isFileReadable: async (filePath) => {
+        checkedPaths.push(filePath);
+        return true;
+      },
+    });
+
+    await manager.parseAttachment(
+      pdfAttachment({
+        filePath: "file:///D:/Workspace/zotero%20plugin/a.pdf",
+      }),
+    );
+
+    assert.deepEqual(checkedPaths, ["D:\\Workspace\\zotero plugin\\a.pdf"]);
+    assert.notInclude(messages, "parse-error-file-access");
   });
 
   it("reports file access failure when the PDF read fails during submit", async function () {
@@ -475,7 +496,7 @@ describe("parseManager", function () {
     assert.include(messages, "parse-error-file-access");
     assert.deepInclude(logs[0][1] as Record<string, unknown>, {
       attachmentID: 1,
-      filePath: "C:/tmp/a.pdf",
+      filePath: "C:\\tmp\\a.pdf",
     });
   });
 

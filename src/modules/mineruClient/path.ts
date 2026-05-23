@@ -17,13 +17,29 @@ export function normalizeBaseURL(url: string): string {
 }
 
 /**
- * 把 Windows 盘符形式的斜杠路径转换为 Zotero 原生路径。
+ * 把 file URL 或 Windows 盘符形式的斜杠路径转换为 Zotero 原生路径。
  */
 export function toNativePath(path: string): string {
+  if (path.startsWith("file://")) {
+    return toNativePath(decodeFileURLPath(path));
+  }
   if (/^[a-z]:\//i.test(path)) {
     return path.replace(/\//g, "\\");
   }
   return path;
+}
+
+function decodeFileURLPath(path: string): string {
+  try {
+    const url = new URL(path);
+    if (url.protocol !== "file:") {
+      return path;
+    }
+    const filePath = decodeURIComponent(url.pathname);
+    return /^\/[a-z]:\//i.test(filePath) ? filePath.slice(1) : filePath;
+  } catch {
+    return path;
+  }
 }
 
 /**

@@ -61,7 +61,7 @@ describe("mineruClient", function () {
   });
 
   it("submits local lite tasks with markdown-only result flags", async function () {
-    let submittedBody: FormData | undefined;
+    let submittedBody: Uint8Array | undefined;
     const client = createMinerUClientForSettings({
       source: "local",
       mode: "lite",
@@ -72,17 +72,96 @@ describe("mineruClient", function () {
         if (String(url).endsWith("/health")) {
           return jsonResponse({ status: "healthy" });
         }
-        submittedBody = init?.body as FormData;
+        submittedBody = init?.body as Uint8Array;
         return jsonResponse({ task_id: "local-task" }, 202);
       },
     });
 
     await client.submitPdf("C:/tmp/a.pdf");
 
-    assert.equal(submittedBody?.get("return_md"), "true");
-    assert.equal(submittedBody?.get("return_middle_json"), "false");
-    assert.equal(submittedBody?.get("return_images"), "false");
-    assert.equal(submittedBody?.get("response_format_zip"), "false");
+    const fields = parseMultipartFields(submittedBody);
+    assert.equal(fields.return_md, "true");
+    assert.equal(fields.return_middle_json, "false");
+    assert.equal(fields.return_images, "false");
+    assert.equal(fields.response_format_zip, "false");
+  });
+
+  it("submits local lite tasks without global FormData or Blob", async function () {
+    const globals = globalThis as typeof globalThis & {
+      FormData?: typeof FormData;
+      Blob?: typeof Blob;
+    };
+    const originalFormData = globals.FormData;
+    const originalBlob = globals.Blob;
+    let submittedBody: Uint8Array | undefined;
+    let submittedContentType = "";
+    globals.FormData = undefined;
+    globals.Blob = undefined;
+
+    try {
+      const client = createMinerUClientForSettings({
+        source: "local",
+        mode: "lite",
+        apiKey: "",
+        localApiBaseURL: "http://127.0.0.1:8000",
+        readBinary: async () => new Uint8Array([37, 80, 68, 70]),
+        fetch: async (url, init) => {
+          if (String(url).endsWith("/health")) {
+            return jsonResponse({ status: "healthy" });
+          }
+          submittedBody = init?.body as Uint8Array;
+          submittedContentType = headerValue(
+            init?.headers,
+            "Content-Type",
+          );
+          return jsonResponse({ task_id: "local-task" }, 202);
+        },
+      });
+
+      const result = await client.submitPdf("C:/tmp/a.pdf");
+
+      assert.deepEqual(result, { taskID: "local-task" });
+      assert.match(
+        submittedContentType,
+        /^multipart\/form-data; boundary=mineru-/,
+      );
+      const multipart = new TextDecoder().decode(submittedBody);
+      assert.include(multipart, 'name="files"; filename="mineru-local.pdf"');
+      assert.include(multipart, "Content-Type: application/pdf");
+      assert.include(multipart, 'name="return_md"');
+      assert.include(multipart, "true");
+      assert.include(multipart, 'name="return_middle_json"');
+      assert.include(multipart, "false");
+    } finally {
+      globals.FormData = originalFormData;
+      globals.Blob = originalBlob;
+    }
+  });
+
+  it("uses a short upload filename for local tasks", async function () {
+    const longTitle =
+      "Wang 等 - 2023 - Survey on Factuality in Large Language Models Knowledge, Retrieval and Domain-Specificity.pdf";
+    let submittedBody: Uint8Array | undefined;
+    const client = createMinerUClientForSettings({
+      source: "local",
+      mode: "lite",
+      apiKey: "",
+      localApiBaseURL: "http://127.0.0.1:8000",
+      readBinary: async () => new Uint8Array([37, 80, 68, 70]),
+      fetch: async (url, init) => {
+        if (String(url).endsWith("/health")) {
+          return jsonResponse({ status: "healthy" });
+        }
+        submittedBody = init?.body as Uint8Array;
+        return jsonResponse({ task_id: "local-task" }, 202);
+      },
+    });
+
+    await client.submitPdf(`C:/tmp/${longTitle}`);
+
+    const multipart = new TextDecoder().decode(submittedBody);
+    assert.include(multipart, 'name="files"; filename="mineru-local.pdf"');
+    assert.notInclude(multipart, longTitle);
   });
 
   it("submits local precise tasks through the default fetch path", async function () {
@@ -92,13 +171,13 @@ describe("mineruClient", function () {
     const originalFetch = globals.fetch;
     const originalRequest = Zotero.HTTP.request;
     const calls: string[] = [];
-    let submittedBody: FormData | undefined;
+    let submittedBody: Uint8Array | undefined;
     globals.fetch = (async (url, init) => {
       calls.push(`${init?.method ?? "GET"} ${String(url)}`);
       if (String(url).endsWith("/health")) {
         return jsonResponse({ status: "healthy" });
       }
-      submittedBody = init?.body as FormData;
+      submittedBody = init?.body as Uint8Array;
       return jsonResponse({ task_id: "local-task" }, 202);
     }) as typeof fetch;
     (
@@ -126,10 +205,11 @@ describe("mineruClient", function () {
         "GET http://127.0.0.1:8000/health",
         "POST http://127.0.0.1:8000/tasks",
       ]);
-      assert.equal(submittedBody?.get("return_middle_json"), "true");
-      assert.equal(submittedBody?.get("return_content_list"), "true");
-      assert.equal(submittedBody?.get("return_images"), "false");
-      assert.equal(submittedBody?.get("response_format_zip"), "true");
+      const fields = parseMultipartFields(submittedBody);
+      assert.equal(fields.return_middle_json, "true");
+      assert.equal(fields.return_content_list, "true");
+      assert.equal(fields.return_images, "false");
+      assert.equal(fields.response_format_zip, "true");
     } finally {
       globals.fetch = originalFetch;
       (
@@ -848,6 +928,47 @@ describe("mineruClient", function () {
     }
   });
 
+  it("reads PDF bytes from file URLs with encoded Windows paths", async function () {
+    const originalRead = IOUtils.read;
+    let readPath = "";
+    (
+      IOUtils as typeof IOUtils & {
+        read: typeof IOUtils.read;
+      }
+    ).read = async (path) => {
+      readPath = path;
+      return new Uint8Array([37, 80, 68, 70]);
+    };
+
+    try {
+      const client = createMinerUClient({
+        apiKey: "secret-token",
+        fetch: async (url) => {
+          if (String(url).endsWith("/api/v4/file-urls/batch")) {
+            return jsonResponse({
+              code: 0,
+              data: {
+                batch_id: "batch-1",
+                file_urls: ["https://upload.example/a"],
+              },
+            });
+          }
+          return new Response("", { status: 200 });
+        },
+      });
+
+      await client.submitPdf("file:///D:/Workspace/zotero%20plugin/a.pdf");
+
+      assert.equal(readPath, "D:\\Workspace\\zotero plugin\\a.pdf");
+    } finally {
+      (
+        IOUtils as typeof IOUtils & {
+          read: typeof IOUtils.read;
+        }
+      ).read = originalRead;
+    }
+  });
+
   it("polls batch results and reports terminal failure", async function () {
     const client = createMinerUClient({
       apiKey: "secret-token",
@@ -1314,6 +1435,38 @@ function jsonResponse(value: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+function headerValue(
+  headers: HeadersInit | undefined,
+  name: string,
+): string {
+  if (!headers) {
+    return "";
+  }
+  if (headers instanceof Headers) {
+    return headers.get(name) ?? "";
+  }
+  if (Array.isArray(headers)) {
+    const entry = headers.find(
+      ([key]) => key.toLowerCase() === name.toLowerCase(),
+    );
+    return entry?.[1] ?? "";
+  }
+  return headers[name] ?? headers[name.toLowerCase()] ?? "";
+}
+
+function parseMultipartFields(
+  body: Uint8Array | undefined,
+): Record<string, string> {
+  const text = new TextDecoder().decode(body);
+  const fields: Record<string, string> = {};
+  const pattern =
+    /Content-Disposition: form-data; name="([^"]+)"\r\n\r\n([\s\S]*?)\r\n--/g;
+  for (const match of text.matchAll(pattern)) {
+    fields[match[1]] = match[2];
+  }
+  return fields;
 }
 
 function xhrResponse(value: unknown, status = 200): XMLHttpRequest {

@@ -55,18 +55,22 @@ export function createLocalMinerUClient(
         method: "GET",
       });
       const bytes = normalizeBinary(await readPdfBytes(readBinary, filePath));
+      const multipart = buildLocalTaskFormData({
+        filePath,
+        bytes,
+        mode: options.mode,
+        saveImages: options.saveImages !== false,
+      });
       const response = await requestJson<LocalTaskResponse>(
         request,
         `${baseURL}/tasks`,
         "local-submit",
         {
           method: "POST",
-          body: buildLocalTaskFormData({
-            filePath,
-            bytes,
-            mode: options.mode,
-            saveImages: options.saveImages !== false,
-          }),
+          headers: {
+            "Content-Type": multipart.contentType,
+          },
+          body: multipart.body,
         },
       );
       const taskID = response.task_id ?? response.taskId;

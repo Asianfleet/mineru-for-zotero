@@ -8,6 +8,7 @@ import {
   MinerUTaskError,
   type MinerUClient,
 } from "./mineruClient";
+import { toNativePath } from "./mineruClient/path";
 import { createStorage, type StorageAdapter } from "./storage";
 import { getString } from "../utils/locale";
 import {
@@ -234,12 +235,13 @@ async function parseAttachmentWithDependencies(
     return;
   }
 
-  const filePath = await getAttachmentFilePath(attachment, dependencies);
-  if (!filePath) {
+  const rawFilePath = await getAttachmentFilePath(attachment, dependencies);
+  if (!rawFilePath) {
     logFileAccessFailure(attachment, "<missing>", dependencies);
     dependencies.showMessage("parse-error-file-access");
     return;
   }
+  const filePath = toNativePath(rawFilePath);
 
   if (!(await dependencies.isFileReadable(filePath))) {
     logFileAccessFailure(attachment, filePath, dependencies);
@@ -664,11 +666,4 @@ function basename(path: string): string {
   return (
     path.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) || "file.pdf"
   );
-}
-
-function toNativePath(path: string): string {
-  if (/^[a-z]:\//i.test(path)) {
-    return path.replace(/\//g, "\\");
-  }
-  return path;
 }
