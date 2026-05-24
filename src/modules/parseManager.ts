@@ -1,5 +1,6 @@
 import type { AttachmentRef } from "./domain";
 import type { FluentMessageId } from "../../typings/i10n";
+import { config } from "../../package.json";
 import { normalizeMinerUBoxes } from "./boxNormalizer";
 import {
   createMinerUClientForSettings,
@@ -30,6 +31,11 @@ import { getMinerUStorageRoot } from "./preferenceScript";
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLL_COUNT = 120;
+const PROGRESS_WINDOW_ICON_URI = `chrome://${config.addonRef}/content/icons/favicon.png`;
+const PROGRESS_WINDOW_LABEL_LINE_HEIGHT_PX = 18;
+const PROGRESS_WINDOW_DETAIL_LEFT_OFFSET_PX = 22;
+const ELEMENT_NODE_TYPE = 1;
+const PROGRESS_WINDOW_PRESENTATION_RETRY_DELAYS_MS = [0, 50, 150, 300, 600];
 
 export type ReparseChoice = "use-existing" | "reparse";
 
@@ -561,7 +567,7 @@ export function resolveReparseChoiceFromPromptButton(
 function showMessage(id: FluentMessageId, args?: Record<string, string>): void {
   const lines = createProgressWindowTexts(id, args, getMessageText);
   const lineOptions = createProgressWindowLineOptions(lines);
-  const labelLines = createProgressWindowLabelLines(lines);
+  const detailLines = createProgressWindowDetailLines(lines);
   const progressWindow = new ztoolkit.ProgressWindow(
     addon.data.config.addonName,
     {
@@ -571,12 +577,11 @@ function showMessage(id: FluentMessageId, args?: Record<string, string>): void {
   for (const line of lineOptions) {
     progressWindow.createLine(line);
   }
-  applyProgressWindowMultilineLabel(progressWindow, labelLines);
+  for (const detailLine of detailLines) {
+    progressWindow.addDescription(detailLine);
+  }
   progressWindow.show();
-  applyProgressWindowMultilineLabel(progressWindow, labelLines);
-  setTimeout(() => {
-    applyProgressWindowMultilineLabel(progressWindow, labelLines);
-  }, 75);
+  scheduleProgressWindowPresentation(progressWindow, detailLines);
 }
 
 export function normalizeProgressWindowText(text: string): string {
@@ -587,11 +592,11 @@ type ProgressWindowText = { text: string };
 
 type ProgressWindowLineOption = ProgressWindowText & {
   progress: number;
-  type: "default";
+  icon: string;
 };
 
 /**
- * 转换为 ztoolkit ProgressWindow 行参数，并保留详情行的默认 icon 槽位。
+ * 转换为 ztoolkit ProgressWindow 行参数，并显式使用插件 icon。
  */
 export function createProgressWindowLineOptions(
   lines: ProgressWindowText[],
@@ -599,7 +604,7 @@ export function createProgressWindowLineOptions(
   return [
     {
       text: lines[0]?.text ?? "",
-      type: "default" as const,
+      icon: PROGRESS_WINDOW_ICON_URI,
       progress: 100,
     },
   ];
@@ -611,76 +616,131 @@ export function createProgressWindowDisplayText(
   return lines.map((line) => line.text).join("\n");
 }
 
-export function createProgressWindowLabelLines(
+export function createProgressWindowDetailLines(
   lines: ProgressWindowText[],
 ): string[] {
-  return lines.map((line) => line.text);
+  return lines.slice(1).map((line) => line.text);
 }
 
-function applyProgressWindowMultilineLabel(
-  progressWindow: unknown,
-  labelLines: string[],
-): void {
-  if (labelLines.length <= 1) {
-    return;
-  }
+function getProgressWindowItemParent(
+  image: HTMLElement | undefined,
+): Element | null {
+  const parent = image?.parentElement ?? image?.parentNode;
+  return parent?.nodeType === ELEMENT_NODE_TYPE ? (parent as Element) : null;
+}
 
+export function applyProgressWindowItemIcon(
+  progressWindow: unknown,
+  iconURI: string,
+): boolean {
   const lines = (
     progressWindow as unknown as {
       lines?: Array<{ _image?: HTMLElement }>;
     }
   ).lines;
   const image = lines?.[0]?._image;
-  const parent = image?.parentElement;
-  if (!parent) {
-    return;
-  }
-
-  renderProgressWindowLabelLines(parent, labelLines);
-}
-
-export function renderProgressWindowLabelLines(
-  parent: Element,
-  labelLines: string[],
-): boolean {
-  const document = parent.ownerDocument;
-  if (!document) {
+  if (!image) {
     return false;
   }
 
-  const existing = parent.querySelector(
-    "[data-mineru-progress-label-container='true'], .zotero-progress-item-label",
-  );
-  if (!existing) {
-    return false;
-  }
-
-  const container = createProgressWindowXULElement(document, "vbox");
-  container.setAttribute("data-mineru-progress-label-container", "true");
-  container.setAttribute("flex", "1");
-
-  for (const text of labelLines) {
-    const label = createProgressWindowXULElement(document, "description");
-    label.classList.add("zotero-progress-item-label");
-    label.textContent = text;
-    label.removeAttribute("crop");
-    container.append(label);
-  }
-
-  existing.replaceWith(container);
+  image.dataset.itemType = iconURI;
+  image.style.backgroundImage = `url(${iconURI})`;
+  image.style.backgroundRepeat = "no-repeat";
+  image.style.backgroundPosition = "center center";
+  image.style.backgroundSize = "16px 16px";
   return true;
 }
 
-function createProgressWindowXULElement(
-  document: Document,
-  tagName: string,
-): Element {
-  const documentWithXUL = document as Document & {
-    createXULElement?: (tagName: string) => Element;
+export function applyProgressWindowDescriptionLineLayout(
+  progressWindow: unknown,
+  detailLines: string[],
+): boolean {
+  if (detailLines.length === 0) {
+    return true;
+  }
+
+  const lines = (
+    progressWindow as unknown as {
+      lines?: Array<{ _hbox?: Element; _image?: HTMLElement }>;
+    }
+  ).lines;
+  const mainLine = lines?.[0];
+  const mainRow =
+    mainLine?._hbox ?? getProgressWindowItemParent(mainLine?._image);
+  const container = mainRow?.parentNode;
+  if (!mainRow || !container) {
+    return false;
+  }
+
+  let cursor = mainRow.nextSibling;
+  for (const detailLine of detailLines) {
+    const detailRow = findNextProgressWindowDetailRow(cursor, detailLine);
+    if (!detailRow) {
+      return false;
+    }
+    styleProgressWindowDetailRow(detailRow);
+    cursor = detailRow.nextSibling;
+  }
+  return true;
+}
+
+function scheduleProgressWindowPresentation(
+  progressWindow: unknown,
+  detailLines: string[],
+): void {
+  const retryDelays = [...PROGRESS_WINDOW_PRESENTATION_RETRY_DELAYS_MS];
+  const apply = () => {
+    const iconApplied = applyProgressWindowItemIcon(
+      progressWindow,
+      PROGRESS_WINDOW_ICON_URI,
+    );
+    const detailApplied = applyProgressWindowDescriptionLineLayout(
+      progressWindow,
+      detailLines,
+    );
+    if (iconApplied && detailApplied) {
+      return;
+    }
+    const nextDelay = retryDelays.shift();
+    if (typeof nextDelay === "number") {
+      setTimeout(apply, nextDelay);
+    }
   };
-  return documentWithXUL.createXULElement
-    ? documentWithXUL.createXULElement(tagName)
-    : document.createElement(tagName);
+  apply();
+}
+
+function findNextProgressWindowDetailRow(
+  start: Node | null,
+  text: string,
+): HTMLElement | null {
+  let cursor = start;
+  while (cursor) {
+    if (
+      cursor.nodeType === ELEMENT_NODE_TYPE &&
+      normalizeProgressWindowText(cursor.textContent ?? "") === text
+    ) {
+      return cursor as HTMLElement;
+    }
+    cursor = cursor.nextSibling;
+  }
+  return null;
+}
+
+function styleProgressWindowDetailRow(row: HTMLElement): void {
+  row.setAttribute("data-mineru-progress-detail-row", "true");
+  row.style.marginLeft = `${PROGRESS_WINDOW_DETAIL_LEFT_OFFSET_PX}px`;
+  row.style.minHeight = `${PROGRESS_WINDOW_LABEL_LINE_HEIGHT_PX}px`;
+  row.style.height = "auto";
+  row.style.overflow = "visible";
+
+  const description = row.querySelector("description");
+  if (description) {
+    const descriptionStyle = (description as HTMLElement).style;
+    descriptionStyle.lineHeight = `${PROGRESS_WINDOW_LABEL_LINE_HEIGHT_PX}px`;
+    descriptionStyle.minHeight = `${PROGRESS_WINDOW_LABEL_LINE_HEIGHT_PX}px`;
+    descriptionStyle.margin = "0";
+    descriptionStyle.padding = "0";
+  }
 }
 
 export function createProgressWindowTexts(

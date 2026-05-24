@@ -1,11 +1,12 @@
 import { assert } from "chai";
 import {
   createProgressWindowDisplayText,
-  createProgressWindowLabelLines,
+  createProgressWindowDetailLines,
   createProgressWindowLineOptions,
   createProgressWindowTexts,
   createParseManager,
-  renderProgressWindowLabelLines,
+  applyProgressWindowDescriptionLineLayout,
+  applyProgressWindowItemIcon,
   normalizeProgressWindowText,
   resolveReparseChoiceFromPromptButton,
   type ParseManagerDependencies,
@@ -88,7 +89,7 @@ describe("parseManager", function () {
     assert.deepEqual(options, [
       {
         text: "已提交 MinerU 文档解析任务",
-        type: "default",
+        icon: "chrome://mineruForZotero/content/icons/favicon.png",
         progress: 100,
       },
     ]);
@@ -104,13 +105,23 @@ describe("parseManager", function () {
     );
   });
 
+  it("creates progress window description lines from detail text", function () {
+    assert.deepEqual(
+      createProgressWindowDetailLines([
+        { text: "已提交 MinerU 文档解析任务" },
+        { text: "[在线 API · 精准]" },
+      ]),
+      ["[在线 API · 精准]"],
+    );
+  });
+
   it("creates one progress window line for generic notices", function () {
     assert.deepEqual(
       createProgressWindowLineOptions([{ text: "已提交 MinerU 文档解析任务" }]),
       [
         {
           text: "已提交 MinerU 文档解析任务",
-          type: "default",
+          icon: "chrome://mineruForZotero/content/icons/favicon.png",
           progress: 100,
         },
       ],
@@ -139,37 +150,129 @@ describe("parseManager", function () {
     assert.lengthOf(options, 1);
   });
 
-  it("renders progress window detail text as separate label descriptions", function () {
-    const parent = document.createElement("hbox");
-    const icon = document.createElement("hbox");
-    const label = document.createElement("description");
-    label.className = "zotero-progress-item-label";
-    label.textContent = "已提交 MinerU 文档解析任务";
-    label.setAttribute("crop", "end");
-    parent.append(icon, label);
+  it("applies the explicit progress window item icon to the image node", function () {
+    const image = document.createElement("hbox");
+    const progressWindow = {
+      lines: [{ _image: image }],
+    };
 
-    const rendered = renderProgressWindowLabelLines(
-      parent,
-      createProgressWindowLabelLines([
-        { text: "已提交 MinerU 文档解析任务" },
-        { text: "[在线 API · 精准]" },
+    applyProgressWindowItemIcon(
+      progressWindow,
+      "chrome://mineruForZotero/content/icons/favicon.png",
+    );
+
+    assert.equal(
+      image.dataset.itemType,
+      "chrome://mineruForZotero/content/icons/favicon.png",
+    );
+    assert.include(
+      image.style.backgroundImage,
+      "chrome://mineruForZotero/content/icons/favicon.png",
+    );
+    assert.equal(image.style.backgroundRepeat, "no-repeat");
+    assert.equal(image.style.backgroundSize, "16px 16px");
+  });
+
+  it("reports whether the progress window item icon was applied", function () {
+    const progressWindow: { lines: Array<{ _image?: HTMLElement }> } = {
+      lines: [{}],
+    };
+
+    assert.isFalse(
+      applyProgressWindowItemIcon(
+        progressWindow,
+        "chrome://mineruForZotero/content/icons/favicon.png",
+      ),
+    );
+
+    progressWindow.lines[0]._image = document.createElement("hbox");
+
+    assert.isTrue(
+      applyProgressWindowItemIcon(
+        progressWindow,
+        "chrome://mineruForZotero/content/icons/favicon.png",
+      ),
+    );
+  });
+
+  it("styles progress description rows as aligned detail lines", function () {
+    const container = document.createElement("vbox");
+    const mainRow = document.createElement("hbox");
+    const detailRow = document.createElement("hbox");
+    const detail = document.createElement("description");
+    detail.textContent = "[在线 API · 精准]";
+    detailRow.append(detail);
+    container.append(mainRow, detailRow);
+    const progressWindow = {
+      lines: [{ _hbox: mainRow }],
+    };
+
+    applyProgressWindowDescriptionLineLayout(progressWindow, [
+      "[在线 API · 精准]",
+    ]);
+
+    assert.equal(
+      detailRow.getAttribute("data-mineru-progress-detail-row"),
+      "true",
+    );
+    assert.equal(detailRow.style.marginLeft, "22px");
+    assert.equal(detail.style.lineHeight, "18px");
+  });
+
+  it("reports whether progress description rows were aligned", function () {
+    const container = document.createElement("vbox");
+    const mainRow = document.createElement("hbox");
+    container.append(mainRow);
+    const progressWindow = {
+      lines: [{ _hbox: mainRow }],
+    };
+
+    assert.isFalse(
+      applyProgressWindowDescriptionLineLayout(progressWindow, [
+        "[在线 API · 精准]",
       ]),
     );
 
-    const container = parent.querySelector(
-      "[data-mineru-progress-label-container='true']",
-    );
-    const labels = Array.from(
-      parent.querySelectorAll(".zotero-progress-item-label"),
-    );
+    const detailRow = document.createElement("hbox");
+    const detail = document.createElement("description");
+    detail.textContent = "[在线 API · 精准]";
+    detailRow.append(detail);
+    container.append(detailRow);
 
-    assert.isTrue(rendered);
-    assert.exists(container);
-    assert.deepEqual(
-      labels.map((element) => element.textContent),
-      ["已提交 MinerU 文档解析任务", "[在线 API · 精准]"],
+    assert.isTrue(
+      applyProgressWindowDescriptionLineLayout(progressWindow, [
+        "[在线 API · 精准]",
+      ]),
     );
-    assert.isFalse(labels.some((element) => element.hasAttribute("crop")));
+  });
+
+  it("does not require the global Node constructor for detail row layout", function () {
+    const container = document.createElement("vbox");
+    const mainRow = document.createElement("hbox");
+    const detailRow = document.createElement("hbox");
+    const detail = document.createElement("description");
+    detail.textContent = "[在线 API · 精准]";
+    detailRow.append(detail);
+    container.append(mainRow, detailRow);
+    const progressWindow = {
+      lines: [{ _hbox: mainRow }],
+    };
+    const globalWithNode = globalThis as typeof globalThis & {
+      Node?: typeof Node;
+    };
+    const originalNode = globalWithNode.Node;
+
+    try {
+      Reflect.deleteProperty(globalWithNode, "Node");
+
+      assert.doesNotThrow(() => {
+        applyProgressWindowDescriptionLineLayout(progressWindow, [
+          "[在线 API · 精准]",
+        ]);
+      });
+    } finally {
+      globalWithNode.Node = originalNode;
+    }
   });
 
   it("treats prompt close and cancel position as use-existing", function () {
