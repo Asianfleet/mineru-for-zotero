@@ -4,18 +4,19 @@
 
 This repository is a Zotero 8/9 plugin built with TypeScript and `zotero-plugin-scaffold`. Runtime source lives in `src/`: `index.ts` is the entry point, `hooks.ts` handles Zotero lifecycle and menu registration, `modules/` contains feature modules, and `utils/` contains shared helpers. Static plugin assets and Zotero metadata live in `addon/`, including `manifest.json`, `prefs.js`, XUL/XHTML/CSS under `addon/content/`, SVG toolbar/menu assets, icons, and Fluent locale files under `addon/locale/<locale>/`. Type declarations live in `typings/`. Tests live in `test/` and use `*.test.ts` naming. Generated build output is under `.scaffold/build/` and should not be edited manually.
 
-Core feature modules currently include `mineruClient.ts` for the official MinerU v4 API boundary, `parseManager.ts` for item/attachment parsing orchestration, `storage.ts` for per-attachment result persistence, `boxNormalizer.ts` for converting MinerU schemas into stable boxes, `copyFormatter.ts` for copy output, `readerToolbar.ts` for the PDF Reader toolbar menu, `readerOverlay.ts` for box rendering and selection behavior, and `preferenceScript.ts` for settings-page data-folder UI.
+Core feature modules currently include `mineruClient/` for selecting and running online precise, online lite, and local MinerU clients; `parseManager.ts` for item/attachment parsing orchestration; `parseNotice.ts` for source/mode-aware parsing notices and batch progress; `itemMenu.ts` for the attachment-only library context menu; `storage.ts` for per-attachment precise and lite result persistence; `domain.ts` for shared parse, storage, and overlay domain types; `boxNormalizer.ts` for converting MinerU schemas into stable boxes; `copyFormatter.ts` for copy output; `readerToolbar/` for the PDF Reader toolbar menu; `readerOverlay/` for box rendering and selection behavior; and `preferenceScript.ts` for settings-page API source, parse mode, local endpoint, image-saving, and data-folder UI.
 
 ## Build, Test, and Development Commands
 
-- `npm start`: runs `zotero-plugin serve`, builds in development mode, launches Zotero, and watches `src/**` and `addon/**` for hot reload.
-- `npm run build`: creates a production plugin build with `zotero-plugin build`, then runs `tsc --noEmit` for type checking.
-- `npm test`: runs the scaffold test suite.
-- `npm run lint:check`: checks Prettier formatting and ESLint rules.
-- `npm run lint:fix`: formats files and applies safe ESLint fixes.
-- `npm run release`: starts the configured release flow for versioning, packaging, tags, and GitHub release assets.
+- Use `pnpm` for package scripts and dependency operations in this repository; do not use `npm` unless the user explicitly asks for it.
+- `pnpm start`: runs `zotero-plugin serve`, builds in development mode, launches Zotero, and watches `src/**` and `addon/**` for hot reload.
+- `pnpm build`: creates a production plugin build with `zotero-plugin build`, then runs `tsc --noEmit` for type checking.
+- `pnpm test`: runs the scaffold test suite.
+- `pnpm lint:check`: checks Prettier formatting and ESLint rules.
+- `pnpm lint:fix`: formats files and applies safe ESLint fixes.
+- `pnpm release`: starts the configured release flow for versioning, packaging, tags, and GitHub release assets.
 
-Treat `npm run lint:check` as the local equivalent of the CI lint gate. Before any commit, run it after all file edits are complete and fix every reported Prettier or ESLint issue. Do not tell the user a change is ready to commit, push, or merge while `npm run lint:check` is failing or has not been run after the latest edit.
+Treat `pnpm lint:check` as the local equivalent of the CI lint gate. Before any commit, run it after all file edits are complete and fix every reported Prettier or ESLint issue. Do not tell the user a change is ready to commit, push, or merge while `pnpm lint:check` is failing or has not been run after the latest edit.
 
 ## Coding Style & Naming Conventions
 
@@ -43,22 +44,28 @@ For generated or agent-maintained Markdown under `docs/superpowers/`, especially
 pnpm exec prettier --write docs/superpowers/plans/<file>.md docs/superpowers/specs/<file>.md
 ```
 
-If multiple Markdown files were created or edited, include all of them in that command. This rule exists because unformatted plan/spec Markdown has repeatedly caused GitHub Actions `npm run lint:check` failures.
+If multiple Markdown files were created or edited, include all of them in that command. This rule exists because unformatted plan/spec Markdown has repeatedly caused GitHub Actions `pnpm lint:check` failures.
 
 ## Project Notes
 
-- The official MinerU API flow is v4 batch extraction: request `/api/v4/file-urls/batch`, upload the PDF to the returned presigned URL, poll `/api/v4/extract-results/batch/{batch_id}`, then download `full_zip_url` or fall back to `md_url` where necessary.
+- MinerU parsing is selected by `createMinerUClientForSettings()` from `parseSource` (`online` or `local`) and `parseMode` (`precise` or `lite`). Keep the source/mode contract explicit when changing preferences, parsing orchestration, storage, and tests.
+- Online precise parsing uses the official MinerU v4 batch extraction flow: request `/api/v4/file-urls/batch`, upload the PDF to the returned presigned URL, poll `/api/v4/extract-results/batch/{batch_id}`, then download `full_zip_url` or fall back to `md_url` where necessary.
+- Online lite parsing uses the MinerU Agent API flow in `mineruClient/agentLite.ts`: create the task, upload to the returned file URL, poll the Agent task endpoint, then download Markdown from `markdown_url` or `markdownUrl`. Agent responses may wrap fields under `data`, so preserve both wrapped and top-level response handling.
+- Local parsing uses the async local API in `mineruClient/local.ts`, defaulting to `http://127.0.0.1:8000`: check `/health`, submit multipart data to `/tasks`, poll `/tasks/{taskID}`, and download `/tasks/{taskID}/result`. Local results may be ZIP or JSON, and precise/lite mode changes both request fields and result conversion.
 - When debugging the MinerU parsing pipeline, do not infer API behavior from UI messages alone. Use tests or diagnostics to verify each boundary: API key checks, file readability, upload URL creation, bare upload, polling, result download, ZIP reading, raw result schema selection, box normalization, and storage writes.
 - Keep MinerU presigned URL requests as close to the signed request as possible. Prefer a bare XHR PUT for uploads to presigned URLs so extra headers do not change the signature calculation and trigger `SignatureDoesNotMatch`.
 - Diagnose MinerU result ZIP download issues with network evidence. In the Zotero/Firefox runtime, `fetch`, `XMLHttpRequest`, `Zotero.HTTP.request`, and `Zotero.File.download` may behave differently for CDN URLs. If the built-in network path returns an empty response or an unreadable ZIP, record the URL, byte count, response headers, ZIP-reader diagnostics, and any fallback path.
 - After downloading a ZIP locally, prefer ZIP readers available in the Zotero runtime, such as `nsIZipReader`; do not assume `DecompressionStream("deflate-raw")` is available in the target runtime.
 - MinerU box data is not always stored in `pages[].blocks`. Real results may use `pdf_info[].para_blocks`, `pdf_info[].layout_dets`, or `pdf_info[].discarded_blocks`; page size may be `page_size`; regions may be `bbox` or `poly`; text may be under `markdown`, `text`, `content`, `html`, `latex`, or `lines[].spans[].content`.
 - The normalizer preserves detailed box types where useful for labels, including captions, headers, footers, footnotes, page numbers, references, formulas, image/table bodies, and table HTML. For "missing box information" errors, inspect the saved `mineru-result.json` and the schemas supported by `boxNormalizer.ts` first.
-- Parsing results are stored under `ProfD/mineru-copy/attachments/<libraryID>-<attachmentKey>/` with `manifest.json`, `mineru-result.json`, `content.md`, and `boxes.normalized.json`. Treat these files as plugin-owned output; external tools may read them but should not write them.
+- Precise parsing results are stored under `ProfD/mineru-copy/attachments/<libraryID>-<attachmentKey>/` with `manifest.json`, `mineru-result.json`, `content.md`, `boxes.normalized.json`, and optional extracted files under `images/`. Lite parsing results are stored beside them as `lite-manifest.json` and `lite-content.md`. Treat these files as plugin-owned output; external tools may read them but should not write them.
+- Prefer `storage.readPreferredMarkdown()` when user-facing copy should work with either precise or lite results. It reads ready precise Markdown first and falls back to ready lite Markdown.
 - Storage writes use temporary and backup directories to keep previous ready results readable when replacement fails. Ignore transient `.tmp-*` and `.bak-*` result directories when counting or diagnosing ready results.
 - `storage.readBoxes()` may refresh stale `boxes.normalized.json` from `mineru-result.json` when the raw MinerU result contains more detailed supported boxes. Do not assume an unchanged box count means the normalized file is current.
 - Reparse prompts must be non-destructive by default. For Zotero/Firefox prompt dialogs using `confirmEx`, treat dialog close, Escape, and cancel-like positions as `use-existing`; do not bind button position 1 to reparsing or overwriting.
 - The item context menu intentionally targets PDF attachment selections only. Do not reintroduce the old regular-item submenu path unless the requirement changes explicitly.
+- Multi-PDF parsing starts from one attachment-only menu command and shares one `ParseNoticeContext`. Keep batch notice counts in `parseNotice.ts`; avoid spreading completion-count mutation across `parseManager.ts` call sites.
+- Batch parse notices should submit once for the whole batch, then report completion progress as each attachment finishes. Keep source/mode notice arguments in Fluent strings and update `typings/i10n.d.ts` with locale keys.
 - When registering item context menu commands through `Zotero.MenuManager`, keep the lifecycle aligned with Zotero's localization resources. If a menu item uses keys from `*-mainWindow.ftl`, remove the inserted main-window Fluent link during window unload and shutdown before the plugin chrome is destructed; otherwise Zotero can keep trying to resolve an unloaded `mainWindow.ftl` and break later right-click menu refreshes.
 - Reader toolbar UI is icon-driven and registered per reader window. Keep panel state per reader instance, place mode commands and selection actions consistently, and use Fluent strings rather than hard-coded reader overlay or preferences text.
 - Reader overlay modes are `all`, `hover`, and `off`. Multi-selection uses `Shift` or `Ctrl`; selected boxes copy in original MinerU `rawIndex` order; formula boxes support copying with or without `$` delimiters.
@@ -72,4 +79,4 @@ If multiple Markdown files were created or edited, include all of them in that c
 
 Recent history follows Conventional Commits, such as `feat(mineru): add official api client boundary` and `test(mineru): add domain formatter normalizer coverage`. Use a short imperative subject with a meaningful scope. Pull requests should describe the behavioral change, list test results, link related issues, and include screenshots or recordings for visible Zotero UI changes. Do not commit local secrets from `.env`; use `.env.example` for documented configuration.
 
-Before suggesting or making a commit, explicitly confirm the latest `npm run lint:check` result in the final response. If the command was not run, state that clearly and do not provide a commit-ready summary.
+Before suggesting or making a commit, explicitly confirm the latest `pnpm lint:check` result in the final response. If the command was not run, state that clearly and do not provide a commit-ready summary.
