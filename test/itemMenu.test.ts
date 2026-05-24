@@ -27,6 +27,23 @@ describe("itemMenu", function () {
     assert.equal(menu.icon, `chrome://${config.addonRef}/content/mineru.svg`);
   });
 
+  it("submits selected PDF attachments through the batch parse entry", function () {
+    const parsedBatches: Zotero.Item[][] = [];
+    const firstAttachment = pdfAttachment();
+    const secondAttachment = pdfAttachment();
+    const menu = createParsePdfMenuRegistration({
+      parseAttachments: async (attachments) => {
+        parsedBatches.push(attachments);
+      },
+    }).menus[0];
+
+    menu.onCommand(new Event("command"), {
+      items: [firstAttachment, secondAttachment],
+    });
+
+    assert.deepEqual(parsedBatches, [[firstAttachment, secondAttachment]]);
+  });
+
   it("does not expose a separate MenuManager unregister path", function () {
     assert.notProperty(itemMenu, "unregisterItemMenu");
   });

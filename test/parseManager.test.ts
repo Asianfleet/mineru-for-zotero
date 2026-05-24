@@ -1,6 +1,13 @@
 import { assert } from "chai";
 import {
+  createProgressWindowDisplayText,
+  createProgressWindowDetailLines,
+  createProgressWindowLineOptions,
+  createProgressWindowTexts,
   createParseManager,
+  applyProgressWindowDescriptionLineLayout,
+  applyProgressWindowItemIcon,
+  normalizeProgressWindowText,
   resolveReparseChoiceFromPromptButton,
   type ParseManagerDependencies,
 } from "../src/modules/parseManager";
@@ -11,6 +18,263 @@ import {
 import { normalizedBoxes } from "./domainFixtures";
 
 describe("parseManager", function () {
+  it("normalizes multiline progress window text into one visible line", function () {
+    assert.equal(
+      normalizeProgressWindowText(
+        "已提交 MinerU 文档解析任务\n    [在线 API · 精准]",
+      ),
+      "已提交 MinerU 文档解析任务 [在线 API · 精准]",
+    );
+  });
+
+  it("creates aligned progress window lines for parse task notices", function () {
+    const texts = createProgressWindowTexts(
+      "parse-task-submitted",
+      {
+        source: "online",
+        mode: "precise",
+      },
+      resolveProgressWindowTestMessage,
+    );
+
+    assert.deepEqual(texts, [
+      { text: "已提交 MinerU 文档解析任务" },
+      { text: "[在线 API · 精准]" },
+    ]);
+  });
+
+  it("creates submitted batch detail text without a completed placeholder", function () {
+    const texts = createProgressWindowTexts(
+      "parse-task-submitted-total",
+      {
+        source: "online",
+        mode: "precise",
+        total: "2",
+      },
+      resolveProgressWindowTestMessage,
+    );
+
+    assert.deepEqual(texts, [
+      { text: "已提交 MinerU 文档解析任务" },
+      { text: "[在线 API · 精准 · 共 2 个]" },
+    ]);
+  });
+
+  it("creates progress window detail lines with batch totals", function () {
+    const texts = createProgressWindowTexts(
+      "parse-task-finished-progress",
+      {
+        source: "local",
+        mode: "lite",
+        completed: "2",
+        total: "3",
+      },
+      resolveProgressWindowTestMessage,
+    );
+
+    assert.deepEqual(texts, [
+      { text: "MinerU 文档解析任务完成" },
+      {
+        text: "[本地 API · 轻量 · 2/3]",
+      },
+    ]);
+  });
+
+  it("creates one progress window item so the detail text shares the main icon", function () {
+    const options = createProgressWindowLineOptions([
+      { text: "已提交 MinerU 文档解析任务" },
+      { text: "[在线 API · 精准]" },
+    ]);
+
+    assert.deepEqual(options, [
+      {
+        text: "已提交 MinerU 文档解析任务",
+        icon: "chrome://mineruForZotero/content/icons/favicon.png",
+        progress: 100,
+      },
+    ]);
+  });
+
+  it("preserves progress window detail text as a label newline", function () {
+    assert.equal(
+      createProgressWindowDisplayText([
+        { text: "已提交 MinerU 文档解析任务" },
+        { text: "[在线 API · 精准]" },
+      ]),
+      "已提交 MinerU 文档解析任务\n[在线 API · 精准]",
+    );
+  });
+
+  it("creates progress window description lines from detail text", function () {
+    assert.deepEqual(
+      createProgressWindowDetailLines([
+        { text: "已提交 MinerU 文档解析任务" },
+        { text: "[在线 API · 精准]" },
+      ]),
+      ["[在线 API · 精准]"],
+    );
+  });
+
+  it("creates one progress window line for generic notices", function () {
+    assert.deepEqual(
+      createProgressWindowLineOptions([{ text: "已提交 MinerU 文档解析任务" }]),
+      [
+        {
+          text: "已提交 MinerU 文档解析任务",
+          icon: "chrome://mineruForZotero/content/icons/favicon.png",
+          progress: 100,
+        },
+      ],
+    );
+  });
+
+  it("keeps progress window text normalization for Fluent values", function () {
+    assert.equal(
+      createProgressWindowDisplayText([
+        {
+          text: normalizeProgressWindowText(
+            "已提交 MinerU 文档解析任务\n    [在线 API · 精准]",
+          ),
+        },
+      ]),
+      "已提交 MinerU 文档解析任务 [在线 API · 精准]",
+    );
+  });
+
+  it("creates one progress window line for parse task detail text", function () {
+    const options = createProgressWindowLineOptions([
+      { text: "已提交 MinerU 文档解析任务" },
+      { text: "[在线 API · 精准]" },
+    ]);
+
+    assert.lengthOf(options, 1);
+  });
+
+  it("applies the explicit progress window item icon to the image node", function () {
+    const image = document.createElement("hbox");
+    const progressWindow = {
+      lines: [{ _image: image }],
+    };
+
+    applyProgressWindowItemIcon(
+      progressWindow,
+      "chrome://mineruForZotero/content/icons/favicon.png",
+    );
+
+    assert.equal(
+      image.dataset.itemType,
+      "chrome://mineruForZotero/content/icons/favicon.png",
+    );
+    assert.include(
+      image.style.backgroundImage,
+      "chrome://mineruForZotero/content/icons/favicon.png",
+    );
+    assert.equal(image.style.backgroundRepeat, "no-repeat");
+    assert.equal(image.style.backgroundSize, "16px 16px");
+  });
+
+  it("reports whether the progress window item icon was applied", function () {
+    const progressWindow: { lines: Array<{ _image?: HTMLElement }> } = {
+      lines: [{}],
+    };
+
+    assert.isFalse(
+      applyProgressWindowItemIcon(
+        progressWindow,
+        "chrome://mineruForZotero/content/icons/favicon.png",
+      ),
+    );
+
+    progressWindow.lines[0]._image = document.createElement("hbox");
+
+    assert.isTrue(
+      applyProgressWindowItemIcon(
+        progressWindow,
+        "chrome://mineruForZotero/content/icons/favicon.png",
+      ),
+    );
+  });
+
+  it("styles progress description rows as aligned detail lines", function () {
+    const container = document.createElement("vbox");
+    const mainRow = document.createElement("hbox");
+    const detailRow = document.createElement("hbox");
+    const detail = document.createElement("description");
+    detail.textContent = "[在线 API · 精准]";
+    detailRow.append(detail);
+    container.append(mainRow, detailRow);
+    const progressWindow = {
+      lines: [{ _hbox: mainRow }],
+    };
+
+    applyProgressWindowDescriptionLineLayout(progressWindow, [
+      "[在线 API · 精准]",
+    ]);
+
+    assert.equal(
+      detailRow.getAttribute("data-mineru-progress-detail-row"),
+      "true",
+    );
+    assert.equal(detailRow.style.marginLeft, "22px");
+    assert.equal(detail.style.lineHeight, "18px");
+  });
+
+  it("reports whether progress description rows were aligned", function () {
+    const container = document.createElement("vbox");
+    const mainRow = document.createElement("hbox");
+    container.append(mainRow);
+    const progressWindow = {
+      lines: [{ _hbox: mainRow }],
+    };
+
+    assert.isFalse(
+      applyProgressWindowDescriptionLineLayout(progressWindow, [
+        "[在线 API · 精准]",
+      ]),
+    );
+
+    const detailRow = document.createElement("hbox");
+    const detail = document.createElement("description");
+    detail.textContent = "[在线 API · 精准]";
+    detailRow.append(detail);
+    container.append(detailRow);
+
+    assert.isTrue(
+      applyProgressWindowDescriptionLineLayout(progressWindow, [
+        "[在线 API · 精准]",
+      ]),
+    );
+  });
+
+  it("does not require the global Node constructor for detail row layout", function () {
+    const container = document.createElement("vbox");
+    const mainRow = document.createElement("hbox");
+    const detailRow = document.createElement("hbox");
+    const detail = document.createElement("description");
+    detail.textContent = "[在线 API · 精准]";
+    detailRow.append(detail);
+    container.append(mainRow, detailRow);
+    const progressWindow = {
+      lines: [{ _hbox: mainRow }],
+    };
+    const globalWithNode = globalThis as typeof globalThis & {
+      Node?: typeof Node;
+    };
+    const originalNode = globalWithNode.Node;
+
+    try {
+      Reflect.deleteProperty(globalWithNode, "Node");
+
+      assert.doesNotThrow(() => {
+        applyProgressWindowDescriptionLineLayout(progressWindow, [
+          "[在线 API · 精准]",
+        ]);
+      });
+    } finally {
+      globalWithNode.Node = originalNode;
+    }
+  });
+
   it("treats prompt close and cancel position as use-existing", function () {
     assert.equal(resolveReparseChoiceFromPromptButton(1), "use-existing");
     assert.equal(resolveReparseChoiceFromPromptButton(0), "reparse");
@@ -36,6 +300,142 @@ describe("parseManager", function () {
         : [],
       [1, 2],
     );
+  });
+
+  it("reports online precise parse notices with source and mode context", async function () {
+    const notices: Array<{
+      id: string;
+      args?: Record<string, string>;
+    }> = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+      },
+      storage: {
+        ...baseStorage(),
+        writeResult: async () => {},
+      },
+      client: successfulPreciseClient(),
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.deepEqual(notices, [
+      {
+        id: "parse-task-submitted",
+        args: {
+          source: "online",
+          mode: "precise",
+        },
+      },
+      {
+        id: "parse-task-finished",
+        args: {
+          source: "online",
+          mode: "precise",
+        },
+      },
+    ]);
+  });
+
+  it("reports all source and mode combinations in parse notices", async function () {
+    const cases: Array<{
+      source: "online" | "local";
+      mode: "precise" | "lite";
+      result:
+        | {
+            kind: "precise";
+            rawResult: unknown;
+            markdown: string;
+          }
+        | { kind: "lite"; markdown: string };
+    }> = [
+      {
+        source: "online",
+        mode: "precise",
+        result: preciseResultFixture(),
+      },
+      {
+        source: "online",
+        mode: "lite",
+        result: { kind: "lite", markdown: "# Lite" },
+      },
+      {
+        source: "local",
+        mode: "precise",
+        result: preciseResultFixture(),
+      },
+      {
+        source: "local",
+        mode: "lite",
+        result: { kind: "lite", markdown: "# Lite" },
+      },
+    ];
+
+    for (const entry of cases) {
+      const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+      const manager = createParseManager({
+        ...baseDependencies([]),
+        getParseSource: () => entry.source,
+        getParseMode: () => entry.mode,
+        showMessage: (id, args) => {
+          notices.push({ id, args });
+        },
+        client: {
+          submitPdf: async () => ({ taskID: "task-1" }),
+          pollTask: async () => ({ status: "succeeded" }),
+          downloadResult: async () => entry.result,
+        },
+      });
+
+      await manager.parseAttachment(pdfAttachment());
+
+      assert.deepEqual(
+        notices.map((notice) => notice.args),
+        [
+          {
+            source: entry.source,
+            mode: entry.mode,
+          },
+          {
+            source: entry.source,
+            mode: entry.mode,
+          },
+        ],
+      );
+    }
+  });
+
+  it("does not report submitted notice when submit upload fails", async function () {
+    const notices: Array<{
+      id: string;
+      args?: Record<string, string>;
+    }> = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+      },
+      client: {
+        submitPdf: async () => {
+          throw new MinerURequestError("upload", 403, "bad signature");
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.notInclude(
+      notices.map((notice) => notice.id),
+      "parse-task-submitted",
+    );
+    assert.deepInclude(notices, {
+      id: "parse-error-upload",
+      args: { message: "MinerU upload request failed: bad signature" },
+    });
   });
 
   it("parses multiple attachments in parallel and confirms existing results once", async function () {
@@ -92,6 +492,238 @@ describe("parseManager", function () {
 
     assert.equal(confirmCount, 1);
     assert.sameMembers(started, ["C:\\tmp\\a.pdf", "C:\\tmp\\b.pdf"]);
+  });
+
+  it("reports batch parse notices with total and completion progress", async function () {
+    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+    const writeOrder: number[] = [];
+    const completionEvents: Array<{
+      attachmentID: number;
+      completed: string;
+    }> = [];
+    const startedPolls: string[] = [];
+    let releasePollStart: (() => void) | undefined;
+    const bothPollsStarted = new Promise<void>((resolve) => {
+      releasePollStart = resolve;
+    });
+    const releaseByPath = new Map<string, () => void>();
+    const waitByPath = new Map<string, Promise<void>>();
+    for (const path of ["C:\\tmp\\a.pdf", "C:\\tmp\\b.pdf"]) {
+      waitByPath.set(
+        path,
+        new Promise<void>((resolve) => {
+          releaseByPath.set(path, resolve);
+        }),
+      );
+    }
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+        if (id === "parse-task-finished-progress" && args) {
+          const attachmentID = writeOrder[completionEvents.length];
+          completionEvents.push({
+            attachmentID,
+            completed: args.completed,
+          });
+        }
+      },
+      storage: {
+        ...baseStorage(),
+        writeResult: async (input) => {
+          writeOrder.push(input.attachment.id);
+        },
+      },
+      client: {
+        submitPdf: async (filePath) => ({ taskID: filePath }),
+        pollTask: async (taskID) => {
+          startedPolls.push(taskID);
+          if (startedPolls.length === 2) {
+            releasePollStart?.();
+          }
+          await waitByPath.get(taskID);
+          return { status: "succeeded" };
+        },
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    const parsing = manager.parseAttachments([
+      pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
+      pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
+    ]);
+
+    await bothPollsStarted;
+    releaseByPath.get("C:\\tmp\\b.pdf")?.();
+    await Promise.resolve();
+    releaseByPath.get("C:\\tmp\\a.pdf")?.();
+    await parsing;
+
+    assert.deepEqual(
+      notices.filter((notice) => notice.id === "parse-task-submitted-total"),
+      [
+        {
+          id: "parse-task-submitted-total",
+          args: {
+            source: "online",
+            mode: "precise",
+            total: "2",
+          },
+        },
+      ],
+    );
+    assert.deepEqual(
+      notices.filter((notice) => notice.id === "parse-task-finished-progress"),
+      [
+        {
+          id: "parse-task-finished-progress",
+          args: {
+            source: "online",
+            mode: "precise",
+            total: "2",
+            completed: "1",
+          },
+        },
+        {
+          id: "parse-task-finished-progress",
+          args: {
+            source: "online",
+            mode: "precise",
+            total: "2",
+            completed: "2",
+          },
+        },
+      ],
+    );
+    assert.deepEqual(completionEvents, [
+      { attachmentID: 2, completed: "1" },
+      { attachmentID: 1, completed: "2" },
+    ]);
+  });
+
+  it("excludes skipped existing results from batch notice totals", async function () {
+    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+      },
+      storage: {
+        ...baseStorage(),
+        hasReadyResult: async (attachment) => attachment.id === 1,
+      },
+      confirmReparse: async () => "use-existing",
+      client: successfulPreciseClient(),
+    });
+
+    await manager.parseAttachments([
+      pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
+      pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
+    ]);
+
+    assert.deepEqual(notices, [
+      { id: "parse-use-existing-result", args: undefined },
+      {
+        id: "parse-task-submitted",
+        args: {
+          source: "online",
+          mode: "precise",
+        },
+      },
+      {
+        id: "parse-task-finished",
+        args: {
+          source: "online",
+          mode: "precise",
+        },
+      },
+    ]);
+  });
+
+  it("does not emit batch notices when all existing results are kept", async function () {
+    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+    let submitCalled = false;
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+      },
+      storage: {
+        ...baseStorage(),
+        hasReadyResult: async () => true,
+      },
+      confirmReparse: async () => "use-existing",
+      client: {
+        submitPdf: async () => {
+          submitCalled = true;
+          throw new Error("submitPdf should not be called");
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachments([
+      pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
+      pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
+    ]);
+
+    assert.isFalse(submitCalled);
+    assert.deepEqual(notices, [
+      { id: "parse-use-existing-result", args: undefined },
+    ]);
+  });
+
+  it("excludes unreadable files from batch notice totals", async function () {
+    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+    const submitted: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+      },
+      isFileReadable: async (filePath) => !filePath.endsWith("a.pdf"),
+      client: {
+        submitPdf: async (filePath) => {
+          submitted.push(filePath);
+          return { taskID: "task-readable" };
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachments([
+      pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
+      pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
+    ]);
+
+    assert.deepEqual(submitted, ["C:\\tmp\\b.pdf"]);
+    assert.notInclude(
+      notices.map((notice) => notice.id),
+      "parse-task-submitted-total",
+    );
+    assert.notInclude(
+      notices.map((notice) => notice.id),
+      "parse-task-finished-progress",
+    );
+    assert.deepEqual(notices, [
+      { id: "parse-error-file-access", args: undefined },
+      {
+        id: "parse-task-submitted",
+        args: {
+          source: "online",
+          mode: "precise",
+        },
+      },
+      {
+        id: "parse-task-finished",
+        args: {
+          source: "online",
+          mode: "precise",
+        },
+      },
+    ]);
   });
 
   it("skips existing results after a single bulk use-existing choice", async function () {
@@ -843,6 +1475,46 @@ describe("parseManager", function () {
     }
   });
 
+  it("counts only successful completions in batch progress notices", async function () {
+    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+      },
+      client: {
+        submitPdf: async (filePath) => ({ taskID: filePath }),
+        pollTask: async (taskID) => {
+          if (taskID.includes("b.pdf")) {
+            return { status: "failed", error: "parse failed" };
+          }
+          return { status: "succeeded" };
+        },
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachments([
+      pdfAttachment({ id: 1, filePath: "C:/tmp/a.pdf" }),
+      pdfAttachment({ id: 2, filePath: "C:/tmp/b.pdf" }),
+    ]);
+
+    assert.deepEqual(
+      notices.filter((notice) => notice.id === "parse-task-finished-progress"),
+      [
+        {
+          id: "parse-task-finished-progress",
+          args: {
+            source: "online",
+            mode: "precise",
+            total: "2",
+            completed: "1",
+          },
+        },
+      ],
+    );
+  });
+
   it("maps local API request failures to local unavailable messages", async function () {
     const messages: string[] = [];
     const manager = createParseManager({
@@ -863,6 +1535,37 @@ describe("parseManager", function () {
     assert.include(messages, "parse-error-local-api-unavailable");
   });
 });
+
+function successfulPreciseClient(): NonNullable<
+  ParseManagerDependencies["client"]
+> {
+  return {
+    submitPdf: async () => ({ taskID: "task-1" }),
+    pollTask: async () => ({ status: "succeeded" }),
+    downloadResult: async () => preciseResultFixture(),
+  };
+}
+
+function preciseResultFixture(): {
+  kind: "precise";
+  rawResult: unknown;
+  markdown: string;
+} {
+  return {
+    kind: "precise",
+    rawResult: {
+      pages: [
+        {
+          pageNo: 1,
+          width: 1000,
+          height: 1000,
+          blocks: [{ type: "text", bbox: [0, 0, 100, 100], markdown: "A" }],
+        },
+      ],
+    },
+    markdown: "A",
+  };
+}
 
 function baseDependencies(messages: string[]): ParseManagerDependencies {
   return {
@@ -932,4 +1635,30 @@ function regularItem(attachments: Zotero.Item[]): Zotero.Item {
     isRegularItem: () => true,
     getBestAttachments: async () => attachments,
   } as unknown as Zotero.Item;
+}
+
+function resolveProgressWindowTestMessage(
+  id: string,
+  args?: Record<string, string>,
+): string {
+  const values: Record<string, string> = {
+    "parse-notice-mode-lite": "轻量",
+    "parse-notice-mode-precise": "精准",
+    "parse-notice-source-local": "本地 API",
+    "parse-notice-source-online": "在线 API",
+    "parse-task-finished-progress": "MinerU 文档解析任务完成",
+    "parse-task-submitted": "已提交 MinerU 文档解析任务",
+    "parse-task-submitted-total": "已提交 MinerU 文档解析任务",
+  };
+
+  if (id === "parse-task-detail") {
+    return `[${args?.sourceLabel} · ${args?.modeLabel}]`;
+  }
+  if (id === "parse-task-detail-total") {
+    return `[${args?.sourceLabel} · ${args?.modeLabel} · 共 ${args?.total} 个]`;
+  }
+  if (id === "parse-task-detail-progress") {
+    return `[${args?.sourceLabel} · ${args?.modeLabel} · ${args?.completed}/${args?.total}]`;
+  }
+  return values[id] ?? id;
 }

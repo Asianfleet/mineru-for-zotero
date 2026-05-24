@@ -39,7 +39,7 @@
 - Create: `src/modules/parseNotice.ts`
 - Test: `test/parseManager.test.ts`
 
-- [ ] **Step 1: Write failing tests for single-task notice context**
+- [x] **Step 1: Write failing tests for single-task notice context**
 
 Add this block near the top of `test/parseManager.test.ts`, after the selected regular item test and before bulk parsing tests. These tests override `showMessage` locally so existing string-only assertions do not need to change.
 
@@ -185,7 +185,7 @@ function preciseResultFixture(): {
 }
 ```
 
-- [ ] **Step 2: Run the targeted tests and verify they fail**
+- [x] **Step 2: Run the targeted tests and verify they fail**
 
 Run:
 
@@ -195,7 +195,7 @@ Run:
 
 Expected: FAIL because `parse-task-submitted`, `parse-task-finished`, and their `source`/`mode` args are not implemented.
 
-- [ ] **Step 3: Implement `parseNotice.ts`**
+- [x] **Step 3: Implement `parseNotice.ts`**
 
 Create `src/modules/parseNotice.ts`:
 
@@ -294,7 +294,7 @@ function incrementCompletedCount(batch: ParseNoticeBatchProgress): number {
 }
 ```
 
-- [ ] **Step 4: Wire single-task notices in `parseManager.ts`**
+- [x] **Step 4: Wire single-task notices in `parseManager.ts`**
 
 Modify imports in `src/modules/parseManager.ts`:
 
@@ -372,7 +372,7 @@ function showParseNotice(
 }
 ```
 
-- [ ] **Step 5: Run targeted tests and verify single-task notices pass**
+- [x] **Step 5: Run targeted tests and verify single-task notices pass**
 
 Run:
 
@@ -382,7 +382,7 @@ Run:
 
 Expected: PASS for the new single-task notice tests. TypeScript may still fail later until locale typings are updated in Task 3.
 
-- [ ] **Step 6: Commit Task 1**
+- [x] **Step 6: Commit Task 1**
 
 Run:
 
@@ -402,7 +402,7 @@ Expected: commit succeeds.
 - Modify: `src/modules/parseManager.ts`
 - Modify: `test/parseManager.test.ts`
 
-- [ ] **Step 1: Write failing tests for batch total and completion order**
+- [x] **Step 1: Write failing tests for batch total and completion order**
 
 Add these tests after the existing `"parses multiple attachments in parallel and confirms existing results once"` test:
 
@@ -575,7 +575,7 @@ it("counts only successful completions in batch progress notices", async functio
 });
 ```
 
-- [ ] **Step 2: Run the targeted batch tests and verify they fail**
+- [x] **Step 2: Run the targeted batch tests and verify they fail**
 
 Run:
 
@@ -585,7 +585,7 @@ Run:
 
 Expected: FAIL because bulk parsing does not pass a shared notice context yet.
 
-- [ ] **Step 3: Pass shared batch context from `parseAttachmentsWithDependencies()`**
+- [x] **Step 3: Pass shared batch context from `parseAttachmentsWithDependencies()`**
 
 In `src/modules/parseManager.ts`, replace the final `Promise.all()` in `parseAttachmentsWithDependencies()`:
 
@@ -664,7 +664,7 @@ await Promise.all(
 
 This preserves concurrent execution and the existing bulk control flow. `parseAttachmentWithDependencies()` catches parse failures and reports the existing error messages, so already-started concurrent tasks can still finish.
 
-- [ ] **Step 4: Run targeted batch tests and verify they pass**
+- [x] **Step 4: Run targeted batch tests and verify they pass**
 
 Run:
 
@@ -674,7 +674,7 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 5: Run the full parse manager tests**
+- [x] **Step 5: Run the full parse manager tests**
 
 Run:
 
@@ -684,7 +684,7 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 Run:
 
@@ -705,7 +705,7 @@ Expected: commit succeeds.
 - Modify: `addon/locale/en-US/mainWindow.ftl`
 - Modify: `typings/i10n.d.ts`
 
-- [ ] **Step 1: Update Chinese Fluent messages**
+- [x] **Step 1: Update Chinese Fluent messages**
 
 In `addon/locale/zh-CN/mainWindow.ftl`, replace:
 
@@ -758,7 +758,7 @@ parse-task-finished-progress =
 
 Keep old `parse-started`, `parse-finished`, and `parse-lite-finished` only if other code still references them after Task 2. If `rg "parse-started|parse-finished|parse-lite-finished" src test addon` finds no references except generated typings, remove the old keys.
 
-- [ ] **Step 2: Update English Fluent messages**
+- [x] **Step 2: Update English Fluent messages**
 
 In `addon/locale/en-US/mainWindow.ftl`, replace:
 
@@ -811,7 +811,7 @@ parse-task-finished-progress =
 
 Use `rg "parse-started|parse-finished|parse-lite-finished" src test addon` again. Remove old keys only when they are no longer referenced.
 
-- [ ] **Step 3: Update i10n typings**
+- [x] **Step 3: Update i10n typings**
 
 In `typings/i10n.d.ts`, add these ids to the `FluentMessageId` union near the other `parse-*` keys:
 
@@ -830,7 +830,7 @@ Remove these ids from the union if no code or locale uses them after the locale 
   | 'parse-started'
 ```
 
-- [ ] **Step 4: Run reference search**
+- [x] **Step 4: Run reference search**
 
 Run:
 
@@ -840,7 +840,7 @@ rg -n "parse-started|parse-finished|parse-lite-finished|parse-task-submitted|par
 
 Expected: only the new `parse-task-*` ids should appear in source, locale, tests, and typings. Old ids should not appear unless deliberately retained for compatibility.
 
-- [ ] **Step 5: Run parse manager tests**
+- [x] **Step 5: Run parse manager tests**
 
 Run:
 
@@ -850,7 +850,7 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 Run:
 
@@ -869,7 +869,7 @@ Expected: commit succeeds.
 
 - Verify all changed files from Tasks 1-3.
 
-- [ ] **Step 1: Inspect working tree**
+- [x] **Step 1: Inspect working tree**
 
 Run:
 
@@ -883,7 +883,7 @@ Expected: clean if each task was committed. If there are uncommitted task-relate
 git diff
 ```
 
-- [ ] **Step 2: Run full scaffold test suite**
+- [x] **Step 2: Run full scaffold test suite**
 
 Run:
 
@@ -893,7 +893,7 @@ Run:
 
 Expected: PASS. If the command fails because Zotero cannot launch or the scaffold runtime is unavailable, capture the exact failure text in the final handoff and run the narrower TypeScript or unit checks that are available.
 
-- [ ] **Step 3: Run type-aware build**
+- [x] **Step 3: Run type-aware build**
 
 Run:
 
@@ -903,7 +903,7 @@ pnpm run build
 
 Expected: PASS. This confirms `typings/i10n.d.ts` and TypeScript imports are consistent.
 
-- [ ] **Step 4: Check final diff against spec**
+- [x] **Step 4: Check final diff against spec**
 
 Run:
 
@@ -920,7 +920,7 @@ Expected:
   - `feat(locale): 更新解析任务提示文案`
 - Working tree is clean.
 
-- [ ] **Step 5: Prepare final summary**
+- [x] **Step 5: Prepare final summary**
 
 Final response should include:
 
@@ -936,6 +936,40 @@ Final response should include:
 ```text
 feat(parse): 优化解析任务提示进度
 ```
+
+---
+
+## 实施与修复说明
+
+### 已实现行为
+
+- 单个 PDF 解析提交和完成提示改为固定主文案，并在详情行显示 `[API 来源 · 解析模式]`。
+- 多个 PDF 解析提交提示合并为一条批量提交提示，详情行显示 `[API 来源 · 解析模式 · 共 N 个]`。
+- 多个 PDF 解析完成提示按实际成功完成顺序显示 `[API 来源 · 解析模式 · K/N]`；失败任务不递增完成计数。
+- 已选择“使用已有结果”的 attachment 不计入本轮批量总数；过滤后只剩一个待解析 PDF 时回退为单任务提示。
+- item context menu 的多选入口改为一次性调用批量解析入口，避免对多个 PDF 逐个触发单任务提交提示。
+
+### 关键实现
+
+- 新增 `src/modules/parseNotice.ts`，集中生成解析提示上下文、提交提示、完成提示和批量计数参数。
+- `src/modules/parseManager.ts` 在提交成功后显示提交提示，在结果写入成功后显示完成提示；错误提示仍沿用既有错误分类。
+- Fluent 文案拆分为主文案和详情文案 key，避免 scaffold 构建后多行 Fluent value 被折叠或丢失。
+- ProgressWindow 只创建一个主 `ItemProgress` 行，详情行通过 Zotero `addDescription()` 添加，借用 Zotero 内部 `_move()/sizeToContent()` 重新计算通知窗口高度。
+- ProgressWindow 图标使用显式插件 icon URI，并在窗口 DOM 异步生成后进行短时间重试应用，避免回退为 Zotero 默认文件图标。
+
+### 调试修复记录
+
+- 修复批量提交提示重复：根因是同一个批量上下文被传给多个 attachment 后，每个 attachment 都调用提交提示；通过 `submitted` 标记保证批量提交只弹一次。
+- 修复详情行两侧都有 icon：根因是把主文案和详情文案渲染为两个 ProgressWindow item；改为一个主 item 加一个详情 description。
+- 修复详情行被底部裁剪：根因是替换 `ItemProgress` 内部 label 后没有触发 Zotero `sizeToContent()`；改为 `addDescription()`。
+- 修复 `Node is not defined`：根因是插件脚本环境不保证全局 `Node` 构造器存在；改为使用本地 `ELEMENT_NODE_TYPE = 1`。
+- 修复完成提示第二条 icon 和详情左对齐偶发失效：根因是 Zotero ProgressWindow 行 DOM 通过 `_deferUntilWindowLoad` 异步生成，单次 timeout 可能早于真实 DOM；改为根据 icon 和详情行是否实际应用成功进行短时间重试。
+
+### 最终验证
+
+- `.\node_modules\.bin\zotero-plugin.CMD test --exit-on-finish --abort-on-fail`：188 passed。
+- `pnpm run build`：通过。
+- `npm run lint:check`：通过。
 
 ---
 

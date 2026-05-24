@@ -1,6 +1,6 @@
 import { config } from "../../package.json";
 import { getLocaleID } from "../utils/locale";
-import { parseAttachment } from "./parseManager";
+import { parseAttachments } from "./parseManager";
 
 const PARSE_PDF_MENU_ID = `${config.addonRef}-parse-pdf`;
 
@@ -31,11 +31,17 @@ type MenuManager = {
   registerMenu: (options: MenuRegistration) => string | false;
 };
 
+type ParsePdfMenuDependencies = {
+  parseAttachments: (attachments: Zotero.Item[]) => Promise<void>;
+};
+
 export function registerItemMenu(menuManager = getMenuManager()): void {
   menuManager.registerMenu(createParsePdfMenuRegistration());
 }
 
-export function createParsePdfMenuRegistration(): MenuRegistration {
+export function createParsePdfMenuRegistration(
+  dependencies: ParsePdfMenuDependencies = { parseAttachments },
+): MenuRegistration {
   return {
     menuID: PARSE_PDF_MENU_ID,
     pluginID: config.addonID,
@@ -47,9 +53,7 @@ export function createParsePdfMenuRegistration(): MenuRegistration {
         icon: `chrome://${config.addonRef}/content/mineru.svg`,
         onCommand: (_event, context) => {
           const attachments = (context.items ?? []).filter(isPdfAttachment);
-          attachments.forEach((attachment) => {
-            void parseAttachment(attachment);
-          });
+          void dependencies.parseAttachments(attachments);
         },
         onShowing: (_event, context) => {
           const items = context.items ?? [];
