@@ -407,6 +407,94 @@ describe("parseManager", function () {
     }
   });
 
+  it("marks precise parsing as running and ready", async function () {
+    const events: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      onParseColumnRunning: async (_attachment, mode) => {
+        events.push(`${mode}:running`);
+      },
+      onParseColumnReady: async (_attachment, mode) => {
+        events.push(`${mode}:ready`);
+      },
+      client: successfulPreciseClient(),
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.deepEqual(events, ["precise:running", "precise:ready"]);
+  });
+
+  it("marks lite parsing as running and ready", async function () {
+    const events: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      getParseMode: () => "lite",
+      onParseColumnRunning: async (_attachment, mode) => {
+        events.push(`${mode}:running`);
+      },
+      onParseColumnReady: async (_attachment, mode) => {
+        events.push(`${mode}:ready`);
+      },
+      client: {
+        submitPdf: async () => ({ taskID: "lite-task" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({ kind: "lite", markdown: "# Lite" }),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.deepEqual(events, ["lite:running", "lite:ready"]);
+  });
+
+  it("clears running parse column status after parse failure", async function () {
+    const events: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      onParseColumnRunning: async (_attachment, mode) => {
+        events.push(`${mode}:running`);
+      },
+      onParseColumnClearRunning: async (_attachment, mode) => {
+        events.push(`${mode}:clear`);
+      },
+      client: {
+        submitPdf: async () => {
+          throw new MinerURequestError("upload", 403, "bad signature");
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.deepEqual(events, ["precise:running", "precise:clear"]);
+  });
+
+  it("clears running parse column status for empty lite markdown", async function () {
+    const events: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      getParseMode: () => "lite",
+      onParseColumnRunning: async (_attachment, mode) => {
+        events.push(`${mode}:running`);
+      },
+      onParseColumnClearRunning: async (_attachment, mode) => {
+        events.push(`${mode}:clear`);
+      },
+      client: {
+        submitPdf: async () => ({ taskID: "lite-task" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({ kind: "lite", markdown: " " }),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.deepEqual(events, ["lite:running", "lite:clear"]);
+  });
+
   it("does not report submitted notice when submit upload fails", async function () {
     const notices: Array<{
       id: string;
@@ -1598,6 +1686,11 @@ function baseStorage(): ParseManagerDependencies["storage"] {
     getAttachmentDir: () => "TmpD/mineru-copy/attachments/12-ABC123",
     hasReadyResult: async () => false,
     hasLiteResult: async () => false,
+    readParseStatus: async () => ({
+      preciseReady: false,
+      liteReady: false,
+    }),
+    listParseStatuses: async () => new Map(),
     readManifest: async () => {
       throw new Error("not needed");
     },

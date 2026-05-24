@@ -13,6 +13,13 @@ export interface StorageAdapter {
   getAttachmentDir(ref: AttachmentKeyRef): string;
   hasReadyResult(ref: AttachmentKeyRef): Promise<boolean>;
   hasLiteResult(ref: AttachmentKeyRef): Promise<boolean>;
+  readParseStatus(ref: AttachmentKeyRef): Promise<{
+    preciseReady: boolean;
+    liteReady: boolean;
+  }>;
+  listParseStatuses(): Promise<
+    Map<string, { preciseReady: boolean; liteReady: boolean }>
+  >;
   readManifest(ref: AttachmentKeyRef): Promise<ParseManifest>;
   readMarkdown(ref: AttachmentKeyRef): Promise<string>;
   readPreferredMarkdown(ref: AttachmentKeyRef): Promise<string>;
@@ -61,21 +68,43 @@ export function createStorage(rootDir: string): StorageAdapter {
     },
 
     async hasReadyResult(ref) {
-      try {
-        const manifest = await readManifestFile(getAttachmentDir(fsRoot, ref));
-        return manifest.status === "ready";
-      } catch {
-        return false;
-      }
+      return hasReadyPreciseResult(fsRoot, ref);
     },
 
     async hasLiteResult(ref) {
-      try {
-        await readReadyLiteMarkdown(fsRoot, ref);
-        return true;
-      } catch {
-        return false;
+      return hasReadyLiteResult(fsRoot, ref);
+    },
+
+    async readParseStatus(ref) {
+      return readParseStatusFromDir(fsRoot, ref);
+    },
+
+    async listParseStatuses() {
+      const attachmentsDir = joinPath(fsRoot, ATTACHMENTS_DIR);
+      const statuses = new Map<
+        string,
+        { preciseReady: boolean; liteReady: boolean }
+      >();
+      if (!(await exists(attachmentsDir))) {
+        return statuses;
       }
+
+      const children = await readDir(attachmentsDir);
+      for (const child of children) {
+        if (isTransientResultDir(child)) {
+          continue;
+        }
+        if (!isAttachmentResultDirName(child)) {
+          continue;
+        }
+        const status = await readParseStatusFromAttachmentDir(
+          joinPath(attachmentsDir, child),
+        );
+        if (status.preciseReady || status.liteReady) {
+          statuses.set(child, status);
+        }
+      }
+      return statuses;
     },
 
     async readManifest(ref) {
@@ -277,12 +306,59 @@ async function hasReadyPreciseResult(
   root: string,
   ref: AttachmentKeyRef,
 ): Promise<boolean> {
-  const dir = getAttachmentDir(root, ref);
-  if (!(await exists(joinPath(dir, MANIFEST_FILE)))) {
+  return hasReadyPreciseResultInDir(getAttachmentDir(root, ref));
+}
+
+async function hasReadyLiteResult(
+  root: string,
+  ref: AttachmentKeyRef,
+): Promise<boolean> {
+  try {
+    await readReadyLiteMarkdown(root, ref);
+    return true;
+  } catch {
     return false;
   }
-  const manifest = await readManifestFile(dir);
-  return manifest.status === "ready";
+}
+
+async function readParseStatusFromDir(
+  root: string,
+  ref: AttachmentKeyRef,
+): Promise<{ preciseReady: boolean; liteReady: boolean }> {
+  return readParseStatusFromAttachmentDir(getAttachmentDir(root, ref));
+}
+
+async function readParseStatusFromAttachmentDir(
+  dir: string,
+): Promise<{ preciseReady: boolean; liteReady: boolean }> {
+  return {
+    preciseReady: await hasReadyPreciseResultInDir(dir),
+    liteReady: await hasReadyLiteResultInDir(dir),
+  };
+}
+
+async function hasReadyPreciseResultInDir(dir: string): Promise<boolean> {
+  try {
+    const manifest = await readManifestFile(dir);
+    return manifest.status === "ready";
+  } catch {
+    return false;
+  }
+}
+
+async function hasReadyLiteResultInDir(dir: string): Promise<boolean> {
+  try {
+    const manifest = (await readJson(
+      joinPath(dir, LITE_MANIFEST_FILE),
+    )) as Partial<LiteParseManifest>;
+    if (manifest.status !== "ready" || manifest.mode !== "lite") {
+      return false;
+    }
+    const markdown = await readText(joinPath(dir, LITE_CONTENT_FILE));
+    return Boolean(markdown.trim());
+  } catch {
+    return false;
+  }
 }
 
 async function readReadyLiteMarkdown(
@@ -290,21 +366,18 @@ async function readReadyLiteMarkdown(
   ref: AttachmentKeyRef,
 ): Promise<string> {
   const dir = getAttachmentDir(root, ref);
-  const manifest = (await readJson(
-    joinPath(dir, LITE_MANIFEST_FILE),
-  )) as Partial<LiteParseManifest>;
-  if (manifest.status !== "ready" || manifest.mode !== "lite") {
+  if (!(await hasReadyLiteResultInDir(dir))) {
     throw new Error("MinerU lite result is not ready");
   }
-  const markdown = await readText(joinPath(dir, LITE_CONTENT_FILE));
-  if (!markdown.trim()) {
-    throw new Error("MinerU lite result is empty");
-  }
-  return markdown;
+  return readText(joinPath(dir, LITE_CONTENT_FILE));
 }
 
 function getAttachmentDir(root: string, ref: AttachmentKeyRef): string {
   return joinPath(root, ATTACHMENTS_DIR, `${ref.libraryID}-${ref.key}`);
+}
+
+function isAttachmentResultDirName(name: string): boolean {
+  return /^\d+-[A-Z0-9]+$/.test(name);
 }
 
 async function preserveLiteFiles(

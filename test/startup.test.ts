@@ -15,6 +15,25 @@ describe("startup", function () {
     );
   });
 
+  it("registers the MinerU parse status item tree column after main window load", async function () {
+    await waitForPluginInitialization();
+    const win = Zotero.getMainWindow();
+
+    await Zotero[config.addonInstance].hooks.onMainWindowLoad(win);
+    const registeredDataKey =
+      Zotero[config.addonInstance].data.itemTreeColumn?.registeredDataKey;
+
+    try {
+      assert.isString(registeredDataKey);
+      assert.isTrue(
+        Zotero.ItemTreeManager.isCustomColumn(registeredDataKey),
+        "stored registered data key should be a custom column",
+      );
+    } finally {
+      await Zotero[config.addonInstance].hooks.onMainWindowUnload(win);
+    }
+  });
+
   it("removes the main-window Fluent resource on window unload", async function () {
     const win = Zotero.getMainWindow();
     const href = `${config.addonRef}-mainWindow.ftl`;
@@ -27,3 +46,18 @@ describe("startup", function () {
     assert.isNull(win.document.querySelector(`[href="${href}"]`));
   });
 });
+
+async function waitForPluginInitialization(): Promise<void> {
+  const addonInstance = Zotero[config.addonInstance] as
+    | { data?: { initialized?: boolean } }
+    | undefined;
+
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    if (addonInstance?.data?.initialized) {
+      return;
+    }
+    await Zotero.Promise.delay(20);
+  }
+
+  assert.fail("plugin did not finish initialization before timeout");
+}

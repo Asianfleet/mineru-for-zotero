@@ -121,3 +121,28 @@
     0 0 3px 0 rgba(0, 0, 0, 0.45),
     0 4px 14px 0 rgba(0, 0, 0, 0.28);
 }
+
+.mineru-parse-column-cell {
+  align-items: center;
+  display: inline-flex;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.mineru-parse-column-badge {
+  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+  border-radius: 4px;
+  box-sizing: border-box;
+  display: inline-flex;
+  font-size: 0.86em;
+  line-height: 1.45;
+  max-width: 100%;
+  padding: 0 5px;
+}
+
+.mineru-parse-column-badge-running {
+  border-style: dashed;
+  font-weight: 600;
+}

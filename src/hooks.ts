@@ -1,5 +1,9 @@
 import { getString, initLocale } from "./utils/locale";
 import { registerItemMenu } from "./modules/itemMenu";
+import {
+  registerItemTreeColumn,
+  unregisterItemTreeColumn,
+} from "./modules/itemTreeColumn";
 import { registerPrefsScripts } from "./modules/preferenceScript";
 import { destroyAllReaderOverlays } from "./modules/readerOverlay";
 import {
@@ -54,6 +58,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   );
 
   registerItemMenu();
+  await registerItemTreeColumn();
   await registerReaderToolbar(win);
 }
 
@@ -79,6 +84,7 @@ function onShutdown(): void {
   });
   unregisterReaderToolbar();
   destroyAllReaderOverlays();
+  unregisterItemTreeColumn();
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
   // Remove addon object
