@@ -385,7 +385,7 @@ async function parseAttachmentWithDependencies(
   let parseColumnRunning = false;
   let phase: ParsePhase = "submit";
   try {
-    await dependencies.onParseColumnRunning?.(attachmentRef, mode);
+    await updateParseColumnStatus(dependencies, "running", attachmentRef, mode);
     parseColumnRunning = true;
     phase = "submit";
     const { taskID } = await client.submitPdf(filePath);
@@ -401,7 +401,12 @@ async function parseAttachmentWithDependencies(
       phase = "write";
       if (!result.markdown.trim()) {
         if (parseColumnRunning) {
-          await dependencies.onParseColumnClearRunning?.(attachmentRef, mode);
+          await updateParseColumnStatus(
+            dependencies,
+            "clear-running",
+            attachmentRef,
+            mode,
+          );
           parseColumnRunning = false;
         }
         dependencies.showMessage("parse-error-empty-lite-markdown");
@@ -413,7 +418,12 @@ async function parseAttachmentWithDependencies(
         source,
         markdown: result.markdown,
       });
-      await dependencies.onParseColumnReady?.(attachmentRef, "lite");
+      await updateParseColumnStatus(
+        dependencies,
+        "ready",
+        attachmentRef,
+        "lite",
+      );
       parseColumnRunning = false;
       showParseNotice(
         dependencies,
@@ -433,7 +443,12 @@ async function parseAttachmentWithDependencies(
         error: getSafeMessageText("parse-error-empty-boxes"),
       });
       if (parseColumnRunning) {
-        await dependencies.onParseColumnClearRunning?.(attachmentRef, mode);
+        await updateParseColumnStatus(
+          dependencies,
+          "clear-running",
+          attachmentRef,
+          mode,
+        );
         parseColumnRunning = false;
       }
       dependencies.showMessage("parse-error-empty-boxes");
@@ -450,7 +465,12 @@ async function parseAttachmentWithDependencies(
       images:
         dependencies.getSaveImages?.() !== false ? result.images : undefined,
     });
-    await dependencies.onParseColumnReady?.(attachmentRef, "precise");
+    await updateParseColumnStatus(
+      dependencies,
+      "ready",
+      attachmentRef,
+      "precise",
+    );
     parseColumnRunning = false;
     showParseNotice(
       dependencies,
@@ -458,7 +478,12 @@ async function parseAttachmentWithDependencies(
     );
   } catch (error) {
     if (parseColumnRunning) {
-      await dependencies.onParseColumnClearRunning?.(attachmentRef, mode);
+      await updateParseColumnStatus(
+        dependencies,
+        "clear-running",
+        attachmentRef,
+        mode,
+      );
       parseColumnRunning = false;
     }
     if (error instanceof MinerUFileAccessError) {
@@ -474,6 +499,37 @@ async function parseAttachmentWithDependencies(
       mode === "precise" && hasExistingResult,
     );
     dependencies.showMessage(failure.id, failure.args);
+  }
+}
+
+/**
+ * Best-effort 同步解析列状态，避免辅助 UI 失败影响核心解析流程。
+ */
+async function updateParseColumnStatus(
+  dependencies: ParseManagerDependencies,
+  action: "running" | "ready" | "clear-running",
+  attachment: AttachmentRef,
+  mode: ParseMode,
+): Promise<void> {
+  try {
+    if (action === "running") {
+      await dependencies.onParseColumnRunning?.(attachment, mode);
+      return;
+    }
+    if (action === "ready") {
+      await dependencies.onParseColumnReady?.(attachment, mode);
+      return;
+    }
+    await dependencies.onParseColumnClearRunning?.(attachment, mode);
+  } catch (error) {
+    dependencies.log("failed to update MinerU parse column", {
+      action,
+      attachmentID: attachment.id,
+      attachmentKey: attachment.key,
+      libraryID: attachment.libraryID,
+      mode,
+      error,
+    });
   }
 }
 

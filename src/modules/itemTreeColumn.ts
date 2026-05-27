@@ -138,14 +138,15 @@ export async function registerItemTreeColumn(
       return;
     }
     state.registeredDataKey = registeredDataKey;
-    await refreshAllMinerUParseStatuses(dependencies);
   } catch (error) {
     state.registeredDataKey = undefined;
     (dependencies.log ?? ztoolkit.log)(
       "failed to register MinerU parse column",
       error,
     );
+    return;
   }
+  await refreshAllMinerUParseStatuses(dependencies);
 }
 
 export function unregisterItemTreeColumn(
@@ -158,14 +159,22 @@ export function unregisterItemTreeColumn(
   }
 
   try {
-    (dependencies.itemTreeManager ?? Zotero.ItemTreeManager).unregisterColumn(
-      state.registeredDataKey,
-    );
+    const unregistered = (
+      dependencies.itemTreeManager ?? Zotero.ItemTreeManager
+    ).unregisterColumn(state.registeredDataKey);
+    if (!unregistered) {
+      (dependencies.log ?? ztoolkit.log)(
+        "failed to unregister MinerU parse column",
+        state.registeredDataKey,
+      );
+      return;
+    }
   } catch (error) {
     (dependencies.log ?? ztoolkit.log)(
       "failed to unregister MinerU parse column",
       error,
     );
+    return;
   }
   addon.data.itemTreeColumn = undefined;
 }
@@ -174,7 +183,18 @@ export async function refreshAllMinerUParseStatuses(
   dependencies: ItemTreeColumnDependencies = {},
 ): Promise<void> {
   const state = getOrCreateItemTreeColumnState();
-  const statuses = await getColumnStorage(dependencies).listParseStatuses();
+  let statuses: Map<string, { preciseReady: boolean; liteReady: boolean }>;
+  try {
+    statuses = await getColumnStorage(dependencies).listParseStatuses();
+  } catch (error) {
+    state.statuses.clear();
+    (dependencies.log ?? ztoolkit.log)(
+      "failed to hydrate MinerU parse column statuses",
+      error,
+    );
+    refreshColumns(dependencies);
+    return;
+  }
   state.statuses.clear();
   for (const [key, status] of statuses) {
     state.statuses.set(key, {
@@ -316,5 +336,12 @@ function getColumnStorage(
 }
 
 function refreshColumns(dependencies: ItemTreeColumnDependencies): void {
-  (dependencies.itemTreeManager ?? Zotero.ItemTreeManager).refreshColumns();
+  try {
+    (dependencies.itemTreeManager ?? Zotero.ItemTreeManager).refreshColumns();
+  } catch (error) {
+    (dependencies.log ?? ztoolkit.log)(
+      "failed to refresh MinerU parse column",
+      error,
+    );
+  }
 }

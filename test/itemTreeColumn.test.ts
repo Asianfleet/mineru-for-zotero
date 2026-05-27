@@ -253,6 +253,63 @@ describe("itemTreeColumn", function () {
     assert.equal(logs[0][0], "failed to register MinerU parse column");
   });
 
+  it("keeps the registered column when startup status hydration fails", async function () {
+    ensureAddonRuntime();
+    const logs: unknown[][] = [];
+
+    await registerItemTreeColumn({
+      itemTreeManager: {
+        registerColumn: () => "registered-key",
+        unregisterColumn: () => true,
+        refreshColumns: () => {},
+      },
+      storage: {
+        ...fakeStorage(),
+        listParseStatuses: async () => {
+          throw new Error("storage unavailable");
+        },
+      },
+      getString: (id) => id,
+      log: (...args) => {
+        logs.push(args);
+      },
+    });
+
+    assert.equal(
+      getAddonData().itemTreeColumn?.registeredDataKey,
+      "registered-key",
+    );
+    assert.deepEqual(
+      Array.from(getAddonData().itemTreeColumn?.statuses ?? []),
+      [],
+    );
+    assert.equal(logs[0][0], "failed to hydrate MinerU parse column statuses");
+  });
+
+  it("logs refresh failures without throwing from status updates", async function () {
+    ensureAddonRuntime();
+    const logs: unknown[][] = [];
+
+    await markAttachmentParseRunning({ libraryID: 12, key: "ABC123" }, "lite", {
+      itemTreeManager: {
+        registerColumn: () => "registered-key",
+        unregisterColumn: () => true,
+        refreshColumns: () => {
+          throw new Error("refresh failed");
+        },
+      },
+      log: (...args) => {
+        logs.push(args);
+      },
+    });
+
+    assert.deepEqual(getAddonData().itemTreeColumn?.statuses.get("12-ABC123"), {
+      precise: "none",
+      lite: "running",
+    });
+    assert.equal(logs[0][0], "failed to refresh MinerU parse column");
+  });
+
   it("marks a mode as running while preserving the other ready mode", async function () {
     ensureAddonRuntime();
     getAddonData().itemTreeColumn = {
@@ -404,6 +461,40 @@ describe("itemTreeColumn", function () {
 
     assert.deepEqual(unregisteredKeys, ["registered-key"]);
     assert.isUndefined(getAddonData().itemTreeColumn);
+  });
+
+  it("keeps runtime state when Zotero reports column unregister failure", function () {
+    ensureAddonRuntime();
+    const logs: unknown[][] = [];
+    getAddonData().itemTreeColumn = {
+      registeredDataKey: "registered-key",
+      statuses: new Map([
+        [
+          "12-ABC123",
+          {
+            precise: "ready",
+            lite: "none",
+          },
+        ],
+      ]),
+    };
+
+    unregisterItemTreeColumn({
+      itemTreeManager: {
+        registerColumn: () => "registered-key",
+        unregisterColumn: () => false,
+        refreshColumns: () => {},
+      },
+      log: (...args) => {
+        logs.push(args);
+      },
+    });
+
+    assert.equal(
+      getAddonData().itemTreeColumn?.registeredDataKey,
+      "registered-key",
+    );
+    assert.equal(logs[0][0], "failed to unregister MinerU parse column");
   });
 });
 

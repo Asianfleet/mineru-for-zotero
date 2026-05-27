@@ -495,6 +495,82 @@ describe("parseManager", function () {
     assert.deepEqual(events, ["lite:running", "lite:clear"]);
   });
 
+  it("keeps parsing when parse column running update fails", async function () {
+    const messages: string[] = [];
+    let submitCalled = false;
+    const logs: unknown[][] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      log: (...args) => {
+        logs.push(args);
+      },
+      onParseColumnRunning: async () => {
+        throw new Error("column refresh failed");
+      },
+      client: {
+        submitPdf: async () => {
+          submitCalled = true;
+          return { taskID: "task-1" };
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.isTrue(submitCalled);
+    assert.include(messages, "parse-task-finished");
+    assert.equal(logs[0][0], "failed to update MinerU parse column");
+  });
+
+  it("does not report parse failure when parse column ready update fails", async function () {
+    const messages: string[] = [];
+    const logs: unknown[][] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      log: (...args) => {
+        logs.push(args);
+      },
+      onParseColumnReady: async () => {
+        throw new Error("column refresh failed");
+      },
+      client: successfulPreciseClient(),
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.include(messages, "parse-task-finished");
+    assert.notInclude(messages, "parse-error-generic");
+    assert.equal(logs[0][0], "failed to update MinerU parse column");
+  });
+
+  it("preserves the original parse error when parse column clear fails", async function () {
+    const messages: string[] = [];
+    const logs: unknown[][] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      log: (...args) => {
+        logs.push(args);
+      },
+      onParseColumnClearRunning: async () => {
+        throw new Error("column refresh failed");
+      },
+      client: {
+        submitPdf: async () => {
+          throw new MinerURequestError("upload", 403, "bad signature");
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.include(messages, "parse-error-upload");
+    assert.equal(logs[0][0], "failed to update MinerU parse column");
+  });
+
   it("does not report submitted notice when submit upload fails", async function () {
     const notices: Array<{
       id: string;
@@ -1273,11 +1349,18 @@ describe("parseManager", function () {
     assert.include(messages, "parse-use-existing-result");
   });
 
-  it("writes a failed result when MinerU JSON contains no boxes", async function () {
+  it("writes a failed result and clears running when MinerU JSON contains no boxes", async function () {
     const messages: string[] = [];
+    const events: string[] = [];
     let failedRawResult: unknown;
     const manager = createParseManager({
       ...baseDependencies(messages),
+      onParseColumnRunning: async (_attachment, mode) => {
+        events.push(`${mode}:running`);
+      },
+      onParseColumnClearRunning: async (_attachment, mode) => {
+        events.push(`${mode}:clear`);
+      },
       storage: {
         ...baseStorage(),
         writeFailedResult: async (input) => {
@@ -1299,6 +1382,7 @@ describe("parseManager", function () {
 
     assert.deepEqual(failedRawResult, { content_list: [{ type: "text" }] });
     assert.include(messages, "parse-error-empty-boxes");
+    assert.deepEqual(events, ["precise:running", "precise:clear"]);
   });
 
   it("passes downloaded images to storage when the preference is enabled", async function () {
