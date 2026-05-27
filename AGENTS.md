@@ -46,6 +46,14 @@ pnpm exec prettier --write docs/superpowers/plans/<file>.md docs/superpowers/spe
 
 If multiple Markdown files were created or edited, include all of them in that command. This rule exists because unformatted plan/spec Markdown has repeatedly caused GitHub Actions `pnpm lint:check` failures.
 
+## Test Profile Port Isolation
+
+`zotero-plugin-scaffold` generates the test profile with `extensions.zotero.httpServer.port` set to **23124** (instead of the default 23119) to avoid conflicts with a running production Zotero instance. However, the scaffold writes this setting directly into `prefs.js`, which Zotero persists on shutdown. If the test profile ever cross-contaminates the real profile (e.g. manual file copy, plugin behavior), port 23124 leaks into the production profile and breaks the Zotero Connector browser extension (which expects port 23119).
+
+The mitigation is `scripts/fix-test-profile.mjs`, which runs via `preserve`/`pretest` hooks before every `pnpm start` / `pnpm test`. It creates a `user.js` in each test profile that sets the port override. Unlike `prefs.js`, `user.js` overrides preferences at every Zotero startup but is never written back, cutting off the leak path.
+
+If the connector stops detecting Zotero after development work, check the real profile's `prefs.js` for a stray `extensions.zotero.httpServer.port = 23124` and remove it (or reset it to 23119).
+
 ## Project Notes
 
 - MinerU parsing is selected by `createMinerUClientForSettings()` from `parseSource` (`online` or `local`) and `parseMode` (`precise` or `lite`). Keep the source/mode contract explicit when changing preferences, parsing orchestration, storage, and tests.
