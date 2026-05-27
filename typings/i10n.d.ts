@@ -3,6 +3,10 @@
 /* eslint-disable */
 // @ts-nocheck
 export type FluentMessageId =
+  | 'item-tree-column-mineru-parse'
+  | 'item-tree-column-mineru-parse-lite'
+  | 'item-tree-column-mineru-parse-precise'
+  | 'item-tree-column-mineru-parse-running'
   | 'menuitem-filemenulabel'
   | 'menuitem-label'
   | 'menuitem-submenulabel'

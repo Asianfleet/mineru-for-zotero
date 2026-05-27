@@ -1,3 +1,7 @@
+item-tree-column-mineru-parse = MinerU Parse
+item-tree-column-mineru-parse-precise = Precise
+item-tree-column-mineru-parse-lite = Lite
+item-tree-column-mineru-parse-running = Parsing
 parse-menuitem-label = Parse PDF with MinerU
 parse-pdf-menuitem =
     .label = Parse PDF with MinerU

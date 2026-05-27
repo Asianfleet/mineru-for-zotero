@@ -1,6 +1,7 @@
 import { config } from "../package.json";
 import { ColumnOptions, DialogHelper } from "zotero-plugin-toolkit";
 import hooks from "./hooks";
+import type { ItemTreeColumnState } from "./modules/itemTreeColumn";
 import type {
   ReaderOverlayKey,
   ReaderOverlayState,
@@ -24,6 +25,7 @@ class Addon {
       columns: Array<ColumnOptions>;
       rows: Array<{ [dataKey: string]: string }>;
     };
+    itemTreeColumn?: ItemTreeColumnState;
     readerOverlays?: Map<ReaderOverlayKey, ReaderOverlayState>;
     readerToolbar?: ReaderToolbarRegistration;
     dialog?: DialogHelper;

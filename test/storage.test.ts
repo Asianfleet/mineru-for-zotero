@@ -231,6 +231,206 @@ describe("storage", function () {
     await assertRejects(() => storage.readPreferredMarkdown(attachment));
   });
 
+  it("reads combined precise and lite parse status", async function () {
+    const storage = createStorage("TmpD/mineru-copy-parse-status-test");
+    const attachment = {
+      id: 1,
+      key: "ABC123",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+
+    await writeResultOrFail(storage, {
+      attachment,
+      mineruTaskID: "precise-task",
+      rawResult: { ok: true },
+      markdown: "# Precise",
+      boxes: normalizedBoxes,
+    });
+    await storage.writeLiteResult({
+      attachment,
+      mineruTaskID: "lite-task",
+      source: "online",
+      markdown: "# Lite",
+    });
+
+    assert.deepEqual(await storage.readParseStatus(attachment), {
+      preciseReady: true,
+      liteReady: true,
+    });
+  });
+
+  it("does not expose failed precise results as parse column ready status", async function () {
+    const storage = createStorage("TmpD/mineru-copy-parse-status-test");
+    const attachment = {
+      id: 1,
+      key: "FAILED-PRECISE",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+
+    await storage.writeFailedResult({
+      attachment,
+      mineruTaskID: "failed-task",
+      rawResult: { content_list: [{ type: "text" }] },
+      markdown: "# Failed",
+      error: "解析结果缺少 box 信息",
+    });
+
+    assert.deepEqual(await storage.readParseStatus(attachment), {
+      preciseReady: false,
+      liteReady: false,
+    });
+  });
+
+  it("does not expose incomplete lite files as parse column ready status", async function () {
+    const storage = createStorage("TmpD/mineru-copy-parse-status-test");
+    const attachment = {
+      id: 1,
+      key: "INCOMPLETE-LITE",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    const dir = resolveTmpPath(storage.getAttachmentDir(attachment));
+
+    await writeText(
+      joinPath(dir, "lite-manifest.json"),
+      `${JSON.stringify(
+        {
+          attachmentID: attachment.id,
+          attachmentKey: attachment.key,
+          libraryID: attachment.libraryID,
+          fileName: attachment.fileName,
+          pdfMtime: attachment.mtime,
+          parsedAt: new Date().toISOString(),
+          mineruTaskID: "lite-task",
+          resultVersion: 1,
+          source: "online",
+          mode: "lite",
+          status: "ready",
+        },
+        null,
+        2,
+      )}\n`,
+    );
+
+    assert.deepEqual(await storage.readParseStatus(attachment), {
+      preciseReady: false,
+      liteReady: false,
+    });
+  });
+
+  it("lists only ready parse statuses from valid attachment result directories", async function () {
+    const storage = createStorage("TmpD/mineru-copy-list-status-test");
+    const attachmentsRoot = resolveTmpPath(
+      "TmpD/mineru-copy-list-status-test/attachments",
+    );
+    const preciseAttachment = {
+      id: 1,
+      key: "ABC123",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    const liteAttachment = {
+      id: 2,
+      key: "LITE01",
+      libraryID: 34,
+      fileName: "b.pdf",
+      filePath: "b.pdf",
+      mtime: 2,
+    };
+    const failedAttachment = {
+      id: 3,
+      key: "FAILED1",
+      libraryID: 56,
+      fileName: "c.pdf",
+      filePath: "c.pdf",
+      mtime: 3,
+    };
+    const incompleteLiteAttachment = {
+      id: 4,
+      key: "LITE02",
+      libraryID: 78,
+      fileName: "d.pdf",
+      filePath: "d.pdf",
+      mtime: 4,
+    };
+
+    await writeResultOrFail(storage, {
+      attachment: preciseAttachment,
+      mineruTaskID: "task-precise",
+      rawResult: { ok: true },
+      markdown: "# Precise",
+      boxes: normalizedBoxes,
+    });
+    await storage.writeLiteResult({
+      attachment: liteAttachment,
+      mineruTaskID: "task-lite",
+      source: "online",
+      markdown: "# Lite",
+    });
+    await storage.writeFailedResult({
+      attachment: failedAttachment,
+      mineruTaskID: "task-failed",
+      rawResult: { ok: false },
+      markdown: "# Failed",
+      error: "failed",
+    });
+    await writeText(
+      joinPath(
+        resolveTmpPath(storage.getAttachmentDir(incompleteLiteAttachment)),
+        "lite-manifest.json",
+      ),
+      `${JSON.stringify(
+        {
+          attachmentID: incompleteLiteAttachment.id,
+          attachmentKey: incompleteLiteAttachment.key,
+          libraryID: incompleteLiteAttachment.libraryID,
+          fileName: incompleteLiteAttachment.fileName,
+          pdfMtime: incompleteLiteAttachment.mtime,
+          parsedAt: new Date().toISOString(),
+          mineruTaskID: "task-incomplete-lite",
+          resultVersion: 1,
+          source: "online",
+          mode: "lite",
+          status: "ready",
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await writeResultDir(
+      `${storage.getAttachmentDir(preciseAttachment)}.tmp-leak`,
+      preciseAttachment,
+      "task-tmp",
+    );
+    await writeResultDir(
+      `${storage.getAttachmentDir(preciseAttachment)}.bak-leak`,
+      preciseAttachment,
+      "task-bak",
+    );
+    await writeResultDir(
+      joinPath(attachmentsRoot, "bad-dir"),
+      preciseAttachment,
+      "task-invalid",
+    );
+
+    const statuses = await storage.listParseStatuses();
+
+    assert.deepEqual(Array.from(statuses.entries()), [
+      ["12-ABC123", { preciseReady: true, liteReady: false }],
+      ["34-LITE01", { preciseReady: false, liteReady: true }],
+    ]);
+  });
+
   it("writes MinerU images under the attachment images directory", async function () {
     const storage = createStorage(rootDir);
     const attachment = {

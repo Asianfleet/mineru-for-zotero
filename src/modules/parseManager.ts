@@ -16,6 +16,11 @@ import {
   type ParseNoticeContext,
 } from "./parseNotice";
 import { toNativePath } from "./mineruClient/path";
+import {
+  clearAttachmentParseRunning,
+  markAttachmentParseReady,
+  markAttachmentParseRunning,
+} from "./itemTreeColumn";
 import { createStorage, type StorageAdapter } from "./storage";
 import { getString } from "../utils/locale";
 import {
@@ -60,6 +65,18 @@ export interface ParseManagerDependencies {
   isFileReadable: (filePath: string) => Promise<boolean>;
   delay: (ms: number) => Promise<void>;
   log: (...args: unknown[]) => void;
+  onParseColumnRunning?: (
+    attachment: AttachmentRef,
+    mode: ParseMode,
+  ) => Promise<void>;
+  onParseColumnReady?: (
+    attachment: AttachmentRef,
+    mode: ParseMode,
+  ) => Promise<void>;
+  onParseColumnClearRunning?: (
+    attachment: AttachmentRef,
+    mode: ParseMode,
+  ) => Promise<void>;
 }
 
 interface ParseManager {
@@ -365,8 +382,11 @@ async function parseAttachmentWithDependencies(
     },
     dependencies,
   );
+  let parseColumnRunning = false;
   let phase: ParsePhase = "submit";
   try {
+    await updateParseColumnStatus(dependencies, "running", attachmentRef, mode);
+    parseColumnRunning = true;
     phase = "submit";
     const { taskID } = await client.submitPdf(filePath);
     phase = "poll";
@@ -380,6 +400,15 @@ async function parseAttachmentWithDependencies(
     if (result.kind === "lite") {
       phase = "write";
       if (!result.markdown.trim()) {
+        if (parseColumnRunning) {
+          await updateParseColumnStatus(
+            dependencies,
+            "clear-running",
+            attachmentRef,
+            mode,
+          );
+          parseColumnRunning = false;
+        }
         dependencies.showMessage("parse-error-empty-lite-markdown");
         return;
       }
@@ -389,6 +418,13 @@ async function parseAttachmentWithDependencies(
         source,
         markdown: result.markdown,
       });
+      await updateParseColumnStatus(
+        dependencies,
+        "ready",
+        attachmentRef,
+        "lite",
+      );
+      parseColumnRunning = false;
       showParseNotice(
         dependencies,
         createParseFinishedNotice(currentNoticeContext),
@@ -406,6 +442,15 @@ async function parseAttachmentWithDependencies(
         markdown: result.markdown,
         error: getSafeMessageText("parse-error-empty-boxes"),
       });
+      if (parseColumnRunning) {
+        await updateParseColumnStatus(
+          dependencies,
+          "clear-running",
+          attachmentRef,
+          mode,
+        );
+        parseColumnRunning = false;
+      }
       dependencies.showMessage("parse-error-empty-boxes");
       return;
     }
@@ -420,11 +465,27 @@ async function parseAttachmentWithDependencies(
       images:
         dependencies.getSaveImages?.() !== false ? result.images : undefined,
     });
+    await updateParseColumnStatus(
+      dependencies,
+      "ready",
+      attachmentRef,
+      "precise",
+    );
+    parseColumnRunning = false;
     showParseNotice(
       dependencies,
       createParseFinishedNotice(currentNoticeContext),
     );
   } catch (error) {
+    if (parseColumnRunning) {
+      await updateParseColumnStatus(
+        dependencies,
+        "clear-running",
+        attachmentRef,
+        mode,
+      );
+      parseColumnRunning = false;
+    }
     if (error instanceof MinerUFileAccessError) {
       logFileAccessFailure(attachment, filePath, dependencies, error);
       dependencies.showMessage("parse-error-file-access");
@@ -438,6 +499,37 @@ async function parseAttachmentWithDependencies(
       mode === "precise" && hasExistingResult,
     );
     dependencies.showMessage(failure.id, failure.args);
+  }
+}
+
+/**
+ * Best-effort 同步解析列状态，避免辅助 UI 失败影响核心解析流程。
+ */
+async function updateParseColumnStatus(
+  dependencies: ParseManagerDependencies,
+  action: "running" | "ready" | "clear-running",
+  attachment: AttachmentRef,
+  mode: ParseMode,
+): Promise<void> {
+  try {
+    if (action === "running") {
+      await dependencies.onParseColumnRunning?.(attachment, mode);
+      return;
+    }
+    if (action === "ready") {
+      await dependencies.onParseColumnReady?.(attachment, mode);
+      return;
+    }
+    await dependencies.onParseColumnClearRunning?.(attachment, mode);
+  } catch (error) {
+    dependencies.log("failed to update MinerU parse column", {
+      action,
+      attachmentID: attachment.id,
+      attachmentKey: attachment.key,
+      libraryID: attachment.libraryID,
+      mode,
+      error,
+    });
   }
 }
 
@@ -837,6 +929,9 @@ function createDefaultDependencies(): ParseManagerDependencies {
     isFileReadable,
     delay: (ms) => Zotero.Promise.delay(ms),
     log: (...args) => ztoolkit.log(...args),
+    onParseColumnRunning: markAttachmentParseRunning,
+    onParseColumnReady: markAttachmentParseReady,
+    onParseColumnClearRunning: clearAttachmentParseRunning,
   };
 }
 
