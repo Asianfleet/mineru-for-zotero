@@ -99,14 +99,22 @@ export function renderMinerUParseCell(
   data: string,
   column: { className: string },
   _isFirstColumn: boolean,
-  doc: Document,
+  doc: Document | undefined,
   resolveString: (id: FluentMessageId) => string,
 ): HTMLElement {
-  const cell = doc.createElement("span");
+  const cellDoc = doc ?? Zotero.getMainWindow().document;
+  const cell = cellDoc.createElement("span");
   cell.className = `${column.className} mineru-parse-column-cell`.trim();
-  for (const token of data.split("|").filter(Boolean)) {
-    cell.append(createBadge(doc, token, resolveString));
+  const tokens = data.split("|").filter(Boolean);
+  if (tokens.length === 0) {
+    return cell;
   }
+  const badges = cellDoc.createElement("span");
+  badges.className = "mineru-parse-column-badges";
+  for (const token of tokens) {
+    badges.append(createBadge(cellDoc, token, resolveString));
+  }
+  cell.append(badges);
   return cell;
 }
 
@@ -259,12 +267,14 @@ function createBadge(
   badge.className = "mineru-parse-column-badge";
   if (token.endsWith("-running")) {
     const mode = token.slice(0, -"-running".length);
+    badge.classList.add(`mineru-parse-column-badge-${mode}`);
     badge.classList.add("mineru-parse-column-badge-running");
     badge.textContent = `${resolveModeLabel(mode, resolveString)}(${resolveString(
       "item-tree-column-mineru-parse-running",
     )})`;
     return badge;
   }
+  badge.classList.add(`mineru-parse-column-badge-${token}`);
   badge.textContent = resolveModeLabel(token, resolveString);
   return badge;
 }

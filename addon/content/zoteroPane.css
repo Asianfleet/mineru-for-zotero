@@ -124,25 +124,53 @@
 
 .mineru-parse-column-cell {
   align-items: center;
+  box-sizing: border-box;
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  padding: 0 8px;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.mineru-parse-column-badges {
+  align-items: center;
   display: inline-flex;
   gap: 4px;
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
 }
 
 .mineru-parse-column-badge {
-  border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
-  border-radius: 4px;
   box-sizing: border-box;
   display: inline-flex;
-  font-size: 0.86em;
-  line-height: 1.45;
-  max-width: 100%;
-  padding: 0 5px;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.82em;
+  font-weight: 500;
+  line-height: 1.35;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
+.mineru-parse-column-badge-precise {
+  border-color: #a8c4ff;
+  background: #e8f0ff;
+  color: #2456a6;
+}
+
+.mineru-parse-column-badge-lite {
+  border-color: #b9dfc6;
+  background: #e8f7ed;
+  color: #2b6841;
 }
 
 .mineru-parse-column-badge-running {
+  background: #fff1d6;
+  border-color: #f0c36d;
   border-style: dashed;
-  font-weight: 600;
+  color: #7a4b00;
 }

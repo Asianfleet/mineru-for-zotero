@@ -56,6 +56,7 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   win.MozXULElement.insertFTLIfNeeded(
     `${addon.data.config.addonRef}-mainWindow.ftl`,
   );
+  insertMainWindowStylesheet(win);
 
   registerItemMenu();
   await registerItemTreeColumn();
@@ -73,6 +74,7 @@ function registerPreferencePane(): void {
 
 async function onMainWindowUnload(win: Window): Promise<void> {
   removeMainWindowFTL(win);
+  removeMainWindowStylesheet(win);
   unregisterReaderToolbar(win);
   ztoolkit.unregisterAll();
   addon.data.dialog?.window?.close();
@@ -81,6 +83,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 function onShutdown(): void {
   Zotero.getMainWindows().forEach((win) => {
     removeMainWindowFTL(win);
+    removeMainWindowStylesheet(win);
   });
   unregisterReaderToolbar();
   destroyAllReaderOverlays();
@@ -96,6 +99,30 @@ function onShutdown(): void {
 function removeMainWindowFTL(win: Window): void {
   win.document
     .querySelector(`[href="${addon.data.config.addonRef}-mainWindow.ftl"]`)
+    ?.remove();
+}
+
+function getMainWindowStylesheetHref(): string {
+  return `chrome://${addon.data.config.addonRef}/content/zoteroPane.css`;
+}
+
+function insertMainWindowStylesheet(win: Window): void {
+  const href = getMainWindowStylesheetHref();
+  if (win.document.querySelector(`link[rel="stylesheet"][href="${href}"]`)) {
+    return;
+  }
+
+  const link = win.document.createElement("link");
+  link.setAttribute("rel", "stylesheet");
+  link.setAttribute("href", href);
+  win.document.documentElement?.append(link);
+}
+
+function removeMainWindowStylesheet(win: Window): void {
+  win.document
+    .querySelector(
+      `link[rel="stylesheet"][href="${getMainWindowStylesheetHref()}"]`,
+    )
     ?.remove();
 }
 

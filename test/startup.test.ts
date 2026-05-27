@@ -45,6 +45,26 @@ describe("startup", function () {
 
     assert.isNull(win.document.querySelector(`[href="${href}"]`));
   });
+
+  it("loads and removes the main-window stylesheet", async function () {
+    await waitForPluginInitialization();
+    const win = Zotero.getMainWindow();
+    const href = `chrome://${config.addonRef}/content/zoteroPane.css`;
+
+    await Zotero[config.addonInstance].hooks.onMainWindowLoad(win);
+
+    try {
+      assert.isNotNull(
+        win.document.querySelector(`link[rel="stylesheet"][href="${href}"]`),
+      );
+    } finally {
+      await Zotero[config.addonInstance].hooks.onMainWindowUnload(win);
+    }
+
+    assert.isNull(
+      win.document.querySelector(`link[rel="stylesheet"][href="${href}"]`),
+    );
+  });
 });
 
 async function waitForPluginInitialization(): Promise<void> {

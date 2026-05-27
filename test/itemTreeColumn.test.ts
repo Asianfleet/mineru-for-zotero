@@ -118,11 +118,52 @@ describe("itemTreeColumn", function () {
     );
 
     assert.equal(cell.className, "custom-column mineru-parse-column-cell");
+    assert.equal(
+      cell.firstElementChild?.className,
+      "mineru-parse-column-badges",
+    );
     assert.deepEqual(
       Array.from(cell.querySelectorAll(".mineru-parse-column-badge")).map(
         (badge) => badge.textContent,
       ),
       ["精准", "轻量(解析中)"],
+    );
+    assert.deepEqual(
+      Array.from(cell.querySelectorAll(".mineru-parse-column-badge")).map(
+        (badge) => Array.from(badge.classList),
+      ),
+      [
+        ["mineru-parse-column-badge", "mineru-parse-column-badge-precise"],
+        [
+          "mineru-parse-column-badge",
+          "mineru-parse-column-badge-lite",
+          "mineru-parse-column-badge-running",
+        ],
+      ],
+    );
+  });
+
+  it("renders badges when Zotero calls renderCell without a document argument", function () {
+    const cell = renderMinerUParseCell(
+      0,
+      "precise",
+      {
+        className: "custom-column",
+      } as Parameters<typeof renderMinerUParseCell>[2],
+      false,
+      undefined,
+      (id) => {
+        const values: Record<string, string> = {
+          "item-tree-column-mineru-parse-precise": "精准",
+        };
+        return values[id] ?? id;
+      },
+    );
+
+    assert.equal(cell.className, "custom-column mineru-parse-column-cell");
+    assert.equal(
+      cell.querySelector(".mineru-parse-column-badge-precise")?.textContent,
+      "精准",
     );
   });
 
@@ -140,6 +181,7 @@ describe("itemTreeColumn", function () {
 
     assert.equal(cell.textContent, "");
     assert.equal(cell.childElementCount, 0);
+    assert.isNull(cell.querySelector(".mineru-parse-column-badges"));
   });
 
   it("registers the column, hydrates ready statuses, and refreshes columns", async function () {
