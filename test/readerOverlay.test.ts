@@ -272,6 +272,111 @@ describe("readerOverlay", function () {
     assert.isTrue(stopped);
   });
 
+  it("opens one selectable panel and closes it on Escape or outside click", function () {
+    const doc = createDocumentStub();
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      [createBox(0, "text", "First"), createBox(1, "text", "Second")],
+      "hover",
+    );
+    doc.body.append(root);
+
+    const selectButtons = findElementsByDataAction(root, "select-copy");
+    const actions = findElementsByClass(root, "mineru-copy-box-actions");
+
+    selectButtons[0].dispatch("click", createClickEvent());
+    assert.include(
+      actions[0].className,
+      "mineru-copy-select-panel-open",
+      "first click opens first panel",
+    );
+
+    selectButtons[1].dispatch("click", createClickEvent());
+    assert.notInclude(
+      actions[0].className,
+      "mineru-copy-select-panel-open",
+      "opening second panel closes first panel",
+    );
+    assert.include(
+      actions[1].className,
+      "mineru-copy-select-panel-open",
+      "second click opens second panel",
+    );
+
+    doc.dispatch("keydown", createKeyEvent("Escape"));
+    assert.notInclude(
+      actions[1].className,
+      "mineru-copy-select-panel-open",
+      "Escape closes open panel",
+    );
+
+    selectButtons[0].dispatch("click", createClickEvent());
+    doc.dispatch("mousedown", createMouseEvent({ target: doc.body }));
+    assert.notInclude(
+      actions[0].className,
+      "mineru-copy-select-panel-open",
+      "outside mousedown closes open panel",
+    );
+  });
+
+  it("keeps selectable panels and actions inside viewport edges", function () {
+    const doc = createDocumentStub();
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      [createBox(0, "text", "Left edge"), createBox(1, "text", "Right edge")],
+      "hover",
+    );
+    doc.body.append(root);
+
+    const selectButtons = findElementsByDataAction(root, "select-copy");
+    const actions = findElementsByClass(root, "mineru-copy-box-actions");
+    actions[0].getBoundingClientRect = () =>
+      createRect({ top: 40, bottom: 2200, left: -12, right: 88 });
+    actions[1].getBoundingClientRect = () =>
+      createRect({ top: 120, bottom: 160, left: 950, right: 1012 });
+
+    selectButtons[0].dispatch("click", createClickEvent());
+    assert.include(actions[0].className, "mineru-copy-toolbar-above");
+    assert.notInclude(actions[0].className, "mineru-copy-toolbar-below");
+    assert.include(actions[0].className, "mineru-copy-select-panel-below");
+    assert.include(actions[0].className, "mineru-copy-toolbar-shift-right");
+    assert.include(actions[0].className, "mineru-copy-select-panel-right");
+
+    selectButtons[1].dispatch("click", createClickEvent());
+    assert.include(actions[1].className, "mineru-copy-toolbar-below");
+    assert.notInclude(actions[1].className, "mineru-copy-toolbar-above");
+    assert.notInclude(actions[1].className, "mineru-copy-select-panel-below");
+    assert.include(actions[1].className, "mineru-copy-toolbar-shift-left");
+    assert.include(actions[1].className, "mineru-copy-select-panel-left");
+  });
+
+  it("keeps toolbar buttons icon-only while formula menu items stay readable", function () {
+    const doc = createDocumentStub();
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      [createBox(0, "formula", "E=mc^2", "E=mc^2")],
+      "hover",
+    );
+
+    for (const button of findElementsByDataAction(root, "copy")) {
+      assert.equal(button.textContent, "");
+      assert.isNotEmpty(button.title);
+      assert.isNotEmpty(button.dataset.ariaLabel);
+    }
+    for (const button of findElementsByDataAction(root, "select-copy")) {
+      assert.equal(button.textContent, "");
+      assert.isNotEmpty(button.title);
+      assert.isNotEmpty(button.dataset.ariaLabel);
+    }
+
+    assert.deepEqual(
+      findElementsByClass(root, "mineru-copy-formula-menu-item").map(
+        (element) => element.textContent,
+      ),
+      ["Copy with $", "Copy without $"],
+    );
+  });
+
   it("does not render list container boxes that cover reference boxes", function () {
     const doc = createDocumentStub();
 
@@ -2000,22 +2105,30 @@ function createBox(
 function createDocumentStub(): Document & {
   headChildren: FakeElement[];
   bodyChildren: FakeElement[];
+  dispatch: (type: string, event: Event) => void;
 } {
   const rootChildren: FakeElement[] = [];
   const bodyChildren: FakeElement[] = [];
+  const listeners = new Map<string, EventListener[]>();
 
   const doc = {
     head: {
       append(child: FakeElement) {
+        child.parentElement = this as unknown as FakeElement;
         rootChildren.push(child);
       },
+      children: rootChildren,
+      className: "",
     },
     body: {
       append(child: FakeElement) {
+        child.parentElement = this as unknown as FakeElement;
         bodyChildren.push(child);
       },
       clientWidth: 1000,
       clientHeight: 2000,
+      children: bodyChildren,
+      className: "",
     },
     documentElement: {
       clientWidth: 1000,
@@ -2034,6 +2147,28 @@ function createDocumentStub(): Document & {
     querySelector() {
       return null;
     },
+    querySelectorAll(selector: string) {
+      if (!selector.startsWith(".")) {
+        return [];
+      }
+      const className = selector.slice(1);
+      return [
+        ...rootChildren.flatMap((child) =>
+          findElementsByClass(child, className),
+        ),
+        ...bodyChildren.flatMap((child) =>
+          findElementsByClass(child, className),
+        ),
+      ];
+    },
+    addEventListener(type: string, listener: EventListener) {
+      listeners.set(type, [...(listeners.get(type) ?? []), listener]);
+    },
+    dispatch(type: string, event: Event) {
+      for (const listener of listeners.get(type) ?? []) {
+        listener.call(this, event);
+      }
+    },
   };
 
   return Object.assign(doc, {
@@ -2042,12 +2177,19 @@ function createDocumentStub(): Document & {
   }) as unknown as Document & {
     headChildren: FakeElement[];
     bodyChildren: FakeElement[];
+    dispatch: (type: string, event: Event) => void;
   };
 }
 
 interface FakeElement {
   id: string;
   className: string;
+  classList: {
+    add: (...classNames: string[]) => void;
+    remove: (...classNames: string[]) => void;
+    toggle: (className: string, force?: boolean) => boolean;
+    contains: (className: string) => boolean;
+  };
   dataset: Record<string, string>;
   style: Record<string, string>;
   textContent: string;
@@ -2069,9 +2211,39 @@ interface FakeElement {
 
 function createFakeElement(): FakeElement {
   const listeners = new Map<string, EventListener[]>();
-  return {
+  const element = {
     id: "",
     className: "",
+    classList: {
+      add(...classNames: string[]) {
+        const classes = new Set(element.className.split(/\s+/).filter(Boolean));
+        for (const className of classNames) {
+          classes.add(className);
+        }
+        element.className = [...classes].join(" ");
+      },
+      remove(...classNames: string[]) {
+        const classes = new Set(element.className.split(/\s+/).filter(Boolean));
+        for (const className of classNames) {
+          classes.delete(className);
+        }
+        element.className = [...classes].join(" ");
+      },
+      toggle(className: string, force?: boolean) {
+        const classes = new Set(element.className.split(/\s+/).filter(Boolean));
+        const shouldAdd = force ?? !classes.has(className);
+        if (shouldAdd) {
+          classes.add(className);
+        } else {
+          classes.delete(className);
+        }
+        element.className = [...classes].join(" ");
+        return shouldAdd;
+      },
+      contains(className: string) {
+        return element.className.split(/\s+/).includes(className);
+      },
+    },
     dataset: {},
     style: {},
     textContent: "",
@@ -2082,6 +2254,9 @@ function createFakeElement(): FakeElement {
     hidden: false,
     children: [],
     parentElement: null,
+    getBoundingClientRect() {
+      return createRect({ top: 0, bottom: 0, left: 0, right: 0 });
+    },
     append(...children: FakeElement[]) {
       for (const child of children) {
         child.parentElement = this;
@@ -2123,6 +2298,7 @@ function createFakeElement(): FakeElement {
     },
     remove() {},
   };
+  return element;
 }
 
 function toDatasetKey(name: string): string {
@@ -2185,6 +2361,40 @@ function createClickEvent(
     preventDefault() {},
     stopPropagation() {},
   } as unknown as MouseEvent;
+}
+
+function createKeyEvent(key: string): KeyboardEvent {
+  return {
+    key,
+    preventDefault() {},
+    stopPropagation() {},
+  } as unknown as KeyboardEvent;
+}
+
+function createMouseEvent(input: { target?: unknown } = {}): MouseEvent {
+  return {
+    target: input.target ?? null,
+    preventDefault() {},
+    stopPropagation() {},
+  } as unknown as MouseEvent;
+}
+
+function createRect(input: {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+}): DOMRect {
+  return {
+    ...input,
+    x: input.left,
+    y: input.top,
+    width: input.right - input.left,
+    height: input.bottom - input.top,
+    toJSON() {
+      return input;
+    },
+  } as DOMRect;
 }
 
 function dispatchWindowEvent(

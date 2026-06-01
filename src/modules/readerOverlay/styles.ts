@@ -115,6 +115,17 @@ export const READER_OVERLAY_CSS = `
   bottom: 100%;
 }
 
+.mineru-copy-toolbar-shift-right {
+  left: 0;
+  transform: none;
+}
+
+.mineru-copy-toolbar-shift-left {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
 .mineru-copy-box-toolbar {
   display: flex;
   align-items: center;
@@ -239,6 +250,17 @@ export const READER_OVERLAY_CSS = `
 .mineru-copy-select-panel-below .mineru-copy-select-panel {
   top: calc(100% + 6px);
   bottom: auto;
+}
+
+.mineru-copy-select-panel-right .mineru-copy-select-panel {
+  left: 0;
+  transform: none;
+}
+
+.mineru-copy-select-panel-left .mineru-copy-select-panel {
+  left: auto;
+  right: 0;
+  transform: none;
 }
 `;
 

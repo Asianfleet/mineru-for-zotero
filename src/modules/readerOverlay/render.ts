@@ -10,6 +10,10 @@ import type {
   ReaderOverlaySelectionOptions,
 } from "./types";
 
+const SELECT_PANEL_TOP_GUARD_PX = 80;
+const VIEWPORT_EDGE_GUARD_PX = 8;
+const selectPanelCloseHandlerDocs = new WeakSet<Document>();
+
 /** 把归一化 bbox 转成可直接赋给 DOM style 的百分比定位样式。 */
 export function computeBoxStyle(box: NormalizedBox): ReaderOverlayBoxStyle {
   return {
@@ -163,6 +167,7 @@ interface ToolbarButtonOptions {
   className: string;
   label: string;
   onClick: () => void;
+  showText?: boolean;
 }
 
 /** 创建普通文本或公式复制入口。 */
@@ -234,7 +239,7 @@ function createToolbarButton(
   button.type = "button";
   button.className = `mineru-copy-toolbar-button ${options.className}`;
   button.title = options.label;
-  button.textContent = options.label;
+  button.textContent = options.showText ? options.label : "";
   button.setAttribute("aria-label", options.label);
   if (options.action) {
     button.dataset.mineruAction = options.action;
@@ -264,6 +269,7 @@ function createFormulaMenuItem(
     className: "mineru-copy-formula-menu-item",
     label,
     onClick: onCopy,
+    showText: true,
   });
 }
 
@@ -330,14 +336,121 @@ function stopSelectPanelKeydownEvent(event: Event): void {
   event.stopPropagation();
 }
 
-function closeOpenSelectPanels(_doc: Document): void {}
+function closeOpenSelectPanels(doc: Document): void {
+  for (const actions of doc.querySelectorAll(
+    ".mineru-copy-select-panel-open",
+  )) {
+    actions.classList.remove("mineru-copy-select-panel-open");
+  }
+}
 
 function updateBoxActionPlacement(
-  _doc: Document,
-  _actions: HTMLDivElement,
-): void {}
+  doc: Document,
+  actions: HTMLDivElement,
+): void {
+  const rect = actions.getBoundingClientRect();
+  const viewportHeight = getViewportHeight(doc);
+  const viewportWidth = getViewportWidth(doc);
+  const toolbarAbove = viewportHeight > 0 && rect.bottom > viewportHeight;
+  const panelBelow = rect.top < SELECT_PANEL_TOP_GUARD_PX;
+  const shiftRight = viewportWidth > 0 && rect.left < VIEWPORT_EDGE_GUARD_PX;
+  const shiftLeft =
+    !shiftRight &&
+    viewportWidth > 0 &&
+    rect.right > viewportWidth - VIEWPORT_EDGE_GUARD_PX;
 
-function ensureSelectPanelCloseHandlers(_doc: Document): void {}
+  actions.classList.toggle("mineru-copy-toolbar-above", toolbarAbove);
+  actions.classList.toggle("mineru-copy-toolbar-below", !toolbarAbove);
+  actions.classList.toggle("mineru-copy-select-panel-below", panelBelow);
+  actions.classList.toggle("mineru-copy-select-panel-above", !panelBelow);
+  actions.classList.toggle("mineru-copy-toolbar-shift-right", shiftRight);
+  actions.classList.toggle("mineru-copy-toolbar-shift-left", shiftLeft);
+  actions.classList.toggle("mineru-copy-select-panel-right", shiftRight);
+  actions.classList.toggle("mineru-copy-select-panel-left", shiftLeft);
+}
+
+function getViewportHeight(doc: Document): number {
+  return (
+    doc.defaultView?.innerHeight ??
+    doc.documentElement?.clientHeight ??
+    doc.body?.clientHeight ??
+    0
+  );
+}
+
+function getViewportWidth(doc: Document): number {
+  return (
+    doc.defaultView?.innerWidth ??
+    doc.documentElement?.clientWidth ??
+    doc.body?.clientWidth ??
+    0
+  );
+}
+
+function isInsideActions(target: EventTarget | null): boolean {
+  const closest = (target as { closest?: (selector: string) => Element | null })
+    ?.closest;
+  if (typeof closest === "function") {
+    try {
+      if (closest.call(target, ".mineru-copy-box-actions")) {
+        return true;
+      }
+    } catch {
+      // Cross-window dead objects can throw during reader teardown.
+    }
+  }
+
+  let element = target as {
+    className?: unknown;
+    classList?: { contains: (className: string) => boolean };
+    parentElement?: unknown;
+  } | null;
+  while (element) {
+    if (hasClassName(element, "mineru-copy-box-actions")) {
+      return true;
+    }
+    element = element.parentElement as typeof element;
+  }
+  return false;
+}
+
+function hasClassName(
+  element: {
+    className?: unknown;
+    classList?: { contains: (className: string) => boolean };
+  },
+  className: string,
+): boolean {
+  if (element.classList?.contains(className)) {
+    return true;
+  }
+  return (
+    typeof element.className === "string" &&
+    element.className.split(/\s+/).includes(className)
+  );
+}
+
+function ensureSelectPanelCloseHandlers(doc: Document): void {
+  if (selectPanelCloseHandlerDocs.has(doc)) {
+    return;
+  }
+  selectPanelCloseHandlerDocs.add(doc);
+
+  doc.addEventListener("keydown", (event) => {
+    if ((event as KeyboardEvent).key === "Escape") {
+      closeOpenSelectPanels(doc);
+    }
+  });
+  doc.addEventListener(
+    "mousedown",
+    (event) => {
+      if (!isInsideActions(event.target)) {
+        closeOpenSelectPanels(doc);
+      }
+    },
+    true,
+  );
+}
 
 /** 创建一个不会把点击继续冒泡到 PDF.js 的复制按钮。 */
 export function createCopyButton(
