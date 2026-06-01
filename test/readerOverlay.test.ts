@@ -2007,16 +2007,19 @@ interface FakeElement {
   dataset: Record<string, string>;
   style: Record<string, string>;
   textContent: string;
+  type: string;
   title: string;
   value: string;
   readOnly: boolean;
   hidden: boolean;
   children: FakeElement[];
+  parentElement: FakeElement | null;
   getBoundingClientRect?: () => DOMRect;
   append: (...children: FakeElement[]) => void;
   addEventListener: (_type: string, _listener: EventListener) => void;
   dispatch: (_type: string, _event: Event) => void;
   querySelectorAll: (_selector: string) => FakeElement[];
+  setAttribute: (name: string, value: string) => void;
   remove: () => void;
 }
 
@@ -2028,12 +2031,17 @@ function createFakeElement(): FakeElement {
     dataset: {},
     style: {},
     textContent: "",
+    type: "",
     title: "",
     value: "",
     readOnly: false,
     hidden: false,
     children: [],
+    parentElement: null,
     append(...children: FakeElement[]) {
+      for (const child of children) {
+        child.parentElement = this;
+      }
       this.children.push(...children);
     },
     addEventListener(type: string, listener: EventListener) {
@@ -2050,8 +2058,31 @@ function createFakeElement(): FakeElement {
       }
       return findElementsByClass(this, selector.slice(1));
     },
+    setAttribute(name: string, value: string) {
+      if (name === "id") {
+        this.id = value;
+        return;
+      }
+      if (name === "class") {
+        this.className = value;
+        return;
+      }
+      if (name === "title") {
+        this.title = value;
+        return;
+      }
+      if (name.startsWith("data-")) {
+        this.dataset[toDatasetKey(name.slice("data-".length))] = value;
+        return;
+      }
+      this.dataset[toDatasetKey(name)] = value;
+    },
     remove() {},
   };
+}
+
+function toDatasetKey(name: string): string {
+  return name.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
 }
 
 function findElementsByClass(

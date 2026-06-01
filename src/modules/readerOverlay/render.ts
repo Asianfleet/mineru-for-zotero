@@ -126,41 +126,206 @@ export function createBoxActions(
   box: NormalizedBox,
 ): HTMLDivElement {
   const actions = doc.createElement("div");
-  actions.className = "mineru-copy-box-actions";
-  if (isFormulaBox(box) && box.formula) {
-    actions.append(
-      createCopyButton(
-        doc,
-        readerOverlayString("reader-copy-formula-with-dollar", "Copy with $"),
-        () => {
-          copyText(formatFormulaForCopy(box.formula ?? "", "with-dollar"));
-        },
-      ),
-      createCopyButton(
-        doc,
-        readerOverlayString(
-          "reader-copy-formula-without-dollar",
-          "Copy without $",
-        ),
-        () => {
-          copyText(formatFormulaForCopy(box.formula ?? "", "without-dollar"));
-        },
-      ),
-    );
-    return actions;
+  actions.className =
+    "mineru-copy-box-actions mineru-copy-toolbar-below mineru-copy-select-panel-above";
+  actions.dataset.rawIndex = String(box.rawIndex);
+
+  const toolbar = doc.createElement("div");
+  toolbar.className = "mineru-copy-box-toolbar";
+  toolbar.addEventListener("mousedown", stopOverlayActionEvent);
+  toolbar.addEventListener("click", stopOverlayActionEvent);
+  toolbar.append(
+    createToolbarCopyControl(doc, box),
+    createToolbarDivider(doc),
+    createToolbarButton(doc, {
+      action: "select-copy",
+      className: "mineru-copy-toolbar-button-select",
+      label: readerOverlayString("reader-select-copy-box", "Select copy"),
+      onClick: () => {
+        closeOpenSelectPanels(doc);
+        actions.classList.add("mineru-copy-select-panel-open");
+        updateBoxActionPlacement(doc, actions);
+      },
+    }),
+  );
+
+  const panel = createSelectCopyPanel(doc, box);
+  actions.append(toolbar, panel);
+  actions.addEventListener("mouseenter", () => {
+    updateBoxActionPlacement(doc, actions);
+  });
+  ensureSelectPanelCloseHandlers(doc);
+  return actions;
+}
+
+interface ToolbarButtonOptions {
+  action?: string;
+  className: string;
+  label: string;
+  onClick: () => void;
+}
+
+/** 创建普通文本或公式复制入口。 */
+function createToolbarCopyControl(
+  doc: Document,
+  box: NormalizedBox,
+): HTMLButtonElement | HTMLDivElement {
+  if (!isFormulaBox(box)) {
+    return createToolbarButton(doc, {
+      action: "copy",
+      className: "mineru-copy-toolbar-button-copy",
+      label: readerOverlayString("reader-copy-box", "Copy"),
+      onClick: () => {
+        copyText(formatBoxesForCopy([box]));
+      },
+    });
   }
 
-  actions.append(
-    createCopyButton(
+  const group = doc.createElement("div");
+  group.className = "mineru-copy-formula-copy-group";
+  const label = readerOverlayString(
+    "reader-copy-formula-menu",
+    "Formula copy options",
+  );
+  group.title = label;
+
+  const trigger = createToolbarButton(doc, {
+    action: "copy",
+    className: "mineru-copy-toolbar-button-copy",
+    label,
+    onClick: () => {},
+  });
+  const menu = doc.createElement("div");
+  menu.className = "mineru-copy-formula-menu";
+  menu.title = label;
+  menu.append(
+    createFormulaMenuItem(
       doc,
-      readerOverlayString("reader-copy-box", "Copy"),
+      readerOverlayString("reader-copy-formula-with-dollar", "Copy with $"),
       () => {
-        copyText(formatBoxesForCopy([box]));
+        copyText(
+          formatFormulaForCopy(box.formula ?? box.markdown, "with-dollar"),
+        );
+      },
+    ),
+    createFormulaMenuItem(
+      doc,
+      readerOverlayString(
+        "reader-copy-formula-without-dollar",
+        "Copy without $",
+      ),
+      () => {
+        copyText(
+          formatFormulaForCopy(box.formula ?? box.markdown, "without-dollar"),
+        );
       },
     ),
   );
-  return actions;
+  group.append(trigger, menu);
+  return group;
 }
+
+/** 创建 toolbar 按钮并阻止事件继续进入 PDF.js 选择逻辑。 */
+function createToolbarButton(
+  doc: Document,
+  options: ToolbarButtonOptions,
+): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = `mineru-copy-toolbar-button ${options.className}`;
+  button.title = options.label;
+  button.textContent = options.label;
+  button.setAttribute("aria-label", options.label);
+  if (options.action) {
+    button.dataset.mineruAction = options.action;
+  }
+  button.addEventListener("click", (event) => {
+    stopOverlayActionEvent(event);
+    options.onClick();
+  });
+  return button;
+}
+
+/** 创建 toolbar 分隔线。 */
+function createToolbarDivider(doc: Document): HTMLSpanElement {
+  const divider = doc.createElement("span");
+  divider.className = "mineru-copy-toolbar-divider";
+  divider.setAttribute("aria-hidden", "true");
+  return divider;
+}
+
+/** 创建公式复制下拉菜单中的具体复制动作。 */
+function createFormulaMenuItem(
+  doc: Document,
+  label: string,
+  onCopy: () => void,
+): HTMLButtonElement {
+  return createToolbarButton(doc, {
+    className: "mineru-copy-formula-menu-item",
+    label,
+    onClick: onCopy,
+  });
+}
+
+/** 创建可选中文本的 readonly 面板。 */
+function createSelectCopyPanel(
+  doc: Document,
+  box: NormalizedBox,
+): HTMLTextAreaElement {
+  const panel = doc.createElement("textarea");
+  panel.className = "mineru-copy-select-panel";
+  panel.value = getSelectableBoxText(box);
+  panel.readOnly = true;
+  panel.addEventListener("mousedown", stopOverlayActionEvent);
+  panel.addEventListener("click", stopOverlayActionEvent);
+  panel.addEventListener("keydown", stopOverlayActionEvent);
+  return panel;
+}
+
+/** 获取 select-copy 面板中允许用户手动选择的文本。 */
+export function getSelectableBoxText(box: NormalizedBox): string {
+  if (!isFormulaBox(box)) {
+    return box.markdown || formatBoxesForCopy([box]);
+  }
+
+  const value = box.formula || box.markdown || formatBoxesForCopy([box]);
+  if (hasDollarWrappedFormula(value)) {
+    return value;
+  }
+  return `$${stripOuterDollars(value)}$`;
+}
+
+/** 判断公式文本是否已经由单层 dollar 包裹。 */
+export function hasDollarWrappedFormula(value: string): boolean {
+  const trimmed = value.trim();
+  return (
+    trimmed.length >= 2 && trimmed.startsWith("$") && trimmed.endsWith("$")
+  );
+}
+
+/** 移除公式文本最外层 dollar，便于统一重新包裹。 */
+export function stripOuterDollars(value: string): string {
+  let stripped = value.trim();
+  while (hasDollarWrappedFormula(stripped)) {
+    stripped = stripped.slice(1, -1).trim();
+  }
+  return stripped;
+}
+
+/** 阻止 overlay action 的事件继续触发 PDF.js 或 box 选择。 */
+export function stopOverlayActionEvent(event: Event): void {
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function closeOpenSelectPanels(_doc: Document): void {}
+
+function updateBoxActionPlacement(
+  _doc: Document,
+  _actions: HTMLDivElement,
+): void {}
+
+function ensureSelectPanelCloseHandlers(_doc: Document): void {}
 
 /** 创建一个不会把点击继续冒泡到 PDF.js 的复制按钮。 */
 export function createCopyButton(
