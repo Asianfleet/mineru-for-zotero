@@ -276,9 +276,13 @@ function createSelectCopyPanel(
   panel.className = "mineru-copy-select-panel";
   panel.value = getSelectableBoxText(box);
   panel.readOnly = true;
+  panel.setAttribute(
+    "aria-label",
+    readerOverlayString("reader-select-copy-box", "Select copy"),
+  );
   panel.addEventListener("mousedown", stopOverlayActionEvent);
   panel.addEventListener("click", stopOverlayActionEvent);
-  panel.addEventListener("keydown", stopOverlayActionEvent);
+  panel.addEventListener("keydown", stopSelectPanelKeydownEvent);
   return panel;
 }
 
@@ -288,6 +292,9 @@ export function getSelectableBoxText(box: NormalizedBox): string {
     return box.markdown || formatBoxesForCopy([box]);
   }
 
+  if (hasDollarWrappedFormula(box.markdown)) {
+    return box.markdown.trim();
+  }
   const value = box.formula || box.markdown || formatBoxesForCopy([box]);
   if (hasDollarWrappedFormula(value)) {
     return value;
@@ -315,6 +322,11 @@ export function stripOuterDollars(value: string): string {
 /** 阻止 overlay action 的事件继续触发 PDF.js 或 box 选择。 */
 export function stopOverlayActionEvent(event: Event): void {
   event.preventDefault();
+  event.stopPropagation();
+}
+
+/** 只隔离 textarea 键盘事件冒泡，保留原生选择与复制行为。 */
+function stopSelectPanelKeydownEvent(event: Event): void {
   event.stopPropagation();
 }
 

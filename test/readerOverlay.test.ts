@@ -232,6 +232,7 @@ describe("readerOverlay", function () {
         createBox(0, "text", "**Raw** markdown"),
         createBox(1, "interline_equation", "E=mc^2", "E=mc^2"),
         createBox(2, "inline_equation", "$a+b$", "a+b"),
+        createBox(3, "interline_equation", "$$x+y$$", "x+y"),
       ],
       "hover",
     );
@@ -239,9 +240,36 @@ describe("readerOverlay", function () {
     const panels = findElementsByClass(root, "mineru-copy-select-panel");
     assert.deepEqual(
       panels.map((element) => element.value),
-      ["**Raw** markdown", "$E=mc^2$", "$a+b$"],
+      ["**Raw** markdown", "$E=mc^2$", "$a+b$", "$$x+y$$"],
     );
     assert.isTrue(panels.every((element) => element.readOnly));
+    assert.isTrue(
+      panels.every((element) => element.dataset.ariaLabel === "Select copy"),
+    );
+  });
+
+  it("keeps textarea keyboard behavior inside selectable copy panels", function () {
+    const doc = createDocumentStub();
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      [createBox(0, "text", "Selectable text")],
+      "hover",
+    );
+    const panel = findElementsByClass(root, "mineru-copy-select-panel")[0];
+    let prevented = false;
+    let stopped = false;
+
+    panel.dispatch("keydown", {
+      preventDefault() {
+        prevented = true;
+      },
+      stopPropagation() {
+        stopped = true;
+      },
+    } as unknown as Event);
+
+    assert.isFalse(prevented);
+    assert.isTrue(stopped);
   });
 
   it("does not render list container boxes that cover reference boxes", function () {
