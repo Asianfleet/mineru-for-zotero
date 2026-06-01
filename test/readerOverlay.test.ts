@@ -94,22 +94,15 @@ describe("readerOverlay", function () {
         "Reference",
       ],
     );
-    assert.deepEqual(
-      findElementsByClass(root, "mineru-copy-button").map(
-        (element) => element.textContent,
-      ),
-      [
-        "Copy",
-        "Copy",
-        "Copy",
-        "Copy",
-        "Copy",
-        "Copy with $",
-        "Copy without $",
-        "Copy",
-        "Copy",
-      ],
+    assert.lengthOf(findElementsByClass(root, "mineru-copy-box-toolbar"), 8);
+    assert.lengthOf(findElementsByDataAction(root, "copy"), 8);
+    assert.lengthOf(findElementsByDataAction(root, "select-copy"), 8);
+    assert.lengthOf(
+      findElementsByClass(root, "mineru-copy-toolbar-divider"),
+      8,
     );
+    assert.lengthOf(findElementsByClass(root, "mineru-copy-formula-menu"), 1);
+    assert.lengthOf(findElementsByClass(root, "mineru-copy-select-panel"), 8);
   });
 
   it("uses Fluent messages for hover labels and copy buttons", function () {
@@ -162,12 +155,15 @@ describe("readerOverlay", function () {
         ),
         ["Text", "Title", "Image caption", "Formula"],
       );
-      assert.deepEqual(
-        findElementsByClass(root, "mineru-copy-button").map(
-          (element) => element.textContent,
-        ),
-        ["Copy", "Copy", "Copy", "Copy with $", "Copy without $"],
+      assert.lengthOf(findElementsByClass(root, "mineru-copy-box-toolbar"), 4);
+      assert.lengthOf(findElementsByDataAction(root, "copy"), 4);
+      assert.lengthOf(findElementsByDataAction(root, "select-copy"), 4);
+      assert.lengthOf(
+        findElementsByClass(root, "mineru-copy-toolbar-divider"),
+        4,
       );
+      assert.lengthOf(findElementsByClass(root, "mineru-copy-formula-menu"), 1);
+      assert.lengthOf(findElementsByClass(root, "mineru-copy-select-panel"), 4);
     } finally {
       globals.addon = originalAddon;
     }
@@ -195,12 +191,36 @@ describe("readerOverlay", function () {
       ),
       ["Text", "Title", "Image caption", "Header", "Page number", "Formula"],
     );
-    assert.deepEqual(
-      findElementsByClass(root, "mineru-copy-button").map(
-        (element) => element.textContent,
-      ),
-      ["Copy", "Copy", "Copy", "Copy", "Copy", "Copy with $", "Copy without $"],
+    assert.lengthOf(findElementsByClass(root, "mineru-copy-box-toolbar"), 6);
+    assert.lengthOf(findElementsByDataAction(root, "copy"), 6);
+    assert.lengthOf(findElementsByDataAction(root, "select-copy"), 6);
+    assert.lengthOf(
+      findElementsByClass(root, "mineru-copy-toolbar-divider"),
+      6,
     );
+    assert.lengthOf(findElementsByClass(root, "mineru-copy-formula-menu"), 1);
+    assert.lengthOf(findElementsByClass(root, "mineru-copy-select-panel"), 6);
+  });
+
+  it("renders selectable copy panels from raw markdown and keeps formula dollars", function () {
+    const doc = createDocumentStub();
+
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      [
+        createBox(0, "text", "**Raw** markdown"),
+        createBox(1, "interline_equation", "E=mc^2", "E=mc^2"),
+        createBox(2, "inline_equation", "$a+b$", "a+b"),
+      ],
+      "hover",
+    );
+
+    const panels = findElementsByClass(root, "mineru-copy-select-panel");
+    assert.deepEqual(
+      panels.map((element) => element.value),
+      ["**Raw** markdown", "$E=mc^2$", "$a+b$"],
+    );
+    assert.isTrue(panels.every((element) => element.readOnly));
   });
 
   it("does not render list container boxes that cover reference boxes", function () {
@@ -1496,6 +1516,38 @@ describe("readerOverlay", function () {
     assert.equal(getReaderSelectedBoxCount(reader), 2);
   });
 
+  it("does not copy when the formula copy trigger itself is clicked", function () {
+    const copied: string[] = [];
+    const globals = globalThis as typeof globalThis & { ztoolkit?: unknown };
+    const originalZtoolkit = globals.ztoolkit;
+    globals.ztoolkit = {
+      Clipboard: class {
+        addText(text: string) {
+          copied.push(text);
+          return this;
+        }
+
+        copy() {}
+      },
+    };
+
+    try {
+      const doc = createDocumentStub();
+      const root = buildReaderOverlayRoot(
+        doc as unknown as Document,
+        [createBox(0, "formula", "E=mc^2", "E=mc^2")],
+        "hover",
+      );
+
+      const copyButton = findElementsByDataAction(root, "copy")[0];
+      copyButton.dispatch("click", createClickEvent());
+
+      assert.deepEqual(copied, []);
+    } finally {
+      globals.ztoolkit = originalZtoolkit;
+    }
+  });
+
   it("copies full markdown when no boxes are selected", async function () {
     const copied: string[] = [];
     const globals = globalThis as typeof globalThis & {
@@ -1929,6 +1981,8 @@ interface FakeElement {
   dataset: Record<string, string>;
   style: Record<string, string>;
   textContent: string;
+  value: string;
+  readOnly: boolean;
   hidden: boolean;
   children: FakeElement[];
   getBoundingClientRect?: () => DOMRect;
@@ -1947,6 +2001,8 @@ function createFakeElement(): FakeElement {
     dataset: {},
     style: {},
     textContent: "",
+    value: "",
+    readOnly: false,
     hidden: false,
     children: [],
     append(...children: FakeElement[]) {
@@ -1977,6 +2033,23 @@ function findElementsByClass(
   const matches: FakeElement[] = [];
   const visit = (element: FakeElement) => {
     if (element.className.split(/\s+/).includes(className)) {
+      matches.push(element);
+    }
+    for (const child of element.children) {
+      visit(child);
+    }
+  };
+  visit(root);
+  return matches;
+}
+
+function findElementsByDataAction(
+  root: FakeElement,
+  action: string,
+): FakeElement[] {
+  const matches: FakeElement[] = [];
+  const visit = (element: FakeElement) => {
+    if (element.dataset.mineruAction === action) {
       matches.push(element);
     }
     for (const child of element.children) {
