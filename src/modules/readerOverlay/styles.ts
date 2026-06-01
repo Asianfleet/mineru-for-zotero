@@ -65,19 +65,13 @@ export const READER_OVERLAY_CSS = `
   background: rgba(245, 158, 11, 0.18);
 }
 
-.mineru-copy-box-label,
-.mineru-copy-box-actions {
+.mineru-copy-box-label {
   display: none;
 }
 
 .mineru-copy-box:hover .mineru-copy-box-label,
 .mineru-copy-box-hovered .mineru-copy-box-label {
   display: block;
-}
-
-.mineru-copy-box:hover .mineru-copy-box-actions,
-.mineru-copy-box-hovered .mineru-copy-box-actions {
-  display: flex;
 }
 
 .mineru-copy-box-label {
@@ -106,30 +100,145 @@ export const READER_OVERLAY_CSS = `
   left: 50%;
   top: 100%;
   transform: translateX(-50%);
-  gap: 4px;
-  padding-top: 3px;
+  display: none;
+  pointer-events: none;
 }
 
-.mineru-copy-button {
-  border: 0;
-  border-radius: 5px;
+.mineru-copy-box:hover .mineru-copy-box-actions,
+.mineru-copy-box-hovered .mineru-copy-box-actions,
+.mineru-copy-select-panel-open {
+  display: block;
+}
+
+.mineru-copy-toolbar-above {
+  top: auto;
+  bottom: 100%;
+}
+
+.mineru-copy-box-toolbar {
+  display: flex;
+  align-items: center;
+  overflow: visible;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 999px;
   background: var(--material-toolbar, ButtonFace);
   box-shadow:
-    0 0 3px 0 rgba(0, 0, 0, 0.35),
-    0 2px 8px 0 rgba(0, 0, 0, 0.22);
+    0 1px 3px rgba(0, 0, 0, 0.2),
+    0 4px 12px rgba(0, 0, 0, 0.18);
   color: var(--fill-primary, ButtonText);
-  font-size: 13px;
-  line-height: 1.35;
-  padding: 4px 8px;
-  white-space: nowrap;
   pointer-events: auto;
 }
 
-.mineru-copy-button:hover {
+.mineru-copy-toolbar-button {
+  width: 32px;
+  height: 28px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background-color: transparent;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 16px 16px;
+  color: inherit;
+  -moz-context-properties: fill, fill-opacity, stroke, stroke-opacity;
+}
+
+.mineru-copy-toolbar-button:hover,
+.mineru-copy-formula-copy-group:hover > .mineru-copy-toolbar-button {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
+.mineru-copy-toolbar-button-copy {
+  border-radius: 999px 0 0 999px;
+  background-image: url("chrome://mineruForZotero/content/box-toolbar-copy.svg");
+}
+
+.mineru-copy-toolbar-button-select {
+  border-radius: 0 999px 999px 0;
+  background-image: url("chrome://mineruForZotero/content/box-toolbar-select-copy.svg");
+}
+
+.mineru-copy-toolbar-divider {
+  width: 0;
+  height: 18px;
+  border-left: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+.mineru-copy-formula-copy-group {
+  position: relative;
+  display: flex;
+}
+
+.mineru-copy-formula-menu {
+  position: absolute;
+  left: 0;
+  top: 100%;
+  display: none;
+  min-width: 150px;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  border-radius: 6px;
   background: var(--material-toolbar, ButtonFace);
-  box-shadow:
-    0 0 3px 0 rgba(0, 0, 0, 0.45),
-    0 4px 14px 0 rgba(0, 0, 0, 0.28);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  pointer-events: auto;
+}
+
+.mineru-copy-formula-copy-group:hover .mineru-copy-formula-menu {
+  display: flex;
+}
+
+.mineru-copy-formula-menu-item {
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fill-primary, ButtonText);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 6px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.mineru-copy-formula-menu-item:hover {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
+.mineru-copy-select-panel {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  width: min(360px, 70vw);
+  min-width: 180px;
+  min-height: 48px;
+  max-height: 220px;
+  transform: translateX(-50%);
+  display: none;
+  resize: both;
+  overflow: auto;
+  box-sizing: border-box;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 7px;
+  background: var(--material-toolbar, Field);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+  color: var(--fill-primary, FieldText);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  user-select: text;
+  pointer-events: auto;
+}
+
+.mineru-copy-select-panel-open .mineru-copy-select-panel {
+  display: block;
+}
+
+.mineru-copy-select-panel-below .mineru-copy-select-panel {
+  top: calc(100% + 6px);
+  bottom: auto;
 }
 `;
 

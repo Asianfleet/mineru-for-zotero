@@ -314,9 +314,9 @@ describe("readerOverlay", function () {
     ensureReaderOverlayStyles(doc as unknown as Document);
 
     const style = doc.headChildren[0];
-    assert.include(
+    assert.match(
       style.textContent,
-      ".mineru-copy-box-label,\n.mineru-copy-box-actions",
+      /\.mineru-copy-box-label\s*\{[^}]*display:\s*none/s,
     );
     assert.include(
       style.textContent,
@@ -338,9 +338,9 @@ describe("readerOverlay", function () {
       style.textContent,
       /\.mineru-copy-box-actions\s*\{[^}]*left:\s*50%[^}]*transform:\s*translateX\(-50%\)/s,
     );
-    assert.notMatch(
+    assert.match(
       style.textContent,
-      /\.mineru-copy-box-actions\s*\{\s*position:[^}]*display:/s,
+      /\.mineru-copy-box-actions\s*\{[^}]*display:\s*none[^}]*pointer-events:\s*none/s,
     );
     assert.match(
       style.textContent,
@@ -360,11 +360,27 @@ describe("readerOverlay", function () {
     );
     assert.match(
       style.textContent,
-      /\.mineru-copy-button\s*\{[^}]*border:\s*0[^}]*background:\s*var\(--material-toolbar,\s*ButtonFace\)[^}]*box-shadow:/s,
+      /\.mineru-copy-box-toolbar\s*\{[^}]*border-radius:\s*999px[^}]*background:\s*var\(--material-toolbar,\s*ButtonFace\)/s,
     );
     assert.match(
       style.textContent,
-      /\.mineru-copy-button\s*\{[^}]*color:\s*var\(--fill-primary,\s*ButtonText\)[^}]*font-size:\s*13px[^}]*padding:\s*4px 8px/s,
+      /\.mineru-copy-toolbar-divider\s*\{[^}]*border-left:\s*1px solid/s,
+    );
+    assert.include(
+      style.textContent,
+      "chrome://mineruForZotero/content/box-toolbar-copy.svg",
+    );
+    assert.include(
+      style.textContent,
+      "chrome://mineruForZotero/content/box-toolbar-select-copy.svg",
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-select-panel\s*\{[^}]*resize:\s*both[^}]*user-select:\s*text/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-formula-copy-group:hover\s+\.mineru-copy-formula-menu\s*\{[^}]*display:\s*flex/s,
     );
   });
 
