@@ -61,7 +61,7 @@ describe("readerOverlay", function () {
     assert.include(root.className, "mineru-copy-mode-hover");
   });
 
-  it("renders hover labels and copy buttons", function () {
+  it("renders hover labels and copy controls", function () {
     const doc = createDocumentStub();
 
     const root = buildReaderOverlayRoot(
@@ -105,7 +105,7 @@ describe("readerOverlay", function () {
     assert.lengthOf(findElementsByClass(root, "mineru-copy-select-panel"), 8);
   });
 
-  it("uses Fluent messages for hover labels and copy buttons", function () {
+  it("uses Fluent messages for hover labels and copy controls", function () {
     const globals = globalThis as typeof globalThis & { addon?: unknown };
     const originalAddon = globals.addon;
     globals.addon = {
@@ -124,6 +124,10 @@ describe("readerOverlay", function () {
                   "Copy with $",
                 "mineruForZotero-reader-copy-formula-without-dollar":
                   "Copy without $",
+                "mineruForZotero-reader-select-copy-box":
+                  "Select copy localized",
+                "mineruForZotero-reader-copy-formula-menu":
+                  "Formula copy options localized",
               };
               return messages.map(({ id }) => ({
                 value: values[id] ?? null,
@@ -158,18 +162,35 @@ describe("readerOverlay", function () {
       assert.lengthOf(findElementsByClass(root, "mineru-copy-box-toolbar"), 4);
       assert.lengthOf(findElementsByDataAction(root, "copy"), 4);
       assert.lengthOf(findElementsByDataAction(root, "select-copy"), 4);
+      assert.deepEqual(
+        findElementsByDataAction(root, "select-copy").map(
+          (element) => element.title,
+        ),
+        [
+          "Select copy localized",
+          "Select copy localized",
+          "Select copy localized",
+          "Select copy localized",
+        ],
+      );
       assert.lengthOf(
         findElementsByClass(root, "mineru-copy-toolbar-divider"),
         4,
       );
       assert.lengthOf(findElementsByClass(root, "mineru-copy-formula-menu"), 1);
+      assert.deepEqual(
+        findElementsByClass(root, "mineru-copy-formula-menu").map(
+          (element) => element.title,
+        ),
+        ["Formula copy options localized"],
+      );
       assert.lengthOf(findElementsByClass(root, "mineru-copy-select-panel"), 4);
     } finally {
       globals.addon = originalAddon;
     }
   });
 
-  it("renders labels and copy buttons in all mode", function () {
+  it("renders labels and copy controls in all mode", function () {
     const doc = createDocumentStub();
 
     const root = buildReaderOverlayRoot(
@@ -1981,6 +2002,7 @@ interface FakeElement {
   dataset: Record<string, string>;
   style: Record<string, string>;
   textContent: string;
+  title: string;
   value: string;
   readOnly: boolean;
   hidden: boolean;
@@ -2001,6 +2023,7 @@ function createFakeElement(): FakeElement {
     dataset: {},
     style: {},
     textContent: "",
+    title: "",
     value: "",
     readOnly: false,
     hidden: false,
