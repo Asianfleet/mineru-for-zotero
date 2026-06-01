@@ -13,6 +13,12 @@ import type {
 const SELECT_PANEL_TOP_GUARD_PX = 80;
 const VIEWPORT_EDGE_GUARD_PX = 8;
 const selectPanelCloseHandlerDocs = new WeakSet<Document>();
+const HORIZONTAL_PLACEMENT_CLASSES = [
+  "mineru-copy-toolbar-shift-right",
+  "mineru-copy-toolbar-shift-left",
+  "mineru-copy-select-panel-right",
+  "mineru-copy-select-panel-left",
+] as const;
 
 /** 把归一化 bbox 转成可直接赋给 DOM style 的百分比定位样式。 */
 export function computeBoxStyle(box: NormalizedBox): ReaderOverlayBoxStyle {
@@ -337,17 +343,20 @@ function stopSelectPanelKeydownEvent(event: Event): void {
 }
 
 function closeOpenSelectPanels(doc: Document): void {
-  for (const actions of doc.querySelectorAll(
-    ".mineru-copy-select-panel-open",
-  )) {
-    actions.classList.remove("mineru-copy-select-panel-open");
-  }
+  safeReaderOverlayCleanup(() => {
+    for (const actions of doc.querySelectorAll(
+      ".mineru-copy-select-panel-open",
+    )) {
+      actions.classList.remove("mineru-copy-select-panel-open");
+    }
+  });
 }
 
 function updateBoxActionPlacement(
   doc: Document,
   actions: HTMLDivElement,
 ): void {
+  clearHorizontalPlacement(actions);
   const rect = actions.getBoundingClientRect();
   const viewportHeight = getViewportHeight(doc);
   const viewportWidth = getViewportWidth(doc);
@@ -367,6 +376,10 @@ function updateBoxActionPlacement(
   actions.classList.toggle("mineru-copy-toolbar-shift-left", shiftLeft);
   actions.classList.toggle("mineru-copy-select-panel-right", shiftRight);
   actions.classList.toggle("mineru-copy-select-panel-left", shiftLeft);
+}
+
+function clearHorizontalPlacement(actions: HTMLDivElement): void {
+  actions.classList.remove(...HORIZONTAL_PLACEMENT_CLASSES);
 }
 
 function getViewportHeight(doc: Document): number {

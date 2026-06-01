@@ -350,6 +350,66 @@ describe("readerOverlay", function () {
     assert.include(actions[1].className, "mineru-copy-select-panel-left");
   });
 
+  it("refreshes horizontal placement from a neutral rect", function () {
+    const doc = createDocumentStub();
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      [createBox(0, "text", "Movable edge")],
+      "hover",
+    );
+    doc.body.append(root);
+
+    const selectButton = findElementsByDataAction(root, "select-copy")[0];
+    const actions = findElementsByClass(root, "mineru-copy-box-actions")[0];
+    let middlePosition = false;
+    actions.getBoundingClientRect = () => {
+      if (
+        middlePosition &&
+        !actions.className.includes("mineru-copy-toolbar-shift-right") &&
+        !actions.className.includes("mineru-copy-toolbar-shift-left")
+      ) {
+        return createRect({ top: 120, bottom: 160, left: 400, right: 470 });
+      }
+      return createRect({ top: 120, bottom: 160, left: -12, right: 58 });
+    };
+
+    selectButton.dispatch("click", createClickEvent());
+    assert.include(actions.className, "mineru-copy-toolbar-shift-right");
+
+    middlePosition = true;
+    actions.dispatch("mouseenter", createMouseEvent({ target: actions }));
+
+    assert.notInclude(actions.className, "mineru-copy-toolbar-shift-right");
+    assert.notInclude(actions.className, "mineru-copy-toolbar-shift-left");
+    assert.notInclude(actions.className, "mineru-copy-select-panel-right");
+    assert.notInclude(actions.className, "mineru-copy-select-panel-left");
+  });
+
+  it("keeps selectable panel open for internal document mousedown targets", function () {
+    const doc = createDocumentStub();
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      [createBox(0, "text", "Internal target")],
+      "hover",
+    );
+    doc.body.append(root);
+
+    const selectButton = findElementsByDataAction(root, "select-copy")[0];
+    const actions = findElementsByClass(root, "mineru-copy-box-actions")[0];
+    const toolbar = findElementsByClass(root, "mineru-copy-box-toolbar")[0];
+    const panel = findElementsByClass(root, "mineru-copy-select-panel")[0];
+
+    selectButton.dispatch("click", createClickEvent());
+    doc.dispatch("mousedown", createMouseEvent({ target: panel }));
+    assert.include(actions.className, "mineru-copy-select-panel-open");
+
+    doc.dispatch("mousedown", createMouseEvent({ target: toolbar }));
+    assert.include(actions.className, "mineru-copy-select-panel-open");
+
+    doc.dispatch("mousedown", createMouseEvent({ target: doc.body }));
+    assert.notInclude(actions.className, "mineru-copy-select-panel-open");
+  });
+
   it("keeps toolbar buttons icon-only while formula menu items stay readable", function () {
     const doc = createDocumentStub();
     const root = buildReaderOverlayRoot(
