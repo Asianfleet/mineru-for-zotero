@@ -1560,7 +1560,12 @@ describe("readerOverlay", function () {
         "hover",
       );
 
-      const copyButton = findElementsByDataAction(root, "copy")[0];
+      const formulaGroups = findElementsByClass(
+        root,
+        "mineru-copy-formula-copy-group",
+      );
+      assert.lengthOf(formulaGroups, 1);
+      const copyButton = findElementsByDataAction(formulaGroups[0], "copy")[0];
       copyButton.dispatch("click", createClickEvent());
 
       assert.deepEqual(copied, []);
