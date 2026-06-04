@@ -1706,6 +1706,36 @@ describe("parseManager", function () {
 
     assert.include(messages, "parse-error-local-api-unavailable");
   });
+
+  it("uses the configured local API timeout for long-running local tasks", async function () {
+    const messages: string[] = [];
+    const delays: number[] = [];
+    let pollCount = 0;
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getParseSource: () => "local",
+      getLocalApiTimeoutMinutes: () => 7,
+      delay: async (ms) => {
+        delays.push(ms);
+      },
+      client: {
+        submitPdf: async () => ({ taskID: "local-task" }),
+        pollTask: async () => {
+          pollCount += 1;
+          return pollCount > 120
+            ? { status: "succeeded" }
+            : { status: "running" };
+        },
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment());
+
+    assert.equal(pollCount, 121);
+    assert.lengthOf(delays, 120);
+    assert.include(messages, "parse-task-finished");
+  });
 });
 
 function successfulPreciseClient(): NonNullable<

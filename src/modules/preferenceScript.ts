@@ -1,10 +1,12 @@
 import { config } from "../../package.json";
 import {
   getSaveImages,
+  getLocalApiTimeoutMinutes,
   getParseMode,
   getParseSource,
   setApiKey,
   setLocalApiBaseURL,
+  setLocalApiTimeoutMinutes,
   setParseMode,
   setParseSource,
   setSaveImages,
@@ -92,6 +94,12 @@ export function registerPreferenceValueSync(document: Document): void {
     `zotero-prefpane-${config.addonRef}-local-api-base-url`,
     setLocalApiBaseURL,
   );
+  registerNumberPreferenceSync(
+    document,
+    `zotero-prefpane-${config.addonRef}-local-api-timeout-minutes`,
+    getLocalApiTimeoutMinutes,
+    setLocalApiTimeoutMinutes,
+  );
   registerCheckboxPreferenceSync(
     document,
     `zotero-prefpane-${config.addonRef}-save-images`,
@@ -130,6 +138,30 @@ function registerTextPreferenceSync(
   const element = document.getElementById(id) as HTMLInputElement | null;
   element?.addEventListener("change", () => {
     persist(element.value);
+  });
+}
+
+/**
+ * 注册数字输入控件的 preference 写入逻辑，并忽略无法解析的值。
+ */
+function registerNumberPreferenceSync(
+  document: Document,
+  id: string,
+  read: () => number,
+  persist: (value: number) => void,
+): void {
+  const element = document.getElementById(id) as HTMLInputElement | null;
+  if (!element) {
+    return;
+  }
+
+  element.value = String(read());
+  element.setAttribute("value", element.value);
+  element.addEventListener("change", () => {
+    const value = Number(element.value);
+    if (Number.isFinite(value)) {
+      persist(value);
+    }
   });
 }
 

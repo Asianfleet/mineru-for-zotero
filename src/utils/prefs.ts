@@ -4,6 +4,7 @@ type PluginPrefsMap = _ZoteroTypes.Prefs["PluginPrefsMap"];
 
 const PREFS_PREFIX = config.prefsPrefix;
 const DEFAULT_LOCAL_API_BASE_URL = "http://127.0.0.1:8000";
+const DEFAULT_LOCAL_API_TIMEOUT_MINUTES = 30;
 
 export type ParseSource = "online" | "local";
 export type ParseMode = "precise" | "lite";
@@ -93,6 +94,23 @@ export function getLocalApiBaseURL(): string {
  */
 export function setLocalApiBaseURL(value: string) {
   return setPref("localApiBaseURL", value);
+}
+
+/**
+ * Read the configured local API polling timeout in minutes.
+ */
+export function getLocalApiTimeoutMinutes(): number {
+  const value = getPref("localApiTimeoutMinutes");
+  return typeof value === "number" && Number.isFinite(value) && value >= 1
+    ? Math.floor(value)
+    : DEFAULT_LOCAL_API_TIMEOUT_MINUTES;
+}
+
+/**
+ * Persist the local API polling timeout in minutes.
+ */
+export function setLocalApiTimeoutMinutes(value: number) {
+  return setPref("localApiTimeoutMinutes", value);
 }
 
 export function getSaveImages(): boolean {

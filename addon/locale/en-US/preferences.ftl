@@ -16,6 +16,7 @@ pref-parse-mode-lite =
 pref-parse-mode-help = Precise parse creates box data; lite parse saves Markdown only.
 pref-local-api-base-url = Local API URL
 pref-local-api-base-url-help = Local mineru-api or mineru-router URL, for example http://127.0.0.1:8000.
+pref-local-api-timeout-minutes = Local API timeout (minutes)
 pref-save-images =
     .label = Save parsed result images
 pref-save-images-help = Save files from the MinerU result package images directory into the local parse result folder.

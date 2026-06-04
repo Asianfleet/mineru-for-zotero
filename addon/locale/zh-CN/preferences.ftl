@@ -16,6 +16,7 @@ pref-parse-mode-lite =
 pref-parse-mode-help = 精准解析生成框选数据；轻量解析只保存 Markdown。
 pref-local-api-base-url = 本地 API 地址
 pref-local-api-base-url-help = 本地 mineru-api 或 mineru-router 地址，例如 http://127.0.0.1:8000。
+pref-local-api-timeout-minutes = 本地 API 超时时间（分钟）
 pref-save-images =
     .label = 保存解析结果图片
 pref-save-images-help = 开启后会把 MinerU 结果包中 images 目录下的图片保存到本地解析结果目录。

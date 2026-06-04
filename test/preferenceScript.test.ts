@@ -5,10 +5,12 @@ import {
 } from "../src/modules/preferenceScript";
 import {
   getLocalApiBaseURL,
+  getLocalApiTimeoutMinutes,
   getParseMode,
   getParseSource,
   getSaveImages,
   setLocalApiBaseURL,
+  setLocalApiTimeoutMinutes,
   setParseMode,
   setParseSource,
   setSaveImages,
@@ -22,6 +24,7 @@ describe("preferenceScript", function () {
       'data-l10n-id="mineruForZotero-pref-api-service-title"',
       'id="zotero-prefpane-mineruForZotero-api-key"',
       'id="zotero-prefpane-mineruForZotero-local-api-base-url"',
+      'id="zotero-prefpane-mineruForZotero-local-api-timeout-minutes"',
       'id="zotero-prefpane-mineruForZotero-parse-source"',
       'id="zotero-prefpane-mineruForZotero-parse-mode"',
       'data-l10n-id="mineruForZotero-pref-data-storage-title"',
@@ -31,6 +34,17 @@ describe("preferenceScript", function () {
     ]);
     assertAboutSectionInsideMainGroupbox(preferences);
     assertSectionHeadingLevels(preferences);
+  });
+
+  it("keeps the local API timeout input compact and left-aligned", async function () {
+    const preferences = await fetchPreferencePanelMarkup();
+
+    assert.include(
+      preferences,
+      'id="zotero-prefpane-mineruForZotero-local-api-timeout-minutes"',
+    );
+    assert.include(preferences, "width: 72px");
+    assert.include(preferences, "text-align: left");
   });
 
   it("opens about links through Zotero's default browser launcher", function () {
@@ -83,6 +97,7 @@ describe("preferenceScript", function () {
     assert.equal(getParseSource(), "online");
     assert.equal(getParseMode(), "precise");
     assert.equal(getLocalApiBaseURL(), "http://127.0.0.1:8000");
+    assert.equal(getLocalApiTimeoutMinutes(), 30);
   });
 
   it("round-trips parse source, parse mode, and local API URL", function () {
@@ -90,14 +105,29 @@ describe("preferenceScript", function () {
       setParseSource("local");
       setParseMode("lite");
       setLocalApiBaseURL("http://127.0.0.1:9000/");
+      setLocalApiTimeoutMinutes(45);
 
       assert.equal(getParseSource(), "local");
       assert.equal(getParseMode(), "lite");
       assert.equal(getLocalApiBaseURL(), "http://127.0.0.1:9000/");
+      assert.equal(getLocalApiTimeoutMinutes(), 45);
     } finally {
       setParseSource("online");
       setParseMode("precise");
       setLocalApiBaseURL("http://127.0.0.1:8000");
+      setLocalApiTimeoutMinutes(30);
+    }
+  });
+
+  it("falls back to the default local API timeout for invalid values", function () {
+    try {
+      setLocalApiTimeoutMinutes(0);
+      assert.equal(getLocalApiTimeoutMinutes(), 30);
+
+      setLocalApiTimeoutMinutes(Number.NaN);
+      assert.equal(getLocalApiTimeoutMinutes(), 30);
+    } finally {
+      setLocalApiTimeoutMinutes(30);
     }
   });
 
@@ -143,6 +173,25 @@ describe("preferenceScript", function () {
     } finally {
       setParseSource("online");
       setParseMode("precise");
+    }
+  });
+
+  it("persists local API timeout changes from the preferences UI immediately", function () {
+    const timeout = fakePreferenceElement("45", "", "number");
+    const document = fakePreferenceDocument({
+      "zotero-prefpane-mineruForZotero-local-api-timeout-minutes": timeout,
+    });
+
+    try {
+      setLocalApiTimeoutMinutes(30);
+      registerPreferenceValueSync(document);
+
+      timeout.value = "45";
+      timeout.emit("change");
+
+      assert.equal(getLocalApiTimeoutMinutes(), 45);
+    } finally {
+      setLocalApiTimeoutMinutes(30);
     }
   });
 });

@@ -25,6 +25,7 @@ import { createStorage, type StorageAdapter } from "./storage";
 import { getString } from "../utils/locale";
 import {
   getApiKey,
+  getLocalApiTimeoutMinutes,
   getLocalApiBaseURL,
   getParseMode,
   getParseSource,
@@ -35,7 +36,7 @@ import {
 import { getMinerUStorageRoot } from "./preferenceScript";
 
 const POLL_INTERVAL_MS = 3000;
-const MAX_POLL_COUNT = 120;
+const DEFAULT_ONLINE_POLL_TIMEOUT_MS = 6 * 60 * 1000;
 const PROGRESS_WINDOW_ICON_URI = `chrome://${config.addonRef}/content/icons/favicon.png`;
 const PROGRESS_WINDOW_LABEL_LINE_HEIGHT_PX = 18;
 const PROGRESS_WINDOW_DETAIL_LEFT_OFFSET_PX = 22;
@@ -49,6 +50,7 @@ export interface ParseManagerDependencies {
   getParseSource?: () => ParseSource;
   getParseMode?: () => ParseMode;
   getLocalApiBaseURL?: () => string;
+  getLocalApiTimeoutMinutes?: () => number;
   getSaveImages?: () => boolean;
   storage?: StorageAdapter;
   createStorage?: () => StorageAdapter;
@@ -394,7 +396,12 @@ async function parseAttachmentWithDependencies(
       dependencies,
       createParseSubmittedNotice(currentNoticeContext),
     );
-    await waitForTask(client, taskID, dependencies.delay);
+    await waitForTask(
+      client,
+      taskID,
+      dependencies.delay,
+      getPollTimeoutMs(source, dependencies),
+    );
     phase = "download";
     const result = await client.downloadResult(taskID);
     if (result.kind === "lite") {
@@ -604,8 +611,10 @@ async function waitForTask(
   client: MinerUClient,
   taskID: string,
   delay: (ms: number) => Promise<void>,
+  timeoutMs: number,
 ): Promise<void> {
-  for (let count = 0; count < MAX_POLL_COUNT; count += 1) {
+  const maxPollCount = Math.ceil(timeoutMs / POLL_INTERVAL_MS);
+  for (let count = 0; count < maxPollCount; count += 1) {
     const result = await client.pollTask(taskID);
     if (result.status === "succeeded") {
       return;
@@ -921,6 +930,7 @@ function createDefaultDependencies(): ParseManagerDependencies {
     getParseSource,
     getParseMode,
     getLocalApiBaseURL,
+    getLocalApiTimeoutMinutes,
     getSaveImages,
     createStorage: () => createStorage(getMinerUStorageRoot()),
     createClient: (settings) => createMinerUClientForSettings(settings),
@@ -984,6 +994,16 @@ function getCurrentParseMode(
   dependencies: ParseManagerDependencies,
 ): ParseMode {
   return dependencies.getParseMode?.() ?? "precise";
+}
+
+function getPollTimeoutMs(
+  source: ParseSource,
+  dependencies: ParseManagerDependencies,
+): number {
+  if (source !== "local") {
+    return DEFAULT_ONLINE_POLL_TIMEOUT_MS;
+  }
+  return (dependencies.getLocalApiTimeoutMinutes?.() ?? 30) * 60 * 1000;
 }
 
 function requiresApiKey(source: ParseSource, mode: ParseMode): boolean {

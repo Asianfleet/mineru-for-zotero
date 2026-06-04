@@ -11,6 +11,7 @@ declare namespace _ZoteroTypes {
       "parseSource": string;
       "parseMode": string;
       "localApiBaseURL": string;
+      "localApiTimeoutMinutes": number;
       "saveImages": boolean;
     };
   }
