@@ -283,12 +283,18 @@ describe("readerOverlay", function () {
 
     const selectButtons = findElementsByDataAction(root, "select-copy");
     const actions = findElementsByClass(root, "mineru-copy-box-actions");
+    const boxes = findElementsByClass(root, "mineru-copy-box");
 
     selectButtons[0].dispatch("click", createClickEvent());
     assert.include(
       actions[0].className,
       "mineru-copy-select-panel-open",
       "first click opens first panel",
+    );
+    assert.include(
+      boxes[0].className,
+      "mineru-copy-box-actions-active",
+      "open panel keeps its box above later boxes",
     );
 
     selectButtons[1].dispatch("click", createClickEvent());
@@ -297,10 +303,20 @@ describe("readerOverlay", function () {
       "mineru-copy-select-panel-open",
       "opening second panel closes first panel",
     );
+    assert.notInclude(
+      boxes[0].className,
+      "mineru-copy-box-actions-active",
+      "closing first panel clears its elevated box state",
+    );
     assert.include(
       actions[1].className,
       "mineru-copy-select-panel-open",
       "second click opens second panel",
+    );
+    assert.include(
+      boxes[1].className,
+      "mineru-copy-box-actions-active",
+      "second open panel elevates the second box",
     );
 
     doc.dispatch("keydown", createKeyEvent("Escape"));
@@ -309,6 +325,11 @@ describe("readerOverlay", function () {
       "mineru-copy-select-panel-open",
       "Escape closes open panel",
     );
+    assert.notInclude(
+      boxes[1].className,
+      "mineru-copy-box-actions-active",
+      "Escape clears elevated box state",
+    );
 
     selectButtons[0].dispatch("click", createClickEvent());
     doc.dispatch("mousedown", createMouseEvent({ target: doc.body }));
@@ -316,6 +337,11 @@ describe("readerOverlay", function () {
       actions[0].className,
       "mineru-copy-select-panel-open",
       "outside mousedown closes open panel",
+    );
+    assert.notInclude(
+      boxes[0].className,
+      "mineru-copy-box-actions-active",
+      "outside mousedown clears elevated box state",
     );
   });
 
@@ -435,6 +461,12 @@ describe("readerOverlay", function () {
       ),
       ["Copy with $", "Copy without $"],
     );
+    assert.isTrue(
+      findElementsByClass(root, "mineru-copy-formula-menu-item").every(
+        (element) => !element.className.includes("mineru-copy-toolbar-button"),
+      ),
+      "formula menu items should not inherit toolbar icon button styles",
+    );
   });
 
   it("does not render list container boxes that cover reference boxes", function () {
@@ -501,6 +533,10 @@ describe("readerOverlay", function () {
     );
     assert.match(
       style.textContent,
+      /\.mineru-copy-box-actions-active\s*\{[^}]*z-index:\s*2147483002/s,
+    );
+    assert.match(
+      style.textContent,
       /\.mineru-copy-box-actions\s*\{[^}]*left:\s*50%[^}]*transform:\s*translateX\(-50%\)/s,
     );
     assert.match(
@@ -531,14 +567,15 @@ describe("readerOverlay", function () {
       style.textContent,
       /\.mineru-copy-toolbar-divider\s*\{[^}]*border-left:\s*1px solid/s,
     );
-    assert.include(
+    assert.notInclude(
       style.textContent,
       "chrome://mineruForZotero/content/box-toolbar-copy.svg",
     );
-    assert.include(
+    assert.notInclude(
       style.textContent,
       "chrome://mineruForZotero/content/box-toolbar-select-copy.svg",
     );
+    assert.include(style.textContent, "data:image/svg+xml");
     assert.match(
       style.textContent,
       /\.mineru-copy-select-panel\s*\{[^}]*resize:\s*both[^}]*user-select:\s*text/s,
@@ -546,6 +583,10 @@ describe("readerOverlay", function () {
     assert.match(
       style.textContent,
       /\.mineru-copy-formula-copy-group:hover\s+\.mineru-copy-formula-menu\s*\{[^}]*display:\s*flex/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-formula-menu-item\s*\{[^}]*width:\s*100%[^}]*height:\s*auto/s,
     );
   });
 
@@ -1425,19 +1466,43 @@ describe("readerOverlay", function () {
     });
 
     dispatchWindowEvent(listeners, "mousemove", { clientX: 40, clientY: 40 });
-    assert.include(firstBox.className, "mineru-copy-box-hovered");
-    assert.notInclude(secondBox.className, "mineru-copy-box-hovered");
+    assert.include(
+      firstBox.className,
+      "mineru-copy-box-hovered",
+      "first point hovers first box",
+    );
+    assert.notInclude(
+      secondBox.className,
+      "mineru-copy-box-hovered",
+      "first point does not hover second box",
+    );
 
     dispatchWindowEvent(listeners, "mousemove", { clientX: 140, clientY: 40 });
-    assert.notInclude(firstBox.className, "mineru-copy-box-hovered");
-    assert.include(secondBox.className, "mineru-copy-box-hovered");
+    assert.notInclude(
+      firstBox.className,
+      "mineru-copy-box-hovered",
+      "second point clears first box hover",
+    );
+    assert.include(
+      secondBox.className,
+      "mineru-copy-box-hovered",
+      "second point hovers second box",
+    );
 
     dispatchWindowEvent(listeners, "mousemove", { clientX: 400, clientY: 40 });
-    assert.notInclude(secondBox.className, "mineru-copy-box-hovered");
+    assert.notInclude(
+      secondBox.className,
+      "mineru-copy-box-hovered",
+      "outside point clears second box hover",
+    );
 
     dispatchWindowEvent(listeners, "mousemove", { clientX: 40, clientY: 40 });
     dispatchWindowEvent(listeners, "blur", {});
-    assert.notInclude(firstBox.className, "mineru-copy-box-hovered");
+    assert.notInclude(
+      firstBox.className,
+      "mineru-copy-box-hovered",
+      "blur clears first box hover",
+    );
   });
 
   it("keeps a box hovered while moving through the action gap", function () {
@@ -1516,6 +1581,96 @@ describe("readerOverlay", function () {
     assert.include(firstBox.className, "mineru-copy-box-hovered");
 
     dispatchWindowEvent(listeners, "mousemove", { clientX: 40, clientY: 90 });
+    assert.include(firstBox.className, "mineru-copy-box-hovered");
+    assert.notInclude(secondBox.className, "mineru-copy-box-hovered");
+  });
+
+  it("keeps the formula box hovered while moving through its dropdown menu", function () {
+    const listeners = new Map<string, EventListener[]>();
+    const root = createFakeElement() as unknown as HTMLDivElement;
+    const firstBox = createFakeElement();
+    firstBox.className = "mineru-copy-box";
+    firstBox.getBoundingClientRect = () =>
+      ({ left: 10, top: 20, right: 110, bottom: 80 }) as DOMRect;
+    const actions = createFakeElement();
+    actions.className = "mineru-copy-box-actions";
+    actions.getBoundingClientRect = () =>
+      ({ left: 20, top: 83, right: 100, bottom: 110 }) as DOMRect;
+    const menu = createFakeElement();
+    menu.className = "mineru-copy-formula-menu";
+    menu.getBoundingClientRect = () =>
+      ({ left: 20, top: 110, right: 170, bottom: 170 }) as DOMRect;
+    actions.append(menu);
+    firstBox.append(actions);
+    const secondBox = createFakeElement();
+    secondBox.className = "mineru-copy-box";
+    secondBox.getBoundingClientRect = () =>
+      ({ left: 10, top: 100, right: 180, bottom: 190 }) as DOMRect;
+    root.append(firstBox, secondBox);
+    const doc = {
+      querySelector() {
+        return null;
+      },
+      documentElement: null,
+      body: null,
+    } as unknown as Document;
+    const win = createEventWindow(listeners, null, "");
+
+    createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      reposition() {},
+    });
+
+    dispatchWindowEvent(listeners, "mousemove", { clientX: 40, clientY: 40 });
+    assert.include(firstBox.className, "mineru-copy-box-hovered");
+
+    dispatchWindowEvent(listeners, "mousemove", { clientX: 40, clientY: 130 });
+    assert.include(firstBox.className, "mineru-copy-box-hovered");
+    assert.notInclude(secondBox.className, "mineru-copy-box-hovered");
+  });
+
+  it("prioritizes an active formula dropdown over a later hovered box", function () {
+    const listeners = new Map<string, EventListener[]>();
+    const root = createFakeElement() as unknown as HTMLDivElement;
+    const firstBox = createFakeElement();
+    firstBox.className = "mineru-copy-box mineru-copy-box-actions-active";
+    firstBox.getBoundingClientRect = () =>
+      ({ left: 10, top: 20, right: 110, bottom: 80 }) as DOMRect;
+    const actions = createFakeElement();
+    actions.className = "mineru-copy-box-actions";
+    actions.getBoundingClientRect = () =>
+      ({ left: 20, top: 83, right: 100, bottom: 110 }) as DOMRect;
+    const menu = createFakeElement();
+    menu.className = "mineru-copy-formula-menu";
+    menu.getBoundingClientRect = () =>
+      ({ left: 20, top: 110, right: 170, bottom: 170 }) as DOMRect;
+    actions.append(menu);
+    firstBox.append(actions);
+    const secondBox = createFakeElement();
+    secondBox.className = "mineru-copy-box mineru-copy-box-hovered";
+    secondBox.getBoundingClientRect = () =>
+      ({ left: 10, top: 100, right: 180, bottom: 190 }) as DOMRect;
+    root.append(firstBox, secondBox);
+    const doc = {
+      querySelector() {
+        return null;
+      },
+      documentElement: null,
+      body: null,
+    } as unknown as Document;
+    const win = createEventWindow(listeners, null, "");
+
+    createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      reposition() {},
+    });
+
+    dispatchWindowEvent(listeners, "mousemove", { clientX: 40, clientY: 130 });
+
     assert.include(firstBox.className, "mineru-copy-box-hovered");
     assert.notInclude(secondBox.className, "mineru-copy-box-hovered");
   });
@@ -2473,6 +2628,12 @@ function dispatchWindowEvent(
   },
 ): void {
   for (const listener of listeners.get(type) ?? []) {
-    listener.call(input.currentTarget ?? null, input as Event);
+    try {
+      listener.call(input.currentTarget ?? null, input as Event);
+    } catch (error) {
+      throw new Error(
+        `dispatch ${type} failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
 }

@@ -66,18 +66,32 @@ export function findBoxAtPoint(
   root: HTMLElement,
   clientX: number,
   clientY: number,
+  options: { prioritizeActiveActions?: boolean } = {},
 ): HTMLElement | null {
   const boxes = getBoxElements(root);
+  if (options.prioritizeActiveActions ?? true) {
+    const activeBox = findBoxInActionsHoverArea(
+      boxes.filter((box) =>
+        hasClassName(box, "mineru-copy-box-actions-active"),
+      ),
+      clientX,
+      clientY,
+    );
+    if (activeBox) {
+      return activeBox;
+    }
+  }
+
   const hoveredBox = boxes.find((box) =>
     box.className.split(/\s+/).includes("mineru-copy-box-hovered"),
   );
-  const hoveredRect = hoveredBox?.getBoundingClientRect?.();
-  if (
-    hoveredBox &&
-    hoveredRect &&
-    isPointInBoxActionsHoverArea(hoveredBox, hoveredRect, clientX, clientY)
-  ) {
-    return hoveredBox;
+  const actionHoveredBox = findBoxInActionsHoverArea(
+    hoveredBox ? [hoveredBox] : [],
+    clientX,
+    clientY,
+  );
+  if (actionHoveredBox) {
+    return actionHoveredBox;
   }
 
   for (let index = boxes.length - 1; index >= 0; index -= 1) {
@@ -90,6 +104,31 @@ export function findBoxAtPoint(
   return null;
 }
 
+function findBoxInActionsHoverArea(
+  boxes: HTMLElement[],
+  clientX: number,
+  clientY: number,
+): HTMLElement | null {
+  for (let index = boxes.length - 1; index >= 0; index -= 1) {
+    const box = boxes[index];
+    const rect = box.getBoundingClientRect?.();
+    if (rect && isPointInBoxActionsHoverArea(box, rect, clientX, clientY)) {
+      return box;
+    }
+  }
+  return null;
+}
+
+/** 兼容真实 DOM 与测试桩的 className / classList 判断。 */
+function hasClassName(element: HTMLElement, className: string): boolean {
+  if (element.classList) {
+    return element.classList.contains(className);
+  }
+  return String(element.className ?? "")
+    .split(/\s+/)
+    .includes(className);
+}
+
 /** 保持 box actions 下方 hover 区域可命中，避免鼠标轻微下移就丢失 hover。 */
 export function isPointInBoxActionsHoverArea(
   box: HTMLElement,
@@ -98,8 +137,8 @@ export function isPointInBoxActionsHoverArea(
   clientY: number,
 ): boolean {
   const actions = getBoxActionsElement(box);
-  const actionsRect = actions?.getBoundingClientRect?.() ?? null;
-  if (!actionsRect) {
+  const actionHoverRects = getBoxActionsHoverRects(actions);
+  if (actionHoverRects.length === 0) {
     return (
       clientX >= rect.left &&
       clientX <= rect.right &&
@@ -108,16 +147,44 @@ export function isPointInBoxActionsHoverArea(
     );
   }
 
-  if (isPointInRect(clientX, clientY, actionsRect)) {
+  if (
+    actionHoverRects.some((actionRect) =>
+      isPointInRect(clientX, clientY, actionRect),
+    )
+  ) {
     return true;
   }
 
+  const actionsRect = actionHoverRects[0];
   return (
     clientX >= actionsRect.left &&
     clientX <= actionsRect.right &&
     clientY >= Math.min(rect.bottom, actionsRect.top) &&
     clientY <= Math.max(rect.bottom, actionsRect.top)
   );
+}
+
+/** 返回 actions 本体和会伸出 box 的浮动子菜单矩形，用于保持 hover 命中。 */
+export function getBoxActionsHoverRects(
+  actions: HTMLElement | null,
+): DOMRect[] {
+  if (!actions?.getBoundingClientRect) {
+    return [];
+  }
+  const rects = [actions.getBoundingClientRect()];
+  const querySelectorAll = actions.querySelectorAll?.bind(actions);
+  if (!querySelectorAll) {
+    return rects;
+  }
+  for (const element of Array.from(
+    querySelectorAll(".mineru-copy-formula-menu"),
+  ) as HTMLElement[]) {
+    const rect = element.getBoundingClientRect?.();
+    if (rect) {
+      rects.push(rect);
+    }
+  }
+  return rects;
 }
 
 /** 判断给定坐标是否落在指定矩形内。 */

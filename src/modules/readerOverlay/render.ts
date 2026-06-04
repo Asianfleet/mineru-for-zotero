@@ -10,6 +10,7 @@ import type {
   ReaderOverlaySelectionOptions,
 } from "./types";
 
+const ACTIVE_BOX_ACTIONS_CLASS = "mineru-copy-box-actions-active";
 const SELECT_PANEL_TOP_GUARD_PX = 80;
 const VIEWPORT_EDGE_GUARD_PX = 8;
 const selectPanelCloseHandlerDocs = new WeakSet<Document>();
@@ -154,6 +155,7 @@ export function createBoxActions(
       onClick: () => {
         closeOpenSelectPanels(doc);
         actions.classList.add("mineru-copy-select-panel-open");
+        setBoxActionsActive(actions, true);
         updateBoxActionPlacement(doc, actions);
       },
     }),
@@ -162,7 +164,13 @@ export function createBoxActions(
   const panel = createSelectCopyPanel(doc, box);
   actions.append(toolbar, panel);
   actions.addEventListener("mouseenter", () => {
+    setBoxActionsActive(actions, true);
     updateBoxActionPlacement(doc, actions);
+  });
+  actions.addEventListener("mouseleave", () => {
+    if (!hasClassName(actions, "mineru-copy-select-panel-open")) {
+      setBoxActionsActive(actions, false);
+    }
   });
   ensureSelectPanelCloseHandlers(doc);
   return actions;
@@ -271,12 +279,17 @@ function createFormulaMenuItem(
   label: string,
   onCopy: () => void,
 ): HTMLButtonElement {
-  return createToolbarButton(doc, {
-    className: "mineru-copy-formula-menu-item",
-    label,
-    onClick: onCopy,
-    showText: true,
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = "mineru-copy-formula-menu-item";
+  button.textContent = label;
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.addEventListener("click", (event) => {
+    stopOverlayActionEvent(event);
+    onCopy();
   });
+  return button;
 }
 
 /** 创建可选中文本的 readonly 面板。 */
@@ -348,6 +361,7 @@ function closeOpenSelectPanels(doc: Document): void {
       ".mineru-copy-select-panel-open",
     )) {
       actions.classList.remove("mineru-copy-select-panel-open");
+      setBoxActionsActive(actions as HTMLDivElement, false);
     }
   });
 }
@@ -441,6 +455,10 @@ function hasClassName(
     typeof element.className === "string" &&
     element.className.split(/\s+/).includes(className)
   );
+}
+
+function setBoxActionsActive(actions: HTMLDivElement, active: boolean): void {
+  actions.parentElement?.classList.toggle(ACTIVE_BOX_ACTIONS_CLASS, active);
 }
 
 function ensureSelectPanelCloseHandlers(doc: Document): void {

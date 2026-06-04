@@ -240,7 +240,7 @@ export function createReaderOverlayPositioningController(
     }
 
     const keyEvent = event as KeyboardEvent;
-    const active = keyEvent.shiftKey || keyEvent.ctrlKey;
+    const active = Boolean(keyEvent.shiftKey || keyEvent.ctrlKey);
     clearPendingModifierBlurCleanup();
     modifierActive = active;
     setOverlayModifierActive(options.root, active);
@@ -264,7 +264,7 @@ export function createReaderOverlayPositioningController(
 
     const mouseEvent = event as MouseEvent;
     clearPendingModifierBlurCleanup();
-    modifierActive = mouseEvent.shiftKey || mouseEvent.ctrlKey;
+    modifierActive = Boolean(mouseEvent.shiftKey || mouseEvent.ctrlKey);
     setOverlayModifierActive(options.root, modifierActive);
     setHoveredBox(
       options.root,
@@ -286,6 +286,7 @@ export function createReaderOverlayPositioningController(
       options.root,
       mouseEvent.clientX,
       mouseEvent.clientY,
+      { prioritizeActiveActions: false },
     );
     if (!box) {
       return;
