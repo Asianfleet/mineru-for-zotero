@@ -184,6 +184,23 @@ describe("itemTreeColumn", function () {
     assert.isNull(cell.querySelector(".mineru-parse-column-badges"));
   });
 
+  it("renders an empty cell when Zotero passes undefined data", function () {
+    const cell = renderMinerUParseCell(
+      0,
+      undefined,
+      {
+        className: "custom-column",
+      } as Parameters<typeof renderMinerUParseCell>[2],
+      false,
+      document,
+      () => "",
+    );
+
+    assert.equal(cell.textContent, "");
+    assert.equal(cell.childElementCount, 0);
+    assert.isNull(cell.querySelector(".mineru-parse-column-badges"));
+  });
+
   it("registers the column, hydrates ready statuses, and refreshes columns", async function () {
     ensureAddonRuntime();
     let refreshCount = 0;

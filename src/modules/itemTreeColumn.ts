@@ -96,7 +96,7 @@ export function createMinerUParseColumnRegistration(input: {
 
 export function renderMinerUParseCell(
   _index: number,
-  data: string,
+  data: string | undefined,
   column: { className: string },
   _isFirstColumn: boolean,
   doc: Document | undefined,
@@ -105,7 +105,7 @@ export function renderMinerUParseCell(
   const cellDoc = doc ?? Zotero.getMainWindow().document;
   const cell = cellDoc.createElement("span");
   cell.className = `${column.className} mineru-parse-column-cell`.trim();
-  const tokens = data.split("|").filter(Boolean);
+  const tokens = (data ?? "").split("|").filter(Boolean);
   if (tokens.length === 0) {
     return cell;
   }
