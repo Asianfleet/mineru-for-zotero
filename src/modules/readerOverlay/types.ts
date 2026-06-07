@@ -10,6 +10,7 @@ export interface ReaderOverlayState {
   selectedRawIndexes: Set<number>;
   selectionAnchorRawIndex: number | null;
   hoverRawIndex: number | null;
+  selectPanelActive: boolean;
   root: HTMLElement | null;
   rootsByWindow: Map<Window, HTMLElement>;
   cleanupPositioning: (() => void) | null;
@@ -44,6 +45,8 @@ export interface ReaderOverlaySelectionOptions {
   getSelectionAnchorRawIndex?: () => number | null;
   setSelectionAnchorRawIndex?: (rawIndex: number | null) => void;
   onSelectionChange?: () => void;
+  isSelectPanelActive?: () => boolean;
+  onSelectPanelActiveChange?: (active: boolean) => void;
 }
 
 export interface PageRect {

@@ -66,9 +66,24 @@ export function findBoxAtPoint(
   root: HTMLElement,
   clientX: number,
   clientY: number,
-  options: { prioritizeActiveActions?: boolean } = {},
+  options: {
+    prioritizeActiveActions?: boolean;
+    selectPanelActive?: boolean;
+  } = {},
 ): HTMLElement | null {
   const boxes = getBoxElements(root);
+  const openSelectPanelBox = findOpenSelectPanelBoxAtPoint(
+    boxes,
+    clientX,
+    clientY,
+  );
+  if (openSelectPanelBox.found) {
+    return openSelectPanelBox.box;
+  }
+  if (options.selectPanelActive) {
+    return null;
+  }
+
   if (options.prioritizeActiveActions ?? true) {
     const activeBox = findBoxInActionsHoverArea(
       boxes.filter((box) =>
@@ -104,6 +119,24 @@ export function findBoxAtPoint(
   return null;
 }
 
+function findOpenSelectPanelBoxAtPoint(
+  boxes: HTMLElement[],
+  clientX: number,
+  clientY: number,
+): { found: true; box: HTMLElement | null } | { found: false } {
+  const openPanelBoxes = boxes.filter((box) =>
+    hasClassName(getBoxActionsElement(box), "mineru-copy-select-panel-open"),
+  );
+  if (openPanelBoxes.length === 0) {
+    return { found: false };
+  }
+
+  return {
+    found: true,
+    box: findBoxInActionsHoverArea(openPanelBoxes, clientX, clientY),
+  };
+}
+
 function findBoxInActionsHoverArea(
   boxes: HTMLElement[],
   clientX: number,
@@ -120,11 +153,11 @@ function findBoxInActionsHoverArea(
 }
 
 /** 兼容真实 DOM 与测试桩的 className / classList 判断。 */
-function hasClassName(element: HTMLElement, className: string): boolean {
-  if (element.classList) {
+function hasClassName(element: HTMLElement | null, className: string): boolean {
+  if (element?.classList) {
     return element.classList.contains(className);
   }
-  return String(element.className ?? "")
+  return String(element?.className ?? "")
     .split(/\s+/)
     .includes(className);
 }
@@ -176,12 +209,17 @@ export function getBoxActionsHoverRects(
   if (!querySelectorAll) {
     return rects;
   }
-  for (const element of Array.from(
-    querySelectorAll(".mineru-copy-formula-menu"),
-  ) as HTMLElement[]) {
-    const rect = element.getBoundingClientRect?.();
-    if (rect) {
-      rects.push(rect);
+  for (const selector of [
+    ".mineru-copy-formula-menu",
+    ".mineru-copy-select-panel",
+  ]) {
+    for (const element of Array.from(
+      querySelectorAll(selector),
+    ) as HTMLElement[]) {
+      const rect = element.getBoundingClientRect?.();
+      if (rect) {
+        rects.push(rect);
+      }
     }
   }
   return rects;

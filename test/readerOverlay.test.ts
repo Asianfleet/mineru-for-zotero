@@ -238,13 +238,26 @@ describe("readerOverlay", function () {
     );
 
     const panels = findElementsByClass(root, "mineru-copy-select-panel");
+    const textareas = findElementsByClass(
+      root,
+      "mineru-copy-select-panel-textarea",
+    );
+    assert.lengthOf(textareas, 4);
     assert.deepEqual(
-      panels.map((element) => element.value),
+      textareas.map((element) => element.value),
       ["**Raw** markdown", "$E=mc^2$", "$a+b$", "$$x+y$$"],
     );
-    assert.isTrue(panels.every((element) => element.readOnly));
+    assert.isTrue(textareas.every((element) => element.readOnly));
     assert.isTrue(
-      panels.every((element) => element.dataset.ariaLabel === "Select copy"),
+      textareas.every((element) => element.dataset.ariaLabel === "Select copy"),
+    );
+    assert.isTrue(
+      panels.every(
+        (element) =>
+          findElementsByClass(element, "mineru-copy-select-panel-textarea")
+            .length === 1,
+      ),
+      "each floating panel wraps one textarea",
     );
   });
 
@@ -255,7 +268,10 @@ describe("readerOverlay", function () {
       [createBox(0, "text", "Selectable text")],
       "hover",
     );
-    const panel = findElementsByClass(root, "mineru-copy-select-panel")[0];
+    const panel = findElementsByClass(
+      root,
+      "mineru-copy-select-panel-textarea",
+    )[0];
     let prevented = false;
     let stopped = false;
 
@@ -270,6 +286,189 @@ describe("readerOverlay", function () {
 
     assert.isFalse(prevented);
     assert.isTrue(stopped);
+  });
+
+  it("keeps textarea pointer defaults for text selection and resize", function () {
+    const doc = createDocumentStub();
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      [createBox(0, "text", "Selectable text")],
+      "hover",
+    );
+    const textarea = findElementsByClass(
+      root,
+      "mineru-copy-select-panel-textarea",
+    )[0];
+    let prevented = false;
+    let stopped = false;
+
+    textarea.dispatch("mousedown", {
+      preventDefault() {
+        prevented = true;
+      },
+      stopPropagation() {
+        stopped = true;
+      },
+    } as unknown as Event);
+
+    assert.isFalse(prevented);
+    assert.isTrue(stopped);
+  });
+
+  it("focuses selectable copy textarea on pointer down without preventing native selection", function () {
+    const doc = createDocumentStub();
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      [createBox(0, "text", "Selectable text")],
+      "hover",
+    );
+    const textarea = findElementsByClass(
+      root,
+      "mineru-copy-select-panel-textarea",
+    )[0];
+    let focused = false;
+    let prevented = false;
+    (textarea as unknown as { focus: () => void }).focus = () => {
+      focused = true;
+    };
+
+    textarea.dispatch("pointerdown", {
+      type: "pointerdown",
+      target: textarea,
+      preventDefault() {
+        prevented = true;
+      },
+      stopPropagation() {},
+      stopImmediatePropagation() {},
+    } as unknown as Event);
+
+    assert.isTrue(focused);
+    assert.isFalse(prevented);
+  });
+
+  it("copies selected textarea text on Ctrl+C without entering reader copy handling", function () {
+    const globals = globalThis as typeof globalThis & { ztoolkit?: unknown };
+    const originalZtoolkit = globals.ztoolkit;
+    let copiedText = "";
+    globals.ztoolkit = {
+      Clipboard: class {
+        addText(text: string, type: string) {
+          if (type === "text/unicode") {
+            copiedText = text;
+          }
+          return this;
+        }
+        copy() {}
+      },
+    };
+
+    try {
+      const doc = createDocumentStub();
+      const root = buildReaderOverlayRoot(
+        doc as unknown as Document,
+        [createBox(0, "text", "Selectable text")],
+        "hover",
+      );
+      const textarea = findElementsByClass(
+        root,
+        "mineru-copy-select-panel-textarea",
+      )[0];
+      let prevented = false;
+      let stopped = false;
+      let stoppedImmediate = false;
+      Object.assign(textarea, {
+        selectionStart: 0,
+        selectionEnd: 10,
+      });
+
+      textarea.dispatch("keydown", {
+        type: "keydown",
+        target: textarea,
+        key: "c",
+        ctrlKey: true,
+        metaKey: false,
+        preventDefault() {
+          prevented = true;
+        },
+        stopPropagation() {
+          stopped = true;
+        },
+        stopImmediatePropagation() {
+          stoppedImmediate = true;
+        },
+      } as unknown as Event);
+
+      assert.equal(copiedText, "Selectable");
+      assert.isTrue(prevented);
+      assert.isTrue(stopped);
+      assert.isTrue(stoppedImmediate);
+    } finally {
+      globals.ztoolkit = originalZtoolkit;
+    }
+  });
+
+  it("isolates selectable copy textarea pointer and context menu events", function () {
+    const doc = createDocumentStub();
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      [createBox(0, "text", "Selectable text")],
+      "hover",
+    );
+    const textarea = findElementsByClass(
+      root,
+      "mineru-copy-select-panel-textarea",
+    )[0];
+
+    for (const type of ["pointerdown", "contextmenu"]) {
+      let prevented = false;
+      let stopped = false;
+      let stoppedImmediate = false;
+
+      textarea.dispatch(type, {
+        preventDefault() {
+          prevented = true;
+        },
+        stopPropagation() {
+          stopped = true;
+        },
+        stopImmediatePropagation() {
+          stoppedImmediate = true;
+        },
+      } as unknown as Event);
+
+      assert.isFalse(prevented, `${type} should keep native textarea defaults`);
+      assert.isTrue(stopped, `${type} should not bubble into Zotero reader`);
+      assert.isTrue(
+        stoppedImmediate,
+        `${type} should not reach sibling reader handlers`,
+      );
+    }
+  });
+
+  it("sizes selectable copy textarea rows from content length", function () {
+    const doc = createDocumentStub();
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      [
+        createBox(0, "text", "Short text"),
+        createBox(
+          1,
+          "text",
+          [
+            "First paragraph with enough text to wrap across multiple rows in the selectable copy panel.",
+            "Second paragraph with more selectable Markdown content.",
+            "Third paragraph.",
+          ].join("\n"),
+        ),
+      ],
+      "hover",
+    );
+    const textareas = findElementsByClass(
+      root,
+      "mineru-copy-select-panel-textarea",
+    );
+
+    assert.isAbove(textareas[1].rows, textareas[0].rows);
   });
 
   it("opens one selectable panel and closes it on Escape or outside click", function () {
@@ -342,6 +541,64 @@ describe("readerOverlay", function () {
       boxes[0].className,
       "mineru-copy-box-actions-active",
       "outside mousedown clears elevated box state",
+    );
+  });
+
+  it("locks selectable panel interactions to the owning box", function () {
+    const doc = createDocumentStub();
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      [createBox(0, "text", "First"), createBox(1, "text", "Second")],
+      "hover",
+    );
+    doc.body.append(root);
+
+    const selectButtons = findElementsByDataAction(root, "select-copy");
+    const actions = findElementsByClass(root, "mineru-copy-box-actions");
+    const boxes = findElementsByClass(root, "mineru-copy-box");
+
+    boxes[1].classList.add("mineru-copy-box-actions-active");
+    selectButtons[0].dispatch("click", createClickEvent());
+    assert.include(root.className, "mineru-copy-select-panel-active");
+    assert.notInclude(
+      boxes[1].className,
+      "mineru-copy-box-actions-active",
+      "opening a select panel clears stale active state from other boxes",
+    );
+
+    actions[1].dispatch("mouseenter", createMouseEvent({ target: actions[1] }));
+    assert.notInclude(
+      boxes[1].className,
+      "mineru-copy-box-actions-active",
+      "other box actions must not become active while a select panel is open",
+    );
+
+    doc.dispatch("mousedown", createMouseEvent({ target: doc.body }));
+    assert.notInclude(root.className, "mineru-copy-select-panel-active");
+  });
+
+  it("uses overlay state to suppress native hover controls while selecting panel text", function () {
+    const doc = createDocumentStub();
+
+    ensureReaderOverlayStyles(doc as unknown as Document);
+
+    const style = doc.headChildren[0];
+    assert.include(style.textContent, "mineru-copy-select-panel-active");
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-overlay-root:not\(\.mineru-copy-select-panel-active\) \.mineru-copy-box:hover/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-select-panel-active \.mineru-copy-box:not\(\.mineru-copy-box-actions-active\) \.mineru-copy-box-actions\s*\{[^}]*display:\s*none[^}]*pointer-events:\s*none/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-box-actions-active \.mineru-copy-box-actions\s*\{[^}]*z-index:\s*2147483003/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-page-layer-actions-active\s*\{[^}]*z-index:\s*2147483002/s,
     );
   });
 
@@ -424,9 +681,13 @@ describe("readerOverlay", function () {
     const actions = findElementsByClass(root, "mineru-copy-box-actions")[0];
     const toolbar = findElementsByClass(root, "mineru-copy-box-toolbar")[0];
     const panel = findElementsByClass(root, "mineru-copy-select-panel")[0];
+    const textarea = findElementsByClass(
+      root,
+      "mineru-copy-select-panel-textarea",
+    )[0];
 
     selectButton.dispatch("click", createClickEvent());
-    doc.dispatch("mousedown", createMouseEvent({ target: panel }));
+    doc.dispatch("mousedown", createMouseEvent({ target: textarea }));
     assert.include(actions.className, "mineru-copy-select-panel-open");
 
     doc.dispatch("mousedown", createMouseEvent({ target: toolbar }));
@@ -578,7 +839,15 @@ describe("readerOverlay", function () {
     assert.include(style.textContent, "data:image/svg+xml");
     assert.match(
       style.textContent,
-      /\.mineru-copy-select-panel\s*\{[^}]*resize:\s*both[^}]*user-select:\s*text/s,
+      /\.mineru-copy-select-panel-textarea\s*\{[^}]*resize:\s*both[^}]*user-select:\s*text/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-select-panel-textarea::selection\s*\{[^}]*background:\s*rgba\(37,\s*99,\s*235,\s*0\.35\)/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-select-panel-textarea::-moz-selection\s*\{[^}]*background:\s*rgba\(37,\s*99,\s*235,\s*0\.35\)/s,
     );
     assert.match(
       style.textContent,
@@ -889,6 +1158,41 @@ describe("readerOverlay", function () {
       scrollContainer.children,
       state?.root as unknown as FakeElement,
     );
+  });
+
+  it("updates reader overlay state when the rendered selectable panel opens", async function () {
+    const doc = createDocumentStub();
+    const reader = createReader({
+      instanceID: "reader-select-panel-state",
+      attachmentKey: "PANELSTATE",
+      views: [createView("primary")],
+    });
+    Object.assign(reader._iframeWindow.document, doc);
+    await createStorage(getMinerUStorageRoot()).writeResult({
+      attachment: {
+        id: 1,
+        key: "PANELSTATE",
+        libraryID: 1,
+        fileName: "a.pdf",
+        filePath: "a.pdf",
+        mtime: 1,
+      },
+      mineruTaskID: "task-panel-state",
+      rawResult: { content_list: [] },
+      markdown: "",
+      boxes: normalizedBoxes,
+    });
+
+    const state = await applyReaderOverlayMode(reader, "all");
+    const root = state?.root as unknown as FakeElement | null;
+    if (!root) {
+      assert.fail("Expected rendered overlay root");
+    }
+    const selectButton = findElementsByDataAction(root, "select-copy")[0];
+
+    selectButton.dispatch("click", createClickEvent());
+
+    assert.isTrue(state?.selectPanelActive);
   });
 
   it("prefers page elements over bare page attributes", function () {
@@ -1675,6 +1979,104 @@ describe("readerOverlay", function () {
     assert.notInclude(secondBox.className, "mineru-copy-box-hovered");
   });
 
+  it("does not hover other boxes while a selectable copy panel is open", function () {
+    const listeners = new Map<string, EventListener[]>();
+    const root = createFakeElement() as unknown as HTMLDivElement;
+    const firstBox = createFakeElement();
+    firstBox.className = "mineru-copy-box mineru-copy-box-actions-active";
+    firstBox.getBoundingClientRect = () =>
+      ({ left: 10, top: 20, right: 110, bottom: 80 }) as DOMRect;
+    const actions = createFakeElement();
+    actions.className = "mineru-copy-box-actions mineru-copy-select-panel-open";
+    actions.getBoundingClientRect = () =>
+      ({ left: 20, top: 83, right: 100, bottom: 110 }) as DOMRect;
+    const panel = createFakeElement();
+    panel.className = "mineru-copy-select-panel";
+    panel.getBoundingClientRect = () =>
+      ({ left: 20, top: 110, right: 170, bottom: 180 }) as DOMRect;
+    actions.append(panel);
+    firstBox.append(actions);
+    const secondBox = createFakeElement();
+    secondBox.className = "mineru-copy-box";
+    secondBox.getBoundingClientRect = () =>
+      ({ left: 10, top: 100, right: 180, bottom: 190 }) as DOMRect;
+    root.append(firstBox, secondBox);
+    const doc = {
+      querySelector() {
+        return null;
+      },
+      documentElement: null,
+      body: null,
+    } as unknown as Document;
+    const win = createEventWindow(listeners, null, "");
+
+    createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      reposition() {},
+      selectionOptions: {
+        isSelectPanelActive: () => true,
+      },
+    });
+
+    dispatchWindowEvent(listeners, "mousemove", { clientX: 40, clientY: 130 });
+    assert.notInclude(
+      firstBox.className,
+      "mineru-copy-box-hovered",
+      "select panel interaction should not keep the owner box hovered",
+    );
+    assert.notInclude(secondBox.className, "mineru-copy-box-hovered");
+
+    dispatchWindowEvent(listeners, "mousemove", { clientX: 40, clientY: 185 });
+    assert.notInclude(
+      firstBox.className,
+      "mineru-copy-box-hovered",
+      "select panel interaction should leave the owner box inactive",
+    );
+    assert.notInclude(
+      secondBox.className,
+      "mineru-copy-box-hovered",
+      "other boxes stay inactive while the select panel remains open",
+    );
+  });
+
+  it("suppresses hover in roots without an open panel while any selectable copy panel is active", function () {
+    const listeners = new Map<string, EventListener[]>();
+    const root = createFakeElement() as unknown as HTMLDivElement;
+    const box = createFakeElement();
+    box.className = "mineru-copy-box";
+    box.getBoundingClientRect = () =>
+      ({ left: 10, top: 100, right: 180, bottom: 190 }) as DOMRect;
+    root.append(box);
+    const doc = {
+      querySelector() {
+        return null;
+      },
+      documentElement: null,
+      body: null,
+    } as unknown as Document;
+    const win = createEventWindow(listeners, null, "");
+
+    createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      reposition() {},
+      selectionOptions: {
+        isSelectPanelActive: () => true,
+      },
+    });
+
+    dispatchWindowEvent(listeners, "mousemove", { clientX: 40, clientY: 130 });
+
+    assert.notInclude(
+      box.className,
+      "mineru-copy-box-hovered",
+      "a sibling root must not activate boxes behind another root's panel",
+    );
+  });
+
   it("uses the reader window WheelEvent constructor when the plugin global lacks one", function () {
     const originalWheelEvent = globalThis.WheelEvent;
     Object.defineProperty(globalThis, "WheelEvent", {
@@ -1781,6 +2183,72 @@ describe("readerOverlay", function () {
         value: originalWheelEvent,
       });
     }
+  });
+
+  it("leaves wheel events inside selectable copy panels to the textarea", function () {
+    let wheelListener: ((event: WheelEvent) => void) | null = null;
+    const panel = createFakeElement() as unknown as Node;
+    const root = {
+      contains(node: Node) {
+        return node === panel;
+      },
+    } as unknown as HTMLDivElement;
+    const scrollContainer = {
+      addEventListener() {},
+      removeEventListener() {},
+      scrollBy() {
+        assert.fail("Panel wheel should not scroll the reader container");
+      },
+    } as unknown as Element;
+    const doc = {
+      querySelector(selector: string) {
+        return selector === "#viewerContainer" ? scrollContainer : null;
+      },
+      documentElement: null,
+      body: null,
+    } as unknown as Document;
+    const win = {
+      addEventListener(type: string, listener: EventListener) {
+        if (type === "wheel") {
+          wheelListener = listener as (event: WheelEvent) => void;
+        }
+      },
+      removeEventListener() {},
+      requestAnimationFrame() {
+        return 1;
+      },
+      cancelAnimationFrame() {},
+      setTimeout() {
+        return 1;
+      },
+      clearTimeout() {},
+      setInterval() {
+        return 1;
+      },
+      clearInterval() {},
+    } as unknown as Window;
+    let prevented = false;
+    let stopped = false;
+
+    (panel as unknown as FakeElement).className = "mineru-copy-select-panel";
+    createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      reposition() {},
+    });
+    wheelListener?.({
+      target: panel,
+      preventDefault() {
+        prevented = true;
+      },
+      stopPropagation() {
+        stopped = true;
+      },
+    } as unknown as WheelEvent);
+
+    assert.isFalse(prevented);
+    assert.isFalse(stopped);
   });
 
   it("does not throw when a split pane window dies before cleanup", function () {
@@ -2412,6 +2880,7 @@ interface FakeElement {
   title: string;
   value: string;
   readOnly: boolean;
+  rows: number;
   hidden: boolean;
   children: FakeElement[];
   parentElement: FakeElement | null;
@@ -2466,6 +2935,7 @@ function createFakeElement(): FakeElement {
     title: "",
     value: "",
     readOnly: false,
+    rows: 0,
     hidden: false,
     children: [],
     parentElement: null,

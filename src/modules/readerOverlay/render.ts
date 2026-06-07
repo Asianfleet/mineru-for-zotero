@@ -14,6 +14,10 @@ const ACTIVE_BOX_ACTIONS_CLASS = "mineru-copy-box-actions-active";
 const SELECT_PANEL_TOP_GUARD_PX = 80;
 const VIEWPORT_EDGE_GUARD_PX = 8;
 const selectPanelCloseHandlerDocs = new WeakSet<Document>();
+const selectPanelOptionsByDoc = new WeakMap<
+  Document,
+  ReaderOverlaySelectionOptions
+>();
 const HORIZONTAL_PLACEMENT_CLASSES = [
   "mineru-copy-toolbar-shift-right",
   "mineru-copy-toolbar-shift-left",
@@ -116,7 +120,10 @@ export function createBoxElement(
     setBoxSelectedClass(element, selectedRawIndexes.has(box.rawIndex));
     selectionOptions.onSelectionChange?.();
   });
-  element.append(createBoxLabel(doc, box), createBoxActions(doc, box));
+  element.append(
+    createBoxLabel(doc, box),
+    createBoxActions(doc, box, selectionOptions),
+  );
   return element;
 }
 
@@ -135,6 +142,7 @@ export function createBoxLabel(
 export function createBoxActions(
   doc: Document,
   box: NormalizedBox,
+  selectionOptions: ReaderOverlaySelectionOptions = {},
 ): HTMLDivElement {
   const actions = doc.createElement("div");
   actions.className =
@@ -153,8 +161,11 @@ export function createBoxActions(
       className: "mineru-copy-toolbar-button-select",
       label: readerOverlayString("reader-select-copy-box", "Select copy"),
       onClick: () => {
-        closeOpenSelectPanels(doc);
+        closeOpenSelectPanels(doc, selectionOptions, false);
+        clearBoxActionsActive(doc);
         actions.classList.add("mineru-copy-select-panel-open");
+        syncSelectPanelActiveState(doc);
+        selectionOptions.onSelectPanelActiveChange?.(true);
         setBoxActionsActive(actions, true);
         updateBoxActionPlacement(doc, actions);
       },
@@ -164,15 +175,21 @@ export function createBoxActions(
   const panel = createSelectCopyPanel(doc, box);
   actions.append(toolbar, panel);
   actions.addEventListener("mouseenter", () => {
+    if (
+      (selectionOptions.isSelectPanelActive?.() ?? hasOpenSelectPanel(doc)) &&
+      !isSelectPanelOpen(actions)
+    ) {
+      return;
+    }
     setBoxActionsActive(actions, true);
     updateBoxActionPlacement(doc, actions);
   });
   actions.addEventListener("mouseleave", () => {
-    if (!hasClassName(actions, "mineru-copy-select-panel-open")) {
+    if (!isSelectPanelOpen(actions)) {
       setBoxActionsActive(actions, false);
     }
   });
-  ensureSelectPanelCloseHandlers(doc);
+  ensureSelectPanelCloseHandlers(doc, selectionOptions);
   return actions;
 }
 
@@ -296,18 +313,33 @@ function createFormulaMenuItem(
 function createSelectCopyPanel(
   doc: Document,
   box: NormalizedBox,
-): HTMLTextAreaElement {
-  const panel = doc.createElement("textarea");
+): HTMLDivElement {
+  const panel = doc.createElement("div");
   panel.className = "mineru-copy-select-panel";
-  panel.value = getSelectableBoxText(box);
-  panel.readOnly = true;
-  panel.setAttribute(
+
+  const textarea = doc.createElement("textarea");
+  textarea.className = "mineru-copy-select-panel-textarea";
+  textarea.value = getSelectableBoxText(box);
+  textarea.readOnly = true;
+  textarea.rows = computeSelectPanelRows(textarea.value);
+  textarea.setAttribute(
     "aria-label",
     readerOverlayString("reader-select-copy-box", "Select copy"),
   );
-  panel.addEventListener("mousedown", stopOverlayActionEvent);
-  panel.addEventListener("click", stopOverlayActionEvent);
-  panel.addEventListener("keydown", stopSelectPanelKeydownEvent);
+  for (const eventName of [
+    "pointerdown",
+    "pointerup",
+    "mousedown",
+    "mouseup",
+    "click",
+    "dblclick",
+    "contextmenu",
+  ]) {
+    panel.addEventListener(eventName, stopSelectPanelPointerEvent);
+    textarea.addEventListener(eventName, stopSelectPanelPointerEvent);
+  }
+  textarea.addEventListener("keydown", stopSelectPanelKeydownEvent);
+  panel.append(textarea);
   return panel;
 }
 
@@ -325,6 +357,17 @@ export function getSelectableBoxText(box: NormalizedBox): string {
     return value;
   }
   return `$${stripOuterDollars(value)}$`;
+}
+
+/** 根据文本长度估算 textarea 初始行数，避免长内容面板仍只有默认两行。 */
+export function computeSelectPanelRows(value: string): number {
+  const minRows = 4;
+  const maxRows = 12;
+  const approximateColumns = 48;
+  const rows = value.split(/\r?\n/).reduce((count, line) => {
+    return count + Math.max(1, Math.ceil(line.length / approximateColumns));
+  }, 0);
+  return Math.max(minRows, Math.min(maxRows, rows));
 }
 
 /** 判断公式文本是否已经由单层 dollar 包裹。 */
@@ -350,18 +393,116 @@ export function stopOverlayActionEvent(event: Event): void {
   event.stopPropagation();
 }
 
-/** 只隔离 textarea 键盘事件冒泡，保留原生选择与复制行为。 */
-function stopSelectPanelKeydownEvent(event: Event): void {
+/** 隔离 textarea 键盘事件，Ctrl/Cmd+C 直接复制选区，避免 reader 全局 copy handler 接管。 */
+function stopSelectPanelKeydownEvent(this: EventTarget, event: Event): void {
+  const textarea = findSelectPanelTextareaTarget(event.target ?? this);
+  if (textarea && isSelectPanelCopyShortcut(event)) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+    copyText(getSelectedTextareaText(textarea));
+    return;
+  }
+
   event.stopPropagation();
 }
 
-function closeOpenSelectPanels(doc: Document): void {
+/** 只隔离面板指针事件冒泡，保留 textarea 的原生选择、滚动条与 resize 行为。 */
+function stopSelectPanelPointerEvent(this: EventTarget, event: Event): void {
+  focusSelectPanelTextareaForPointerStart(event, this);
+  event.stopPropagation();
+  event.stopImmediatePropagation?.();
+}
+
+function isSelectPanelCopyShortcut(event: Event): boolean {
+  const keyboardEvent = event as KeyboardEvent;
+  return (
+    event.type === "keydown" &&
+    keyboardEvent.key?.toLowerCase() === "c" &&
+    (keyboardEvent.ctrlKey || keyboardEvent.metaKey)
+  );
+}
+
+function getSelectedTextareaText(textarea: HTMLTextAreaElement): string {
+  const selectionStart = textarea.selectionStart;
+  const selectionEnd = textarea.selectionEnd;
+  if (selectionStart === null || selectionEnd === null) {
+    return "";
+  }
+
+  const start = Math.min(selectionStart, selectionEnd);
+  const end = Math.max(selectionStart, selectionEnd);
+  return textarea.value.slice(start, end);
+}
+
+function focusSelectPanelTextareaForPointerStart(
+  event: Event,
+  currentTarget: EventTarget | null,
+): void {
+  if (event.type !== "pointerdown" && event.type !== "mousedown") {
+    return;
+  }
+
+  const textarea = findSelectPanelTextareaTarget(event.target ?? currentTarget);
+  if (!textarea) {
+    return;
+  }
+
+  try {
+    textarea.focus({ preventScroll: true });
+  } catch {
+    try {
+      textarea.focus();
+    } catch {
+      // 焦点诊断不能影响 textarea 原生指针行为。
+    }
+  }
+}
+
+function findSelectPanelTextareaTarget(
+  target: EventTarget | null,
+): HTMLTextAreaElement | null {
+  const element = target as HTMLElement | null;
+  if (!element) {
+    return null;
+  }
+
+  const closest = element.closest?.bind(element);
+  if (closest) {
+    try {
+      return closest(
+        ".mineru-copy-select-panel-textarea",
+      ) as HTMLTextAreaElement | null;
+    } catch {
+      // Reader teardown can leave cross-window dead objects behind.
+    }
+  }
+
+  let current: HTMLElement | null = element;
+  while (current) {
+    if (hasClassName(current, "mineru-copy-select-panel-textarea")) {
+      return current as HTMLTextAreaElement;
+    }
+    current = current.parentElement as HTMLElement | null;
+  }
+  return null;
+}
+
+function closeOpenSelectPanels(
+  doc: Document,
+  selectionOptions: ReaderOverlaySelectionOptions = {},
+  notifyActiveChange = true,
+): void {
   safeReaderOverlayCleanup(() => {
     for (const actions of doc.querySelectorAll(
       ".mineru-copy-select-panel-open",
     )) {
       actions.classList.remove("mineru-copy-select-panel-open");
       setBoxActionsActive(actions as HTMLDivElement, false);
+    }
+    syncSelectPanelActiveState(doc);
+    if (notifyActiveChange) {
+      selectionOptions.onSelectPanelActiveChange?.(false);
     }
   });
 }
@@ -459,9 +600,61 @@ function hasClassName(
 
 function setBoxActionsActive(actions: HTMLDivElement, active: boolean): void {
   actions.parentElement?.classList.toggle(ACTIVE_BOX_ACTIONS_CLASS, active);
+  syncPageLayerActionsActiveState(actions);
 }
 
-function ensureSelectPanelCloseHandlers(doc: Document): void {
+function isSelectPanelOpen(actions: HTMLElement): boolean {
+  return hasClassName(actions, "mineru-copy-select-panel-open");
+}
+
+function hasOpenSelectPanel(doc: Document): boolean {
+  return doc.querySelectorAll(".mineru-copy-select-panel-open").length > 0;
+}
+
+function clearBoxActionsActive(doc: Document): void {
+  for (const actions of doc.querySelectorAll(".mineru-copy-box-actions")) {
+    setBoxActionsActive(actions as HTMLDivElement, false);
+  }
+}
+
+function syncSelectPanelActiveState(doc: Document): void {
+  const active = hasOpenSelectPanel(doc);
+  for (const root of doc.querySelectorAll(".mineru-copy-overlay-root")) {
+    root.classList.toggle("mineru-copy-select-panel-active", active);
+  }
+}
+
+function syncPageLayerActionsActiveState(actions: HTMLElement): void {
+  const pageLayer = findAncestorWithClass(actions, "mineru-copy-page-layer");
+  if (!pageLayer) {
+    return;
+  }
+
+  pageLayer.classList.toggle(
+    "mineru-copy-page-layer-actions-active",
+    pageLayer.querySelectorAll(".mineru-copy-box-actions-active").length > 0,
+  );
+}
+
+function findAncestorWithClass(
+  element: HTMLElement,
+  className: string,
+): HTMLElement | null {
+  let current: HTMLElement | null = element;
+  while (current) {
+    if (hasClassName(current, className)) {
+      return current;
+    }
+    current = current.parentElement as HTMLElement | null;
+  }
+  return null;
+}
+
+function ensureSelectPanelCloseHandlers(
+  doc: Document,
+  selectionOptions: ReaderOverlaySelectionOptions,
+): void {
+  selectPanelOptionsByDoc.set(doc, selectionOptions);
   if (selectPanelCloseHandlerDocs.has(doc)) {
     return;
   }
@@ -469,14 +662,14 @@ function ensureSelectPanelCloseHandlers(doc: Document): void {
 
   doc.addEventListener("keydown", (event) => {
     if ((event as KeyboardEvent).key === "Escape") {
-      closeOpenSelectPanels(doc);
+      closeOpenSelectPanels(doc, selectPanelOptionsByDoc.get(doc));
     }
   });
   doc.addEventListener(
     "mousedown",
     (event) => {
       if (!isInsideActions(event.target)) {
-        closeOpenSelectPanels(doc);
+        closeOpenSelectPanels(doc, selectPanelOptionsByDoc.get(doc));
       }
     },
     true,

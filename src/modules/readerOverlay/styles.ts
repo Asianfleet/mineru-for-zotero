@@ -26,6 +26,10 @@ export const READER_OVERLAY_CSS = `
   pointer-events: none;
 }
 
+.mineru-copy-page-layer-actions-active {
+  z-index: 2147483002;
+}
+
 .mineru-copy-overlay-modifier-active .mineru-copy-page-layer {
   pointer-events: auto;
 }
@@ -42,7 +46,7 @@ export const READER_OVERLAY_CSS = `
   pointer-events: auto;
 }
 
-.mineru-copy-box:hover,
+.mineru-copy-overlay-root:not(.mineru-copy-select-panel-active) .mineru-copy-box:hover,
 .mineru-copy-box-hovered {
   background: rgba(64, 156, 255, 0.18);
   z-index: 2147483001;
@@ -50,6 +54,10 @@ export const READER_OVERLAY_CSS = `
 
 .mineru-copy-box-actions-active {
   z-index: 2147483002;
+}
+
+.mineru-copy-box-actions-active .mineru-copy-box-actions {
+  z-index: 2147483003;
 }
 
 .mineru-copy-box-selected {
@@ -64,8 +72,9 @@ export const READER_OVERLAY_CSS = `
   background: transparent;
 }
 
-.mineru-copy-mode-hover .mineru-copy-box:hover,
-.mineru-copy-mode-hover .mineru-copy-box-hovered {
+.mineru-copy-overlay-root:not(.mineru-copy-select-panel-active).mineru-copy-mode-hover .mineru-copy-box:hover,
+.mineru-copy-mode-hover .mineru-copy-box-hovered,
+.mineru-copy-mode-hover .mineru-copy-box-actions-active {
   opacity: 1;
   border-color: rgba(33, 99, 235, 0.9);
   background: rgba(64, 156, 255, 0.18);
@@ -81,8 +90,9 @@ export const READER_OVERLAY_CSS = `
   display: none;
 }
 
-.mineru-copy-box:hover .mineru-copy-box-label,
-.mineru-copy-box-hovered .mineru-copy-box-label {
+.mineru-copy-overlay-root:not(.mineru-copy-select-panel-active) .mineru-copy-box:hover .mineru-copy-box-label,
+.mineru-copy-box-hovered .mineru-copy-box-label,
+.mineru-copy-box-actions-active .mineru-copy-box-label {
   display: block;
 }
 
@@ -116,11 +126,16 @@ export const READER_OVERLAY_CSS = `
   pointer-events: none;
 }
 
-.mineru-copy-box:hover .mineru-copy-box-actions,
+.mineru-copy-overlay-root:not(.mineru-copy-select-panel-active) .mineru-copy-box:hover .mineru-copy-box-actions,
 .mineru-copy-box-hovered .mineru-copy-box-actions,
 .mineru-copy-box-actions-active .mineru-copy-box-actions,
 .mineru-copy-select-panel-open {
   display: block;
+}
+
+.mineru-copy-select-panel-active .mineru-copy-box:not(.mineru-copy-box-actions-active) .mineru-copy-box-actions {
+  display: none;
+  pointer-events: none;
 }
 
 .mineru-copy-toolbar-above {
@@ -251,10 +266,18 @@ export const READER_OVERLAY_CSS = `
   bottom: calc(100% + 6px);
   width: min(360px, 70vw);
   min-width: 180px;
-  min-height: 48px;
-  max-height: 220px;
   transform: translateX(-50%);
   display: none;
+  box-sizing: border-box;
+  pointer-events: auto;
+}
+
+.mineru-copy-select-panel-textarea {
+  display: block;
+  width: 100%;
+  min-width: 180px;
+  min-height: 84px;
+  max-height: min(420px, 70vh);
   resize: both;
   overflow: auto;
   box-sizing: border-box;
@@ -269,6 +292,16 @@ export const READER_OVERLAY_CSS = `
   padding: 8px 10px;
   user-select: text;
   pointer-events: auto;
+}
+
+.mineru-copy-select-panel-textarea::selection {
+  background: rgba(37, 99, 235, 0.35);
+  color: var(--fill-primary, FieldText);
+}
+
+.mineru-copy-select-panel-textarea::-moz-selection {
+  background: rgba(37, 99, 235, 0.35);
+  color: var(--fill-primary, FieldText);
 }
 
 .mineru-copy-select-panel-open .mineru-copy-select-panel {
