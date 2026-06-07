@@ -7,7 +7,7 @@ import {
   positionPageLayers,
 } from "./positioning";
 import { buildReaderOverlayRoot } from "./render";
-import { syncSelectedBoxClasses } from "./selection";
+import { setHoveredBox, syncSelectedBoxClasses } from "./selection";
 import {
   cleanupReaderOverlayRoot,
   destroyReaderOverlay,
@@ -132,14 +132,8 @@ export async function renderReaderOverlayForReader(
     }
 
     const mountContainer = getReaderOverlayMountContainer(doc);
-    const root = buildReaderOverlayRoot(doc, boxes, mode, {
-      selectedRawIndexes: state.selectedRawIndexes,
-      getSelectionAnchorRawIndex: () => state.selectionAnchorRawIndex,
-      setSelectionAnchorRawIndex: (rawIndex) => {
-        state.selectionAnchorRawIndex = rawIndex;
-      },
-      onSelectionChange: () => syncSelectedBoxClasses(state),
-    });
+    const selectionOptions = createSelectionOptions(state);
+    const root = buildReaderOverlayRoot(doc, boxes, mode, selectionOptions);
     ensureReaderOverlayStyles(doc);
     positionPageLayers(doc, root);
     mountContainer?.append(root);
@@ -149,7 +143,7 @@ export async function renderReaderOverlayForReader(
       win,
       root,
       reposition: () => positionPageLayers(doc, root),
-      selectionOptions: createSelectionOptions(state, root),
+      selectionOptions,
     }).cleanup;
     state.rootsByWindow.set(win, root);
     state.cleanupPositioningByWindow.set(win, cleanup);
@@ -159,28 +153,34 @@ export async function renderReaderOverlayForReader(
   return state;
 }
 
-/** 基于当前 state 与 root 构造 positioning controller 所需的 selection options。 */
+/** 基于当前 state 构造渲染与定位共用的 selection options。 */
 function createSelectionOptions(
   state: ReaderOverlayState,
-  root: HTMLDivElement,
 ): import("./types").ReaderOverlaySelectionOptions {
   return {
     selectedRawIndexes: state.selectedRawIndexes,
-    selectableRawIndexes: readSelectableRawIndexes(root),
     getSelectionAnchorRawIndex: () => state.selectionAnchorRawIndex,
     setSelectionAnchorRawIndex: (rawIndex) => {
       state.selectionAnchorRawIndex = rawIndex;
     },
     onSelectionChange: () => syncSelectedBoxClasses(state),
+    isSelectPanelActive: () => state.selectPanelActive,
+    onSelectPanelActiveChange: (active) => {
+      syncSelectPanelActiveClasses(state, active);
+    },
   };
 }
 
-/** 从 root dataset 读取可选择的 rawIndex 列表。 */
-function readSelectableRawIndexes(root: HTMLDivElement): number[] {
-  return (
-    root.dataset.selectableRawIndexes
-      ?.split(",")
-      .map((value) => Number(value))
-      .filter((value) => Number.isFinite(value)) ?? []
-  );
+/** 同步 select-copy 面板交互锁，避免 split/iframe roots 继续激活下层 box。 */
+function syncSelectPanelActiveClasses(
+  state: ReaderOverlayState,
+  active: boolean,
+): void {
+  state.selectPanelActive = active;
+  for (const root of state.rootsByWindow.values()) {
+    root.classList.toggle("mineru-copy-select-panel-active", active);
+    if (active) {
+      setHoveredBox(root, null);
+    }
+  }
 }

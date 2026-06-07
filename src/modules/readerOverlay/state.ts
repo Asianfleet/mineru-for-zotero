@@ -37,6 +37,7 @@ export function getReaderOverlayState(
     selectedRawIndexes: new Set<number>(),
     selectionAnchorRawIndex: null,
     hoverRawIndex: null,
+    selectPanelActive: false,
     root: null,
     rootsByWindow: new Map<Window, HTMLElement>(),
     cleanupPositioning: null,
@@ -141,6 +142,7 @@ export function destroyAllReaderOverlays(): void {
 /** 清理 state 中持有的 root 与 positioning cleanup 引用。 */
 export function cleanupReaderOverlayRoot(state: ReaderOverlayState): void {
   ensureReaderOverlayStateMaps(state);
+  state.selectPanelActive = false;
   const hadPositioningByWindow = state.cleanupPositioningByWindow.size > 0;
   const hadRootsByWindow = state.rootsByWindow.size > 0;
   for (const cleanup of state.cleanupPositioningByWindow.values()) {
@@ -167,6 +169,7 @@ export function ensureReaderOverlayStateMaps(
 ): ReaderOverlayState {
   state.rootsByWindow ??= new Map<Window, HTMLElement>();
   state.cleanupPositioningByWindow ??= new Map<Window, () => void>();
+  state.selectPanelActive ??= false;
   return state;
 }
 

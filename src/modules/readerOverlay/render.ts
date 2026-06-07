@@ -10,6 +10,21 @@ import type {
   ReaderOverlaySelectionOptions,
 } from "./types";
 
+const ACTIVE_BOX_ACTIONS_CLASS = "mineru-copy-box-actions-active";
+const SELECT_PANEL_TOP_GUARD_PX = 80;
+const VIEWPORT_EDGE_GUARD_PX = 8;
+const selectPanelCloseHandlerDocs = new WeakSet<Document>();
+const selectPanelOptionsByDoc = new WeakMap<
+  Document,
+  ReaderOverlaySelectionOptions
+>();
+const HORIZONTAL_PLACEMENT_CLASSES = [
+  "mineru-copy-toolbar-shift-right",
+  "mineru-copy-toolbar-shift-left",
+  "mineru-copy-select-panel-right",
+  "mineru-copy-select-panel-left",
+] as const;
+
 /** 把归一化 bbox 转成可直接赋给 DOM style 的百分比定位样式。 */
 export function computeBoxStyle(box: NormalizedBox): ReaderOverlayBoxStyle {
   return {
@@ -105,7 +120,10 @@ export function createBoxElement(
     setBoxSelectedClass(element, selectedRawIndexes.has(box.rawIndex));
     selectionOptions.onSelectionChange?.();
   });
-  element.append(createBoxLabel(doc, box), createBoxActions(doc, box));
+  element.append(
+    createBoxLabel(doc, box),
+    createBoxActions(doc, box, selectionOptions),
+  );
   return element;
 }
 
@@ -124,42 +142,538 @@ export function createBoxLabel(
 export function createBoxActions(
   doc: Document,
   box: NormalizedBox,
+  selectionOptions: ReaderOverlaySelectionOptions = {},
 ): HTMLDivElement {
   const actions = doc.createElement("div");
-  actions.className = "mineru-copy-box-actions";
-  if (isFormulaBox(box) && box.formula) {
-    actions.append(
-      createCopyButton(
-        doc,
-        readerOverlayString("reader-copy-formula-with-dollar", "Copy with $"),
-        () => {
-          copyText(formatFormulaForCopy(box.formula ?? "", "with-dollar"));
-        },
-      ),
-      createCopyButton(
-        doc,
-        readerOverlayString(
-          "reader-copy-formula-without-dollar",
-          "Copy without $",
-        ),
-        () => {
-          copyText(formatFormulaForCopy(box.formula ?? "", "without-dollar"));
-        },
-      ),
-    );
-    return actions;
+  actions.className =
+    "mineru-copy-box-actions mineru-copy-toolbar-below mineru-copy-select-panel-above";
+  actions.dataset.rawIndex = String(box.rawIndex);
+
+  const toolbar = doc.createElement("div");
+  toolbar.className = "mineru-copy-box-toolbar";
+  toolbar.addEventListener("mousedown", stopOverlayActionEvent);
+  toolbar.addEventListener("click", stopOverlayActionEvent);
+  toolbar.append(
+    createToolbarCopyControl(doc, box),
+    createToolbarDivider(doc),
+    createToolbarButton(doc, {
+      action: "select-copy",
+      className: "mineru-copy-toolbar-button-select",
+      label: readerOverlayString("reader-select-copy-box", "Select copy"),
+      onClick: () => {
+        closeOpenSelectPanels(doc, selectionOptions, false);
+        clearBoxActionsActive(doc);
+        actions.classList.add("mineru-copy-select-panel-open");
+        syncSelectPanelActiveState(doc);
+        selectionOptions.onSelectPanelActiveChange?.(true);
+        setBoxActionsActive(actions, true);
+        updateBoxActionPlacement(doc, actions);
+      },
+    }),
+  );
+
+  const panel = createSelectCopyPanel(doc, box);
+  actions.append(toolbar, panel);
+  actions.addEventListener("mouseenter", () => {
+    if (
+      (selectionOptions.isSelectPanelActive?.() ?? hasOpenSelectPanel(doc)) &&
+      !isSelectPanelOpen(actions)
+    ) {
+      return;
+    }
+    setBoxActionsActive(actions, true);
+    updateBoxActionPlacement(doc, actions);
+  });
+  actions.addEventListener("mouseleave", () => {
+    if (!isSelectPanelOpen(actions)) {
+      setBoxActionsActive(actions, false);
+    }
+  });
+  ensureSelectPanelCloseHandlers(doc, selectionOptions);
+  return actions;
+}
+
+interface ToolbarButtonOptions {
+  action?: string;
+  className: string;
+  label: string;
+  onClick: () => void;
+  showText?: boolean;
+}
+
+/** 创建普通文本或公式复制入口。 */
+function createToolbarCopyControl(
+  doc: Document,
+  box: NormalizedBox,
+): HTMLButtonElement | HTMLDivElement {
+  if (!isFormulaBox(box)) {
+    return createToolbarButton(doc, {
+      action: "copy",
+      className: "mineru-copy-toolbar-button-copy",
+      label: readerOverlayString("reader-copy-box", "Copy"),
+      onClick: () => {
+        copyText(formatBoxesForCopy([box]));
+      },
+    });
   }
 
-  actions.append(
-    createCopyButton(
+  const group = doc.createElement("div");
+  group.className = "mineru-copy-formula-copy-group";
+  const label = readerOverlayString(
+    "reader-copy-formula-menu",
+    "Formula copy options",
+  );
+  group.title = label;
+
+  const trigger = createToolbarButton(doc, {
+    action: "copy",
+    className: "mineru-copy-toolbar-button-copy",
+    label,
+    onClick: () => {},
+  });
+  const menu = doc.createElement("div");
+  menu.className = "mineru-copy-formula-menu";
+  menu.title = label;
+  menu.append(
+    createFormulaMenuItem(
       doc,
-      readerOverlayString("reader-copy-box", "Copy"),
+      readerOverlayString("reader-copy-formula-with-dollar", "Copy with $"),
       () => {
-        copyText(formatBoxesForCopy([box]));
+        copyText(
+          formatFormulaForCopy(box.formula ?? box.markdown, "with-dollar"),
+        );
+      },
+    ),
+    createFormulaMenuItem(
+      doc,
+      readerOverlayString(
+        "reader-copy-formula-without-dollar",
+        "Copy without $",
+      ),
+      () => {
+        copyText(
+          formatFormulaForCopy(box.formula ?? box.markdown, "without-dollar"),
+        );
       },
     ),
   );
-  return actions;
+  group.append(trigger, menu);
+  return group;
+}
+
+/** 创建 toolbar 按钮并阻止事件继续进入 PDF.js 选择逻辑。 */
+function createToolbarButton(
+  doc: Document,
+  options: ToolbarButtonOptions,
+): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = `mineru-copy-toolbar-button ${options.className}`;
+  button.title = options.label;
+  button.textContent = options.showText ? options.label : "";
+  button.setAttribute("aria-label", options.label);
+  if (options.action) {
+    button.dataset.mineruAction = options.action;
+  }
+  button.addEventListener("click", (event) => {
+    stopOverlayActionEvent(event);
+    options.onClick();
+  });
+  return button;
+}
+
+/** 创建 toolbar 分隔线。 */
+function createToolbarDivider(doc: Document): HTMLSpanElement {
+  const divider = doc.createElement("span");
+  divider.className = "mineru-copy-toolbar-divider";
+  divider.setAttribute("aria-hidden", "true");
+  return divider;
+}
+
+/** 创建公式复制下拉菜单中的具体复制动作。 */
+function createFormulaMenuItem(
+  doc: Document,
+  label: string,
+  onCopy: () => void,
+): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = "mineru-copy-formula-menu-item";
+  button.textContent = label;
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.addEventListener("click", (event) => {
+    stopOverlayActionEvent(event);
+    onCopy();
+  });
+  return button;
+}
+
+/** 创建可选中文本的 readonly 面板。 */
+function createSelectCopyPanel(
+  doc: Document,
+  box: NormalizedBox,
+): HTMLDivElement {
+  const panel = doc.createElement("div");
+  panel.className = "mineru-copy-select-panel";
+
+  const textarea = doc.createElement("textarea");
+  textarea.className = "mineru-copy-select-panel-textarea";
+  textarea.value = getSelectableBoxText(box);
+  textarea.readOnly = true;
+  textarea.rows = computeSelectPanelRows(textarea.value);
+  textarea.setAttribute(
+    "aria-label",
+    readerOverlayString("reader-select-copy-box", "Select copy"),
+  );
+  for (const eventName of [
+    "pointerdown",
+    "pointerup",
+    "mousedown",
+    "mouseup",
+    "click",
+    "dblclick",
+    "contextmenu",
+  ]) {
+    panel.addEventListener(eventName, stopSelectPanelPointerEvent);
+    textarea.addEventListener(eventName, stopSelectPanelPointerEvent);
+  }
+  textarea.addEventListener("keydown", stopSelectPanelKeydownEvent);
+  panel.append(textarea);
+  return panel;
+}
+
+/** 获取 select-copy 面板中允许用户手动选择的文本。 */
+export function getSelectableBoxText(box: NormalizedBox): string {
+  if (!isFormulaBox(box)) {
+    return box.markdown || formatBoxesForCopy([box]);
+  }
+
+  if (hasDollarWrappedFormula(box.markdown)) {
+    return box.markdown.trim();
+  }
+  const value = box.formula || box.markdown || formatBoxesForCopy([box]);
+  if (hasDollarWrappedFormula(value)) {
+    return value;
+  }
+  return `$${stripOuterDollars(value)}$`;
+}
+
+/** 根据文本长度估算 textarea 初始行数，避免长内容面板仍只有默认两行。 */
+export function computeSelectPanelRows(value: string): number {
+  const minRows = 4;
+  const maxRows = 12;
+  const approximateColumns = 48;
+  const rows = value.split(/\r?\n/).reduce((count, line) => {
+    return count + Math.max(1, Math.ceil(line.length / approximateColumns));
+  }, 0);
+  return Math.max(minRows, Math.min(maxRows, rows));
+}
+
+/** 判断公式文本是否已经由单层 dollar 包裹。 */
+export function hasDollarWrappedFormula(value: string): boolean {
+  const trimmed = value.trim();
+  return (
+    trimmed.length >= 2 && trimmed.startsWith("$") && trimmed.endsWith("$")
+  );
+}
+
+/** 移除公式文本最外层 dollar，便于统一重新包裹。 */
+export function stripOuterDollars(value: string): string {
+  let stripped = value.trim();
+  while (hasDollarWrappedFormula(stripped)) {
+    stripped = stripped.slice(1, -1).trim();
+  }
+  return stripped;
+}
+
+/** 阻止 overlay action 的事件继续触发 PDF.js 或 box 选择。 */
+export function stopOverlayActionEvent(event: Event): void {
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+/** 隔离 textarea 键盘事件，Ctrl/Cmd+C 直接复制选区，避免 reader 全局 copy handler 接管。 */
+function stopSelectPanelKeydownEvent(this: EventTarget, event: Event): void {
+  const textarea = findSelectPanelTextareaTarget(event.target ?? this);
+  if (textarea && isSelectPanelCopyShortcut(event)) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation?.();
+    copyText(getSelectedTextareaText(textarea));
+    return;
+  }
+
+  event.stopPropagation();
+}
+
+/** 只隔离面板指针事件冒泡，保留 textarea 的原生选择、滚动条与 resize 行为。 */
+function stopSelectPanelPointerEvent(this: EventTarget, event: Event): void {
+  focusSelectPanelTextareaForPointerStart(event, this);
+  event.stopPropagation();
+  event.stopImmediatePropagation?.();
+}
+
+function isSelectPanelCopyShortcut(event: Event): boolean {
+  const keyboardEvent = event as KeyboardEvent;
+  return (
+    event.type === "keydown" &&
+    keyboardEvent.key?.toLowerCase() === "c" &&
+    (keyboardEvent.ctrlKey || keyboardEvent.metaKey)
+  );
+}
+
+function getSelectedTextareaText(textarea: HTMLTextAreaElement): string {
+  const selectionStart = textarea.selectionStart;
+  const selectionEnd = textarea.selectionEnd;
+  if (selectionStart === null || selectionEnd === null) {
+    return "";
+  }
+
+  const start = Math.min(selectionStart, selectionEnd);
+  const end = Math.max(selectionStart, selectionEnd);
+  return textarea.value.slice(start, end);
+}
+
+function focusSelectPanelTextareaForPointerStart(
+  event: Event,
+  currentTarget: EventTarget | null,
+): void {
+  if (event.type !== "pointerdown" && event.type !== "mousedown") {
+    return;
+  }
+
+  const textarea = findSelectPanelTextareaTarget(event.target ?? currentTarget);
+  if (!textarea) {
+    return;
+  }
+
+  try {
+    textarea.focus({ preventScroll: true });
+  } catch {
+    try {
+      textarea.focus();
+    } catch {
+      // 焦点诊断不能影响 textarea 原生指针行为。
+    }
+  }
+}
+
+function findSelectPanelTextareaTarget(
+  target: EventTarget | null,
+): HTMLTextAreaElement | null {
+  const element = target as HTMLElement | null;
+  if (!element) {
+    return null;
+  }
+
+  const closest = element.closest?.bind(element);
+  if (closest) {
+    try {
+      return closest(
+        ".mineru-copy-select-panel-textarea",
+      ) as HTMLTextAreaElement | null;
+    } catch {
+      // Reader teardown can leave cross-window dead objects behind.
+    }
+  }
+
+  let current: HTMLElement | null = element;
+  while (current) {
+    if (hasClassName(current, "mineru-copy-select-panel-textarea")) {
+      return current as HTMLTextAreaElement;
+    }
+    current = current.parentElement as HTMLElement | null;
+  }
+  return null;
+}
+
+function closeOpenSelectPanels(
+  doc: Document,
+  selectionOptions: ReaderOverlaySelectionOptions = {},
+  notifyActiveChange = true,
+): void {
+  safeReaderOverlayCleanup(() => {
+    for (const actions of doc.querySelectorAll(
+      ".mineru-copy-select-panel-open",
+    )) {
+      actions.classList.remove("mineru-copy-select-panel-open");
+      setBoxActionsActive(actions as HTMLDivElement, false);
+    }
+    syncSelectPanelActiveState(doc);
+    if (notifyActiveChange) {
+      selectionOptions.onSelectPanelActiveChange?.(false);
+    }
+  });
+}
+
+function updateBoxActionPlacement(
+  doc: Document,
+  actions: HTMLDivElement,
+): void {
+  clearHorizontalPlacement(actions);
+  const rect = actions.getBoundingClientRect();
+  const viewportHeight = getViewportHeight(doc);
+  const viewportWidth = getViewportWidth(doc);
+  const toolbarAbove = viewportHeight > 0 && rect.bottom > viewportHeight;
+  const panelBelow = rect.top < SELECT_PANEL_TOP_GUARD_PX;
+  const shiftRight = viewportWidth > 0 && rect.left < VIEWPORT_EDGE_GUARD_PX;
+  const shiftLeft =
+    !shiftRight &&
+    viewportWidth > 0 &&
+    rect.right > viewportWidth - VIEWPORT_EDGE_GUARD_PX;
+
+  actions.classList.toggle("mineru-copy-toolbar-above", toolbarAbove);
+  actions.classList.toggle("mineru-copy-toolbar-below", !toolbarAbove);
+  actions.classList.toggle("mineru-copy-select-panel-below", panelBelow);
+  actions.classList.toggle("mineru-copy-select-panel-above", !panelBelow);
+  actions.classList.toggle("mineru-copy-toolbar-shift-right", shiftRight);
+  actions.classList.toggle("mineru-copy-toolbar-shift-left", shiftLeft);
+  actions.classList.toggle("mineru-copy-select-panel-right", shiftRight);
+  actions.classList.toggle("mineru-copy-select-panel-left", shiftLeft);
+}
+
+function clearHorizontalPlacement(actions: HTMLDivElement): void {
+  actions.classList.remove(...HORIZONTAL_PLACEMENT_CLASSES);
+}
+
+function getViewportHeight(doc: Document): number {
+  return (
+    doc.defaultView?.innerHeight ??
+    doc.documentElement?.clientHeight ??
+    doc.body?.clientHeight ??
+    0
+  );
+}
+
+function getViewportWidth(doc: Document): number {
+  return (
+    doc.defaultView?.innerWidth ??
+    doc.documentElement?.clientWidth ??
+    doc.body?.clientWidth ??
+    0
+  );
+}
+
+function isInsideActions(target: EventTarget | null): boolean {
+  const closest = (target as { closest?: (selector: string) => Element | null })
+    ?.closest;
+  if (typeof closest === "function") {
+    try {
+      if (closest.call(target, ".mineru-copy-box-actions")) {
+        return true;
+      }
+    } catch {
+      // Cross-window dead objects can throw during reader teardown.
+    }
+  }
+
+  let element = target as {
+    className?: unknown;
+    classList?: { contains: (className: string) => boolean };
+    parentElement?: unknown;
+  } | null;
+  while (element) {
+    if (hasClassName(element, "mineru-copy-box-actions")) {
+      return true;
+    }
+    element = element.parentElement as typeof element;
+  }
+  return false;
+}
+
+function hasClassName(
+  element: {
+    className?: unknown;
+    classList?: { contains: (className: string) => boolean };
+  },
+  className: string,
+): boolean {
+  if (element.classList?.contains(className)) {
+    return true;
+  }
+  return (
+    typeof element.className === "string" &&
+    element.className.split(/\s+/).includes(className)
+  );
+}
+
+function setBoxActionsActive(actions: HTMLDivElement, active: boolean): void {
+  actions.parentElement?.classList.toggle(ACTIVE_BOX_ACTIONS_CLASS, active);
+  syncPageLayerActionsActiveState(actions);
+}
+
+function isSelectPanelOpen(actions: HTMLElement): boolean {
+  return hasClassName(actions, "mineru-copy-select-panel-open");
+}
+
+function hasOpenSelectPanel(doc: Document): boolean {
+  return doc.querySelectorAll(".mineru-copy-select-panel-open").length > 0;
+}
+
+function clearBoxActionsActive(doc: Document): void {
+  for (const actions of doc.querySelectorAll(".mineru-copy-box-actions")) {
+    setBoxActionsActive(actions as HTMLDivElement, false);
+  }
+}
+
+function syncSelectPanelActiveState(doc: Document): void {
+  const active = hasOpenSelectPanel(doc);
+  for (const root of doc.querySelectorAll(".mineru-copy-overlay-root")) {
+    root.classList.toggle("mineru-copy-select-panel-active", active);
+  }
+}
+
+function syncPageLayerActionsActiveState(actions: HTMLElement): void {
+  const pageLayer = findAncestorWithClass(actions, "mineru-copy-page-layer");
+  if (!pageLayer) {
+    return;
+  }
+
+  pageLayer.classList.toggle(
+    "mineru-copy-page-layer-actions-active",
+    pageLayer.querySelectorAll(".mineru-copy-box-actions-active").length > 0,
+  );
+}
+
+function findAncestorWithClass(
+  element: HTMLElement,
+  className: string,
+): HTMLElement | null {
+  let current: HTMLElement | null = element;
+  while (current) {
+    if (hasClassName(current, className)) {
+      return current;
+    }
+    current = current.parentElement as HTMLElement | null;
+  }
+  return null;
+}
+
+function ensureSelectPanelCloseHandlers(
+  doc: Document,
+  selectionOptions: ReaderOverlaySelectionOptions,
+): void {
+  selectPanelOptionsByDoc.set(doc, selectionOptions);
+  if (selectPanelCloseHandlerDocs.has(doc)) {
+    return;
+  }
+  selectPanelCloseHandlerDocs.add(doc);
+
+  doc.addEventListener("keydown", (event) => {
+    if ((event as KeyboardEvent).key === "Escape") {
+      closeOpenSelectPanels(doc, selectPanelOptionsByDoc.get(doc));
+    }
+  });
+  doc.addEventListener(
+    "mousedown",
+    (event) => {
+      if (!isInsideActions(event.target)) {
+        closeOpenSelectPanels(doc, selectPanelOptionsByDoc.get(doc));
+      }
+    },
+    true,
+  );
 }
 
 /** 创建一个不会把点击继续冒泡到 PDF.js 的复制按钮。 */

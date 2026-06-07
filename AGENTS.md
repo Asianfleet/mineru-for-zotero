@@ -81,6 +81,11 @@ If the connector stops detecting Zotero after development work, check the real p
 - For Zotero/PDF.js reader overlays, mount the overlay root on the reader document `body` or `documentElement`, not on `#viewerContainer`, `.pdfViewer`, or other PDF.js internal scroll containers. Use PDF.js containers only for scroll observation, positioning, and wheel forwarding.
 - Reader overlays can span same-origin nested reader iframes. Keep `rootsByWindow` and cleanup handlers in sync across windows, and clean up overlays when a reader disappears or switches mode to `off`.
 - When reader overlay data is missing, do not rely on logs alone. Surface a user-facing notice, reset the overlay mode to `off`, and avoid leaving stale UI state enabled.
+- In Zotero PDF reader documents such as `resource://zotero/...viewer.html`, do not load plugin `chrome://` icon resources directly from reader overlay CSS. Prefer inline SVG or data URI icons for reader overlay controls.
+- Reader overlay hover retention must include absolutely positioned child menus that extend outside the actions parent, not only the actions parent rectangle. Otherwise hover hit-testing can switch to a lower box while the pointer is over a floating menu.
+- Reader overlay floating menus and panels must keep the owning box in a sustained elevated state, not only keep the actions element displayed. Later boxes can otherwise cover the open menu because of DOM order and hover z-index.
+- Do not reuse the icon-only toolbar button base class for text menu items. Pseudo-element icons, fixed button dimensions, and icon-button hover boxes will pollute text menu layout.
+- When adding reader overlay hit-testing helpers across modules, keep helper scope explicit. Do not assume a helper local to `render.ts` is available from `selection.ts`; missing helpers can break hover protection before the visual fix runs.
 - `ztoolkit.log` may not appear in the console being inspected, depending on the runtime environment and console settings. For reader-toolbar or iframe click diagnostics, also emit to `Zotero.debug` and the relevant window `console.info`, and keep a visible UI state when possible.
 
 ## Commit & Pull Request Guidelines
