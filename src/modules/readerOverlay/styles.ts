@@ -159,7 +159,7 @@ export const READER_OVERLAY_CSS = `
   align-items: center;
   overflow: visible;
   border: 1px solid rgba(0, 0, 0, 0.14);
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--material-toolbar, ButtonFace);
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.2),
@@ -196,7 +196,7 @@ export const READER_OVERLAY_CSS = `
 }
 
 .mineru-copy-toolbar-button-copy {
-  border-radius: 999px 0 0 999px;
+  border-radius: 8px 0 0 8px;
 }
 
 .mineru-copy-toolbar-button-copy::before {
@@ -204,7 +204,7 @@ export const READER_OVERLAY_CSS = `
 }
 
 .mineru-copy-toolbar-button-select {
-  border-radius: 0 999px 999px 0;
+  border-radius: 0 8px 8px 0;
 }
 
 .mineru-copy-toolbar-button-select::before {
@@ -264,27 +264,31 @@ export const READER_OVERLAY_CSS = `
   position: absolute;
   left: 50%;
   bottom: calc(100% + 6px);
-  width: min(360px, 70vw);
-  min-width: 180px;
+  min-width: 320px;
   transform: translateX(-50%);
+  background: var(--material-toolbar, Field);
   display: none;
   box-sizing: border-box;
   pointer-events: auto;
+  padding: 8px;
+  box-sizing: border-box;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  border-radius: 7px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
 }
 
 .mineru-copy-select-panel-textarea {
   display: block;
   width: 100%;
-  min-width: 180px;
+  min-width: 320px;
   min-height: 84px;
   max-height: min(420px, 70vh);
   resize: both;
   overflow: auto;
   box-sizing: border-box;
-  border: 1px solid rgba(0, 0, 0, 0.16);
+  border: none;
   border-radius: 7px;
-  background: var(--material-toolbar, Field);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.24);
+  background: var(--color-sidepane, Field);
   color: var(--fill-primary, FieldText);
   font: inherit;
   font-size: 13px;
