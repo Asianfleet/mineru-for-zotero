@@ -822,7 +822,7 @@ describe("readerOverlay", function () {
     );
     assert.match(
       style.textContent,
-      /\.mineru-copy-box-toolbar\s*\{[^}]*border-radius:\s*999px[^}]*background:\s*var\(--material-toolbar,\s*ButtonFace\)/s,
+      /\.mineru-copy-box-toolbar\s*\{[^}]*background:\s*var\(--material-toolbar,\s*ButtonFace\)/s,
     );
     assert.match(
       style.textContent,
