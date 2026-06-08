@@ -11,6 +11,7 @@ export interface ReaderOverlayState {
   selectionAnchorRawIndex: number | null;
   hoverRawIndex: number | null;
   selectPanelActive: boolean;
+  formulaMenuActive: boolean;
   root: HTMLElement | null;
   rootsByWindow: Map<Window, HTMLElement>;
   cleanupPositioning: (() => void) | null;
@@ -47,6 +48,8 @@ export interface ReaderOverlaySelectionOptions {
   onSelectionChange?: () => void;
   isSelectPanelActive?: () => boolean;
   onSelectPanelActiveChange?: (active: boolean) => void;
+  isFormulaMenuActive?: () => boolean;
+  onFormulaMenuActiveChange?: (active: boolean) => void;
 }
 
 export interface PageRect {

@@ -245,7 +245,7 @@ describe("readerOverlay", function () {
     assert.lengthOf(textareas, 4);
     assert.deepEqual(
       textareas.map((element) => element.value),
-      ["**Raw** markdown", "$E=mc^2$", "$a+b$", "$$x+y$$"],
+      ["**Raw** markdown", "$$\nE=mc^2\n$$", "$a+b$", "$$\nx+y\n$$"],
     );
     assert.isTrue(textareas.every((element) => element.readOnly));
     assert.isTrue(
@@ -584,9 +584,10 @@ describe("readerOverlay", function () {
 
     const style = doc.headChildren[0];
     assert.include(style.textContent, "mineru-copy-select-panel-active");
+    assert.include(style.textContent, "mineru-copy-formula-menu-active");
     assert.match(
       style.textContent,
-      /\.mineru-copy-overlay-root:not\(\.mineru-copy-select-panel-active\) \.mineru-copy-box:hover/s,
+      /\.mineru-copy-overlay-root:not\(\.mineru-copy-select-panel-active\):not\(\.mineru-copy-formula-menu-active\) \.mineru-copy-box:hover/s,
     );
     assert.match(
       style.textContent,
@@ -851,7 +852,15 @@ describe("readerOverlay", function () {
     );
     assert.match(
       style.textContent,
-      /\.mineru-copy-formula-copy-group:hover\s+\.mineru-copy-formula-menu\s*\{[^}]*display:\s*flex/s,
+      /\.mineru-copy-formula-copy-group:hover\s+\.mineru-copy-formula-menu,\s*\.mineru-copy-formula-menu-open\s+\.mineru-copy-formula-menu\s*\{[^}]*display:\s*flex/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-formula-copy-group::after\s*\{[^}]*height:\s*6px[^}]*pointer-events:\s*auto/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-formula-menu\s*\{[^}]*top:\s*calc\(100%\s*\+\s*6px\)/s,
     );
     assert.match(
       style.textContent,
@@ -1979,6 +1988,54 @@ describe("readerOverlay", function () {
     assert.notInclude(secondBox.className, "mineru-copy-box-hovered");
   });
 
+  it("does not hover lower boxes while a formula dropdown is open", function () {
+    const listeners = new Map<string, EventListener[]>();
+    const root = createFakeElement() as unknown as HTMLDivElement;
+    const firstBox = createFakeElement();
+    firstBox.className = "mineru-copy-box";
+    firstBox.getBoundingClientRect = () =>
+      ({ left: 10, top: 20, right: 110, bottom: 80 }) as DOMRect;
+    const actions = createFakeElement();
+    actions.className = "mineru-copy-box-actions mineru-copy-formula-menu-open";
+    actions.getBoundingClientRect = () =>
+      ({ left: 20, top: 83, right: 100, bottom: 110 }) as DOMRect;
+    const menu = createFakeElement();
+    menu.className = "mineru-copy-formula-menu";
+    menu.getBoundingClientRect = () =>
+      ({ left: 20, top: 110, right: 170, bottom: 170 }) as DOMRect;
+    actions.append(menu);
+    firstBox.append(actions);
+    const secondBox = createFakeElement();
+    secondBox.className = "mineru-copy-box";
+    secondBox.getBoundingClientRect = () =>
+      ({ left: 10, top: 100, right: 180, bottom: 190 }) as DOMRect;
+    root.append(firstBox, secondBox);
+    const doc = {
+      querySelector() {
+        return null;
+      },
+      documentElement: null,
+      body: null,
+    } as unknown as Document;
+    const win = createEventWindow(listeners, null, "");
+
+    createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      reposition() {},
+    });
+
+    dispatchWindowEvent(listeners, "mousemove", { clientX: 40, clientY: 185 });
+
+    assert.notInclude(firstBox.className, "mineru-copy-box-hovered");
+    assert.notInclude(
+      secondBox.className,
+      "mineru-copy-box-hovered",
+      "a lower box must not activate below an open formula menu",
+    );
+  });
+
   it("does not hover other boxes while a selectable copy panel is open", function () {
     const listeners = new Map<string, EventListener[]>();
     const root = createFakeElement() as unknown as HTMLDivElement;
@@ -2672,19 +2729,32 @@ describe("readerOverlay", function () {
   });
 
   it("formats selected boxes by rawIndex before copying", function () {
+    const formatter = (
+      readerOverlay as unknown as {
+        formatSelectedBoxesForCopy: (
+          boxes: typeof normalizedBoxes,
+          selectedRawIndexes: Set<number>,
+        ) => string;
+      }
+    ).formatSelectedBoxesForCopy;
+
     assert.equal(
-      (
-        readerOverlay as unknown as {
-          formatSelectedBoxesForCopy: (
-            boxes: typeof normalizedBoxes,
-            selectedRawIndexes: Set<number>,
-          ) => string;
-        }
-      ).formatSelectedBoxesForCopy(
+      formatter(
         [normalizedBoxes[2], normalizedBoxes[1], normalizedBoxes[0]],
         new Set([2, 0]),
       ),
       "第一段\n\n公式：E=mc^2",
+    );
+    assert.equal(
+      formatter(
+        [
+          createBox(0, "text", "第一段"),
+          createBox(1, "interline_equation", "E=mc^2", "E=mc^2"),
+          createBox(2, "inline_equation", "$a+b$", "a+b"),
+        ],
+        new Set([0, 1, 2]),
+      ),
+      "第一段\n\n$$\nE=mc^2\n$$\n\n$a+b$",
     );
   });
 });

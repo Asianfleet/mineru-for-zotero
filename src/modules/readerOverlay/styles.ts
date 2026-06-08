@@ -46,7 +46,7 @@ export const READER_OVERLAY_CSS = `
   pointer-events: auto;
 }
 
-.mineru-copy-overlay-root:not(.mineru-copy-select-panel-active) .mineru-copy-box:hover,
+.mineru-copy-overlay-root:not(.mineru-copy-select-panel-active):not(.mineru-copy-formula-menu-active) .mineru-copy-box:hover,
 .mineru-copy-box-hovered {
   background: rgba(64, 156, 255, 0.18);
   z-index: 2147483001;
@@ -72,7 +72,7 @@ export const READER_OVERLAY_CSS = `
   background: transparent;
 }
 
-.mineru-copy-overlay-root:not(.mineru-copy-select-panel-active).mineru-copy-mode-hover .mineru-copy-box:hover,
+.mineru-copy-overlay-root:not(.mineru-copy-select-panel-active):not(.mineru-copy-formula-menu-active).mineru-copy-mode-hover .mineru-copy-box:hover,
 .mineru-copy-mode-hover .mineru-copy-box-hovered,
 .mineru-copy-mode-hover .mineru-copy-box-actions-active {
   opacity: 1;
@@ -90,7 +90,7 @@ export const READER_OVERLAY_CSS = `
   display: none;
 }
 
-.mineru-copy-overlay-root:not(.mineru-copy-select-panel-active) .mineru-copy-box:hover .mineru-copy-box-label,
+.mineru-copy-overlay-root:not(.mineru-copy-select-panel-active):not(.mineru-copy-formula-menu-active) .mineru-copy-box:hover .mineru-copy-box-label,
 .mineru-copy-box-hovered .mineru-copy-box-label,
 .mineru-copy-box-actions-active .mineru-copy-box-label {
   display: block;
@@ -126,7 +126,7 @@ export const READER_OVERLAY_CSS = `
   pointer-events: none;
 }
 
-.mineru-copy-overlay-root:not(.mineru-copy-select-panel-active) .mineru-copy-box:hover .mineru-copy-box-actions,
+.mineru-copy-overlay-root:not(.mineru-copy-select-panel-active):not(.mineru-copy-formula-menu-active) .mineru-copy-box:hover .mineru-copy-box-actions,
 .mineru-copy-box-hovered .mineru-copy-box-actions,
 .mineru-copy-box-actions-active .mineru-copy-box-actions,
 .mineru-copy-select-panel-open {
@@ -222,10 +222,20 @@ export const READER_OVERLAY_CSS = `
   display: flex;
 }
 
+.mineru-copy-formula-copy-group::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 6px;
+  pointer-events: auto;
+}
+
 .mineru-copy-formula-menu {
   position: absolute;
   left: 0;
-  top: 100%;
+  top: calc(100% + 6px);
   display: none;
   min-width: 150px;
   flex-direction: column;
@@ -237,7 +247,8 @@ export const READER_OVERLAY_CSS = `
   pointer-events: auto;
 }
 
-.mineru-copy-formula-copy-group:hover .mineru-copy-formula-menu {
+.mineru-copy-formula-copy-group:hover .mineru-copy-formula-menu,
+.mineru-copy-formula-menu-open .mineru-copy-formula-menu {
   display: flex;
 }
 

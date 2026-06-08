@@ -1,4 +1,4 @@
-import { formatBoxesForCopy, formatFormulaForCopy } from "../copyFormatter";
+import { formatBoxesForCopy, formatFormulaBoxForCopy } from "../copyFormatter";
 import { safeReaderOverlayCleanup } from "./diagnostics";
 import { readerOverlayString } from "./notice";
 import { copyText } from "./copy";
@@ -153,8 +153,10 @@ export function createBoxActions(
   toolbar.className = "mineru-copy-box-toolbar";
   toolbar.addEventListener("mousedown", stopOverlayActionEvent);
   toolbar.addEventListener("click", stopOverlayActionEvent);
+  const copyControl = createToolbarCopyControl(doc, box);
+  bindFormulaMenuActiveState(copyControl, doc, actions, box, selectionOptions);
   toolbar.append(
-    createToolbarCopyControl(doc, box),
+    copyControl,
     createToolbarDivider(doc),
     createToolbarButton(doc, {
       action: "select-copy",
@@ -191,6 +193,27 @@ export function createBoxActions(
   });
   ensureSelectPanelCloseHandlers(doc, selectionOptions);
   return actions;
+}
+
+/** 把公式下拉菜单纳入 overlay active 状态，避免浮层下方 box 被 hover。 */
+function bindFormulaMenuActiveState(
+  copyControl: HTMLButtonElement | HTMLDivElement,
+  doc: Document,
+  actions: HTMLDivElement,
+  box: NormalizedBox,
+  selectionOptions: ReaderOverlaySelectionOptions,
+): void {
+  if (!isFormulaBox(box)) {
+    return;
+  }
+
+  copyControl.addEventListener("mouseenter", () => {
+    setFormulaMenuActive(doc, actions, selectionOptions, true);
+    updateBoxActionPlacement(doc, actions);
+  });
+  copyControl.addEventListener("mouseleave", () => {
+    setFormulaMenuActive(doc, actions, selectionOptions, false);
+  });
 }
 
 interface ToolbarButtonOptions {
@@ -239,9 +262,7 @@ function createToolbarCopyControl(
       doc,
       readerOverlayString("reader-copy-formula-with-dollar", "Copy with $"),
       () => {
-        copyText(
-          formatFormulaForCopy(box.formula ?? box.markdown, "with-dollar"),
-        );
+        copyText(formatFormulaBoxForCopy(box, "with-dollar"));
       },
     ),
     createFormulaMenuItem(
@@ -251,9 +272,7 @@ function createToolbarCopyControl(
         "Copy without $",
       ),
       () => {
-        copyText(
-          formatFormulaForCopy(box.formula ?? box.markdown, "without-dollar"),
-        );
+        copyText(formatFormulaBoxForCopy(box, "without-dollar"));
       },
     ),
   );
@@ -349,14 +368,7 @@ export function getSelectableBoxText(box: NormalizedBox): string {
     return box.markdown || formatBoxesForCopy([box]);
   }
 
-  if (hasDollarWrappedFormula(box.markdown)) {
-    return box.markdown.trim();
-  }
-  const value = box.formula || box.markdown || formatBoxesForCopy([box]);
-  if (hasDollarWrappedFormula(value)) {
-    return value;
-  }
-  return `$${stripOuterDollars(value)}$`;
+  return formatFormulaBoxForCopy(box, "with-dollar");
 }
 
 /** 根据文本长度估算 textarea 初始行数，避免长内容面板仍只有默认两行。 */
@@ -368,23 +380,6 @@ export function computeSelectPanelRows(value: string): number {
     return count + Math.max(1, Math.ceil(line.length / approximateColumns));
   }, 0);
   return Math.max(minRows, Math.min(maxRows, rows));
-}
-
-/** 判断公式文本是否已经由单层 dollar 包裹。 */
-export function hasDollarWrappedFormula(value: string): boolean {
-  const trimmed = value.trim();
-  return (
-    trimmed.length >= 2 && trimmed.startsWith("$") && trimmed.endsWith("$")
-  );
-}
-
-/** 移除公式文本最外层 dollar，便于统一重新包裹。 */
-export function stripOuterDollars(value: string): string {
-  let stripped = value.trim();
-  while (hasDollarWrappedFormula(stripped)) {
-    stripped = stripped.slice(1, -1).trim();
-  }
-  return stripped;
 }
 
 /** 阻止 overlay action 的事件继续触发 PDF.js 或 box 选择。 */
@@ -611,6 +606,10 @@ function hasOpenSelectPanel(doc: Document): boolean {
   return doc.querySelectorAll(".mineru-copy-select-panel-open").length > 0;
 }
 
+function hasOpenFormulaMenu(doc: Document): boolean {
+  return doc.querySelectorAll(".mineru-copy-formula-menu-open").length > 0;
+}
+
 function clearBoxActionsActive(doc: Document): void {
   for (const actions of doc.querySelectorAll(".mineru-copy-box-actions")) {
     setBoxActionsActive(actions as HTMLDivElement, false);
@@ -621,6 +620,29 @@ function syncSelectPanelActiveState(doc: Document): void {
   const active = hasOpenSelectPanel(doc);
   for (const root of doc.querySelectorAll(".mineru-copy-overlay-root")) {
     root.classList.toggle("mineru-copy-select-panel-active", active);
+  }
+}
+
+function setFormulaMenuActive(
+  doc: Document,
+  actions: HTMLDivElement,
+  selectionOptions: ReaderOverlaySelectionOptions,
+  active: boolean,
+): void {
+  actions.classList.toggle("mineru-copy-formula-menu-open", active);
+  syncFormulaMenuActiveState(doc);
+  selectionOptions.onFormulaMenuActiveChange?.(hasOpenFormulaMenu(doc));
+  if (active) {
+    setBoxActionsActive(actions, true);
+  } else if (!isSelectPanelOpen(actions)) {
+    setBoxActionsActive(actions, false);
+  }
+}
+
+function syncFormulaMenuActiveState(doc: Document): void {
+  const active = hasOpenFormulaMenu(doc);
+  for (const root of doc.querySelectorAll(".mineru-copy-overlay-root")) {
+    root.classList.toggle("mineru-copy-formula-menu-active", active);
   }
 }
 
