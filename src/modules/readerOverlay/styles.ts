@@ -222,10 +222,20 @@ export const READER_OVERLAY_CSS = `
   display: flex;
 }
 
+.mineru-copy-formula-copy-group::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 6px;
+  pointer-events: auto;
+}
+
 .mineru-copy-formula-menu {
   position: absolute;
   left: 0;
-  top: 100%;
+  top: calc(100% + 6px);
   display: none;
   min-width: 150px;
   flex-direction: column;

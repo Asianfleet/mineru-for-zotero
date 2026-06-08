@@ -856,6 +856,14 @@ describe("readerOverlay", function () {
     );
     assert.match(
       style.textContent,
+      /\.mineru-copy-formula-copy-group::after\s*\{[^}]*height:\s*6px[^}]*pointer-events:\s*auto/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-formula-menu\s*\{[^}]*top:\s*calc\(100%\s*\+\s*6px\)/s,
+    );
+    assert.match(
+      style.textContent,
       /\.mineru-copy-formula-menu-item\s*\{[^}]*width:\s*100%[^}]*height:\s*auto/s,
     );
   });
