@@ -1,4 +1,4 @@
-import { formatBoxesForCopy, formatFormulaForCopy } from "../copyFormatter";
+import { formatBoxesForCopy, formatFormulaBoxForCopy } from "../copyFormatter";
 import { safeReaderOverlayCleanup } from "./diagnostics";
 import { readerOverlayString } from "./notice";
 import { copyText } from "./copy";
@@ -262,9 +262,7 @@ function createToolbarCopyControl(
       doc,
       readerOverlayString("reader-copy-formula-with-dollar", "Copy with $"),
       () => {
-        copyText(
-          formatFormulaForCopy(box.formula ?? box.markdown, "with-dollar"),
-        );
+        copyText(formatFormulaBoxForCopy(box, "with-dollar"));
       },
     ),
     createFormulaMenuItem(
@@ -274,9 +272,7 @@ function createToolbarCopyControl(
         "Copy without $",
       ),
       () => {
-        copyText(
-          formatFormulaForCopy(box.formula ?? box.markdown, "without-dollar"),
-        );
+        copyText(formatFormulaBoxForCopy(box, "without-dollar"));
       },
     ),
   );
@@ -372,14 +368,7 @@ export function getSelectableBoxText(box: NormalizedBox): string {
     return box.markdown || formatBoxesForCopy([box]);
   }
 
-  if (hasDollarWrappedFormula(box.markdown)) {
-    return box.markdown.trim();
-  }
-  const value = box.formula || box.markdown || formatBoxesForCopy([box]);
-  if (hasDollarWrappedFormula(value)) {
-    return value;
-  }
-  return `$${stripOuterDollars(value)}$`;
+  return formatFormulaBoxForCopy(box, "with-dollar");
 }
 
 /** 根据文本长度估算 textarea 初始行数，避免长内容面板仍只有默认两行。 */
@@ -391,23 +380,6 @@ export function computeSelectPanelRows(value: string): number {
     return count + Math.max(1, Math.ceil(line.length / approximateColumns));
   }, 0);
   return Math.max(minRows, Math.min(maxRows, rows));
-}
-
-/** 判断公式文本是否已经由单层 dollar 包裹。 */
-export function hasDollarWrappedFormula(value: string): boolean {
-  const trimmed = value.trim();
-  return (
-    trimmed.length >= 2 && trimmed.startsWith("$") && trimmed.endsWith("$")
-  );
-}
-
-/** 移除公式文本最外层 dollar，便于统一重新包裹。 */
-export function stripOuterDollars(value: string): string {
-  let stripped = value.trim();
-  while (hasDollarWrappedFormula(stripped)) {
-    stripped = stripped.slice(1, -1).trim();
-  }
-  return stripped;
 }
 
 /** 阻止 overlay action 的事件继续触发 PDF.js 或 box 选择。 */

@@ -245,7 +245,7 @@ describe("readerOverlay", function () {
     assert.lengthOf(textareas, 4);
     assert.deepEqual(
       textareas.map((element) => element.value),
-      ["**Raw** markdown", "$E=mc^2$", "$a+b$", "$$x+y$$"],
+      ["**Raw** markdown", "$$\nE=mc^2\n$$", "$a+b$", "$$\nx+y\n$$"],
     );
     assert.isTrue(textareas.every((element) => element.readOnly));
     assert.isTrue(
@@ -2729,19 +2729,32 @@ describe("readerOverlay", function () {
   });
 
   it("formats selected boxes by rawIndex before copying", function () {
+    const formatter = (
+      readerOverlay as unknown as {
+        formatSelectedBoxesForCopy: (
+          boxes: typeof normalizedBoxes,
+          selectedRawIndexes: Set<number>,
+        ) => string;
+      }
+    ).formatSelectedBoxesForCopy;
+
     assert.equal(
-      (
-        readerOverlay as unknown as {
-          formatSelectedBoxesForCopy: (
-            boxes: typeof normalizedBoxes,
-            selectedRawIndexes: Set<number>,
-          ) => string;
-        }
-      ).formatSelectedBoxesForCopy(
+      formatter(
         [normalizedBoxes[2], normalizedBoxes[1], normalizedBoxes[0]],
         new Set([2, 0]),
       ),
       "第一段\n\n公式：E=mc^2",
+    );
+    assert.equal(
+      formatter(
+        [
+          createBox(0, "text", "第一段"),
+          createBox(1, "interline_equation", "E=mc^2", "E=mc^2"),
+          createBox(2, "inline_equation", "$a+b$", "a+b"),
+        ],
+        new Set([0, 1, 2]),
+      ),
+      "第一段\n\n$$\nE=mc^2\n$$\n\n$a+b$",
     );
   });
 });
