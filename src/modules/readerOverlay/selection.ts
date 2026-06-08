@@ -122,14 +122,53 @@ export function findBoxAtPoint(
     return actionHoveredBox;
   }
 
-  for (let index = boxes.length - 1; index >= 0; index -= 1) {
-    const box = boxes[index];
+  const normalHitTestBoxes = getNormalHitTestBoxes(
+    root,
+    boxes,
+    clientX,
+    clientY,
+  );
+  for (let index = normalHitTestBoxes.length - 1; index >= 0; index -= 1) {
+    const box = normalHitTestBoxes[index];
     const rect = box.getBoundingClientRect?.();
     if (rect && isPointInRect(clientX, clientY, rect)) {
       return box;
     }
   }
   return null;
+}
+
+function getNormalHitTestBoxes(
+  root: HTMLElement,
+  boxes: HTMLElement[],
+  clientX: number,
+  clientY: number,
+): HTMLElement[] {
+  const layers = getPageLayerElements(root);
+  if (layers.length === 0) {
+    return boxes;
+  }
+
+  for (let index = layers.length - 1; index >= 0; index -= 1) {
+    const layer = layers[index];
+    if (layer.hidden) {
+      continue;
+    }
+    const rect = layer.getBoundingClientRect?.();
+    if (rect && isPointInRect(clientX, clientY, rect)) {
+      return getBoxElements(layer);
+    }
+  }
+  return boxes;
+}
+
+function getPageLayerElements(root: HTMLElement): HTMLElement[] {
+  if (typeof root.querySelectorAll !== "function") {
+    return [];
+  }
+  return Array.from(
+    root.querySelectorAll(".mineru-copy-page-layer"),
+  ) as HTMLElement[];
 }
 
 function findOpenSelectPanelBoxAtPoint(

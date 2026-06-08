@@ -15,7 +15,10 @@ import {
   setReaderOverlayRootForReader,
 } from "../src/modules/readerOverlay";
 import * as readerOverlay from "../src/modules/readerOverlay";
-import { setHoveredBox } from "../src/modules/readerOverlay/selection";
+import {
+  findBoxAtPoint,
+  setHoveredBox,
+} from "../src/modules/readerOverlay/selection";
 import { getMinerUStorageRoot } from "../src/modules/preferenceScript";
 import { createStorage } from "../src/modules/storage";
 import { normalizedBoxes } from "./domainFixtures";
@@ -1852,6 +1855,48 @@ describe("readerOverlay", function () {
       boxes.map((box) => toggleCounts.get(box) ?? 0),
       [0, 0, 0],
     );
+  });
+
+  it("limits normal hover hit testing to the page layer under the pointer", function () {
+    const root = createFakeElement();
+    const firstLayer = createFakeElement();
+    const secondLayer = createFakeElement();
+    const firstBox = createFakeElement();
+    const secondPageBoxes = Array.from({ length: 5 }, () =>
+      createFakeElement(),
+    );
+    let firstBoxRectReads = 0;
+    let secondPageRectReads = 0;
+
+    firstLayer.className = "mineru-copy-page-layer";
+    firstLayer.getBoundingClientRect = () =>
+      createRect({ left: 0, top: 0, right: 200, bottom: 200 });
+    secondLayer.className = "mineru-copy-page-layer";
+    secondLayer.getBoundingClientRect = () =>
+      createRect({ left: 0, top: 220, right: 200, bottom: 420 });
+
+    firstBox.className = "mineru-copy-box";
+    firstBox.getBoundingClientRect = () => {
+      firstBoxRectReads += 1;
+      return createRect({ left: 20, top: 20, right: 120, bottom: 80 });
+    };
+    for (const box of secondPageBoxes) {
+      box.className = "mineru-copy-box";
+      box.getBoundingClientRect = () => {
+        secondPageRectReads += 1;
+        return createRect({ left: 20, top: 240, right: 120, bottom: 300 });
+      };
+    }
+    firstLayer.append(firstBox);
+    secondLayer.append(...secondPageBoxes);
+    root.append(firstLayer, secondLayer);
+
+    assert.equal(
+      findBoxAtPoint(root as unknown as HTMLElement, 40, 40),
+      firstBox,
+    );
+    assert.equal(firstBoxRectReads, 1);
+    assert.equal(secondPageRectReads, 0);
   });
 
   it("keeps a box hovered while moving through the action gap", function () {
