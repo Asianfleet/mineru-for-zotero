@@ -584,9 +584,10 @@ describe("readerOverlay", function () {
 
     const style = doc.headChildren[0];
     assert.include(style.textContent, "mineru-copy-select-panel-active");
+    assert.include(style.textContent, "mineru-copy-formula-menu-active");
     assert.match(
       style.textContent,
-      /\.mineru-copy-overlay-root:not\(\.mineru-copy-select-panel-active\) \.mineru-copy-box:hover/s,
+      /\.mineru-copy-overlay-root:not\(\.mineru-copy-select-panel-active\):not\(\.mineru-copy-formula-menu-active\) \.mineru-copy-box:hover/s,
     );
     assert.match(
       style.textContent,
@@ -851,7 +852,7 @@ describe("readerOverlay", function () {
     );
     assert.match(
       style.textContent,
-      /\.mineru-copy-formula-copy-group:hover\s+\.mineru-copy-formula-menu\s*\{[^}]*display:\s*flex/s,
+      /\.mineru-copy-formula-copy-group:hover\s+\.mineru-copy-formula-menu,\s*\.mineru-copy-formula-menu-open\s+\.mineru-copy-formula-menu\s*\{[^}]*display:\s*flex/s,
     );
     assert.match(
       style.textContent,
@@ -1977,6 +1978,54 @@ describe("readerOverlay", function () {
 
     assert.include(firstBox.className, "mineru-copy-box-hovered");
     assert.notInclude(secondBox.className, "mineru-copy-box-hovered");
+  });
+
+  it("does not hover lower boxes while a formula dropdown is open", function () {
+    const listeners = new Map<string, EventListener[]>();
+    const root = createFakeElement() as unknown as HTMLDivElement;
+    const firstBox = createFakeElement();
+    firstBox.className = "mineru-copy-box";
+    firstBox.getBoundingClientRect = () =>
+      ({ left: 10, top: 20, right: 110, bottom: 80 }) as DOMRect;
+    const actions = createFakeElement();
+    actions.className = "mineru-copy-box-actions mineru-copy-formula-menu-open";
+    actions.getBoundingClientRect = () =>
+      ({ left: 20, top: 83, right: 100, bottom: 110 }) as DOMRect;
+    const menu = createFakeElement();
+    menu.className = "mineru-copy-formula-menu";
+    menu.getBoundingClientRect = () =>
+      ({ left: 20, top: 110, right: 170, bottom: 170 }) as DOMRect;
+    actions.append(menu);
+    firstBox.append(actions);
+    const secondBox = createFakeElement();
+    secondBox.className = "mineru-copy-box";
+    secondBox.getBoundingClientRect = () =>
+      ({ left: 10, top: 100, right: 180, bottom: 190 }) as DOMRect;
+    root.append(firstBox, secondBox);
+    const doc = {
+      querySelector() {
+        return null;
+      },
+      documentElement: null,
+      body: null,
+    } as unknown as Document;
+    const win = createEventWindow(listeners, null, "");
+
+    createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      reposition() {},
+    });
+
+    dispatchWindowEvent(listeners, "mousemove", { clientX: 40, clientY: 185 });
+
+    assert.notInclude(firstBox.className, "mineru-copy-box-hovered");
+    assert.notInclude(
+      secondBox.className,
+      "mineru-copy-box-hovered",
+      "a lower box must not activate below an open formula menu",
+    );
   });
 
   it("does not hover other boxes while a selectable copy panel is open", function () {

@@ -153,8 +153,10 @@ export function createBoxActions(
   toolbar.className = "mineru-copy-box-toolbar";
   toolbar.addEventListener("mousedown", stopOverlayActionEvent);
   toolbar.addEventListener("click", stopOverlayActionEvent);
+  const copyControl = createToolbarCopyControl(doc, box);
+  bindFormulaMenuActiveState(copyControl, doc, actions, box, selectionOptions);
   toolbar.append(
-    createToolbarCopyControl(doc, box),
+    copyControl,
     createToolbarDivider(doc),
     createToolbarButton(doc, {
       action: "select-copy",
@@ -191,6 +193,27 @@ export function createBoxActions(
   });
   ensureSelectPanelCloseHandlers(doc, selectionOptions);
   return actions;
+}
+
+/** 把公式下拉菜单纳入 overlay active 状态，避免浮层下方 box 被 hover。 */
+function bindFormulaMenuActiveState(
+  copyControl: HTMLButtonElement | HTMLDivElement,
+  doc: Document,
+  actions: HTMLDivElement,
+  box: NormalizedBox,
+  selectionOptions: ReaderOverlaySelectionOptions,
+): void {
+  if (!isFormulaBox(box)) {
+    return;
+  }
+
+  copyControl.addEventListener("mouseenter", () => {
+    setFormulaMenuActive(doc, actions, selectionOptions, true);
+    updateBoxActionPlacement(doc, actions);
+  });
+  copyControl.addEventListener("mouseleave", () => {
+    setFormulaMenuActive(doc, actions, selectionOptions, false);
+  });
 }
 
 interface ToolbarButtonOptions {
@@ -611,6 +634,10 @@ function hasOpenSelectPanel(doc: Document): boolean {
   return doc.querySelectorAll(".mineru-copy-select-panel-open").length > 0;
 }
 
+function hasOpenFormulaMenu(doc: Document): boolean {
+  return doc.querySelectorAll(".mineru-copy-formula-menu-open").length > 0;
+}
+
 function clearBoxActionsActive(doc: Document): void {
   for (const actions of doc.querySelectorAll(".mineru-copy-box-actions")) {
     setBoxActionsActive(actions as HTMLDivElement, false);
@@ -621,6 +648,29 @@ function syncSelectPanelActiveState(doc: Document): void {
   const active = hasOpenSelectPanel(doc);
   for (const root of doc.querySelectorAll(".mineru-copy-overlay-root")) {
     root.classList.toggle("mineru-copy-select-panel-active", active);
+  }
+}
+
+function setFormulaMenuActive(
+  doc: Document,
+  actions: HTMLDivElement,
+  selectionOptions: ReaderOverlaySelectionOptions,
+  active: boolean,
+): void {
+  actions.classList.toggle("mineru-copy-formula-menu-open", active);
+  syncFormulaMenuActiveState(doc);
+  selectionOptions.onFormulaMenuActiveChange?.(hasOpenFormulaMenu(doc));
+  if (active) {
+    setBoxActionsActive(actions, true);
+  } else if (!isSelectPanelOpen(actions)) {
+    setBoxActionsActive(actions, false);
+  }
+}
+
+function syncFormulaMenuActiveState(doc: Document): void {
+  const active = hasOpenFormulaMenu(doc);
+  for (const root of doc.querySelectorAll(".mineru-copy-overlay-root")) {
+    root.classList.toggle("mineru-copy-formula-menu-active", active);
   }
 }
 

@@ -268,9 +268,13 @@ export function createReaderOverlayPositioningController(
     const mouseEvent = event as MouseEvent;
     const selectPanelActive =
       options.selectionOptions?.isSelectPanelActive?.() ?? false;
+    const formulaMenuActive =
+      options.selectionOptions?.isFormulaMenuActive?.() ?? false;
     const hitBox = selectPanelActive
       ? null
-      : findBoxAtPoint(options.root, mouseEvent.clientX, mouseEvent.clientY);
+      : findBoxAtPoint(options.root, mouseEvent.clientX, mouseEvent.clientY, {
+          formulaMenuActive,
+        });
     clearPendingModifierBlurCleanup();
     modifierActive = Boolean(mouseEvent.shiftKey || mouseEvent.ctrlKey);
     setOverlayModifierActive(options.root, modifierActive);
@@ -286,7 +290,10 @@ export function createReaderOverlayPositioningController(
     if (mouseEvent.button !== undefined && mouseEvent.button !== 0) {
       return;
     }
-    if (isInsideSelectPanelTarget(event.target)) {
+    if (
+      isInsideSelectPanelTarget(event.target) ||
+      isInsideFormulaMenuTarget(event.target)
+    ) {
       return;
     }
 
@@ -298,6 +305,8 @@ export function createReaderOverlayPositioningController(
         prioritizeActiveActions: false,
         selectPanelActive:
           options.selectionOptions?.isSelectPanelActive?.() ?? false,
+        formulaMenuActive:
+          options.selectionOptions?.isFormulaMenuActive?.() ?? false,
       },
     );
     if (!box) {
@@ -365,6 +374,43 @@ function isInsideSelectPanelTarget(target: EventTarget | null): boolean {
     if (
       hasClassName(element, "mineru-copy-select-panel") ||
       hasClassName(element, "mineru-copy-select-panel-textarea")
+    ) {
+      return true;
+    }
+    element = element.parentElement as typeof element;
+  }
+  return false;
+}
+
+/** 判断事件目标是否在公式复制菜单内，避免修饰键点击穿透为 box 选择。 */
+function isInsideFormulaMenuTarget(target: EventTarget | null): boolean {
+  const closest = (
+    target as { closest?: (selector: string) => Element | null } | null
+  )?.closest;
+  if (typeof closest === "function") {
+    try {
+      if (
+        closest.call(
+          target,
+          ".mineru-copy-formula-menu, .mineru-copy-formula-menu-item",
+        )
+      ) {
+        return true;
+      }
+    } catch {
+      // Reader teardown can leave cross-window dead objects behind.
+    }
+  }
+
+  let element = target as {
+    className?: unknown;
+    classList?: { contains: (className: string) => boolean };
+    parentElement?: unknown;
+  } | null;
+  while (element) {
+    if (
+      hasClassName(element, "mineru-copy-formula-menu") ||
+      hasClassName(element, "mineru-copy-formula-menu-item")
     ) {
       return true;
     }

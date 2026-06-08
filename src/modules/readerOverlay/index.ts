@@ -168,6 +168,10 @@ function createSelectionOptions(
     onSelectPanelActiveChange: (active) => {
       syncSelectPanelActiveClasses(state, active);
     },
+    isFormulaMenuActive: () => state.formulaMenuActive,
+    onFormulaMenuActiveChange: (active) => {
+      syncFormulaMenuActiveClasses(state, active);
+    },
   };
 }
 
@@ -179,6 +183,20 @@ function syncSelectPanelActiveClasses(
   state.selectPanelActive = active;
   for (const root of state.rootsByWindow.values()) {
     root.classList.toggle("mineru-copy-select-panel-active", active);
+    if (active) {
+      setHoveredBox(root, null);
+    }
+  }
+}
+
+/** 同步公式复制菜单交互锁，避免浮动菜单下方 box 被 hover 命中。 */
+function syncFormulaMenuActiveClasses(
+  state: ReaderOverlayState,
+  active: boolean,
+): void {
+  state.formulaMenuActive = active;
+  for (const root of state.rootsByWindow.values()) {
+    root.classList.toggle("mineru-copy-formula-menu-active", active);
     if (active) {
       setHoveredBox(root, null);
     }

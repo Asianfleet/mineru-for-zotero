@@ -69,6 +69,7 @@ export function findBoxAtPoint(
   options: {
     prioritizeActiveActions?: boolean;
     selectPanelActive?: boolean;
+    formulaMenuActive?: boolean;
   } = {},
 ): HTMLElement | null {
   const boxes = getBoxElements(root);
@@ -81,6 +82,18 @@ export function findBoxAtPoint(
     return openSelectPanelBox.box;
   }
   if (options.selectPanelActive) {
+    return null;
+  }
+
+  const openFormulaMenuBox = findOpenFormulaMenuBoxAtPoint(
+    boxes,
+    clientX,
+    clientY,
+  );
+  if (openFormulaMenuBox.found) {
+    return openFormulaMenuBox.box;
+  }
+  if (options.formulaMenuActive) {
     return null;
   }
 
@@ -134,6 +147,24 @@ function findOpenSelectPanelBoxAtPoint(
   return {
     found: true,
     box: findBoxInActionsHoverArea(openPanelBoxes, clientX, clientY),
+  };
+}
+
+function findOpenFormulaMenuBoxAtPoint(
+  boxes: HTMLElement[],
+  clientX: number,
+  clientY: number,
+): { found: true; box: HTMLElement | null } | { found: false } {
+  const openMenuBoxes = boxes.filter((box) =>
+    hasClassName(getBoxActionsElement(box), "mineru-copy-formula-menu-open"),
+  );
+  if (openMenuBoxes.length === 0) {
+    return { found: false };
+  }
+
+  return {
+    found: true,
+    box: findBoxInActionsHoverArea(openMenuBoxes, clientX, clientY),
   };
 }
 
