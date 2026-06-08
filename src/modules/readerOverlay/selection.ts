@@ -337,6 +337,9 @@ export function setElementClass(
   enabled: boolean,
 ): void {
   if (element.classList) {
+    if (element.classList.contains(className) === enabled) {
+      return;
+    }
     element.classList.toggle(className, enabled);
     return;
   }
@@ -344,6 +347,9 @@ export function setElementClass(
   const currentClassName =
     typeof element.className === "string" ? element.className : "";
   const classes = new Set(currentClassName.split(/\s+/).filter(Boolean));
+  if (classes.has(className) === enabled) {
+    return;
+  }
   if (enabled) {
     classes.add(className);
   } else {

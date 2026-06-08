@@ -15,6 +15,7 @@ import {
   setReaderOverlayRootForReader,
 } from "../src/modules/readerOverlay";
 import * as readerOverlay from "../src/modules/readerOverlay";
+import { setHoveredBox } from "../src/modules/readerOverlay/selection";
 import { getMinerUStorageRoot } from "../src/modules/preferenceScript";
 import { createStorage } from "../src/modules/storage";
 import { normalizedBoxes } from "./domainFixtures";
@@ -1815,6 +1816,41 @@ describe("readerOverlay", function () {
       firstBox.className,
       "mineru-copy-box-hovered",
       "blur clears first box hover",
+    );
+  });
+
+  it("does not rewrite hover classes when the hovered box is unchanged", function () {
+    const root = createFakeElement();
+    const boxes = [
+      createFakeElement(),
+      createFakeElement(),
+      createFakeElement(),
+    ];
+    const toggleCounts = new Map<FakeElement, number>();
+
+    for (const box of boxes) {
+      box.className = "mineru-copy-box";
+      const originalToggle = box.classList.toggle;
+      box.classList.toggle = (className, force) => {
+        toggleCounts.set(box, (toggleCounts.get(box) ?? 0) + 1);
+        return originalToggle.call(box.classList, className, force);
+      };
+    }
+    root.append(...boxes);
+
+    setHoveredBox(
+      root as unknown as HTMLElement,
+      boxes[0] as unknown as HTMLElement,
+    );
+    toggleCounts.clear();
+    setHoveredBox(
+      root as unknown as HTMLElement,
+      boxes[0] as unknown as HTMLElement,
+    );
+
+    assert.deepEqual(
+      boxes.map((box) => toggleCounts.get(box) ?? 0),
+      [0, 0, 0],
     );
   });
 
