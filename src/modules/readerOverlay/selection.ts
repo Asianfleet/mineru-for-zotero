@@ -98,13 +98,12 @@ export function findBoxAtPoint(
   }
 
   if (options.prioritizeActiveActions ?? true) {
-    const activeBox = findBoxInActionsHoverArea(
-      boxes.filter((box) =>
-        hasClassName(box, "mineru-copy-box-actions-active"),
-      ),
-      clientX,
-      clientY,
+    const activeBoxes = boxes.filter((box) =>
+      hasClassName(box, "mineru-copy-box-actions-active"),
     );
+    const activeBox =
+      findLastBoxWithVisibleActions(activeBoxes) ??
+      findBoxInActionsHoverArea(activeBoxes, clientX, clientY);
     if (activeBox) {
       return activeBox;
     }
@@ -122,6 +121,15 @@ export function findBoxAtPoint(
     return actionHoveredBox;
   }
 
+  const visibleActionsBox = findBoxInVisibleActionsHoverArea(
+    boxes,
+    clientX,
+    clientY,
+  );
+  if (visibleActionsBox) {
+    return visibleActionsBox;
+  }
+
   const normalHitTestBoxes = getNormalHitTestBoxes(
     root,
     boxes,
@@ -132,6 +140,38 @@ export function findBoxAtPoint(
     const box = normalHitTestBoxes[index];
     const rect = box.getBoundingClientRect?.();
     if (rect && isPointInRect(clientX, clientY, rect)) {
+      return box;
+    }
+  }
+  return null;
+}
+
+function findLastBoxWithVisibleActions(
+  boxes: HTMLElement[],
+): HTMLElement | null {
+  for (let index = boxes.length - 1; index >= 0; index -= 1) {
+    const box = boxes[index];
+    const actions = getBoxActionsElement(box);
+    if (actions && isElementVisiblyRected(actions)) {
+      return box;
+    }
+  }
+  return null;
+}
+
+function findBoxInVisibleActionsHoverArea(
+  boxes: HTMLElement[],
+  clientX: number,
+  clientY: number,
+): HTMLElement | null {
+  for (let index = boxes.length - 1; index >= 0; index -= 1) {
+    const box = boxes[index];
+    const actions = getBoxActionsElement(box);
+    if (!actions || !isElementVisiblyRected(actions)) {
+      continue;
+    }
+    const rect = box.getBoundingClientRect?.();
+    if (rect && isPointInBoxActionsHoverArea(box, rect, clientX, clientY)) {
       return box;
     }
   }
@@ -306,6 +346,17 @@ export function isPointInRect(
     clientX <= rect.right &&
     clientY >= rect.top &&
     clientY <= rect.bottom
+  );
+}
+
+function isElementVisiblyRected(element: HTMLElement): boolean {
+  const rect = element.getBoundingClientRect?.();
+  return Boolean(
+    rect &&
+    (rect.width > 0 ||
+      rect.height > 0 ||
+      rect.right > rect.left ||
+      rect.bottom > rect.top),
   );
 }
 
