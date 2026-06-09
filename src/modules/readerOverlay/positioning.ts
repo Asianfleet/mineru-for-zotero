@@ -638,10 +638,13 @@ export function forwardWheelToUnderlyingElement(
     return false;
   }
 
-  const previousDisplay = root.style.display;
-  root.style.display = "none";
-  const target = elementFromPoint(event.clientX, event.clientY);
-  root.style.display = previousDisplay;
+  let target: Element | null = null;
+  const restoreOverlayHitTesting = disableOverlayHitTesting(root);
+  try {
+    target = elementFromPoint(event.clientX, event.clientY);
+  } finally {
+    restoreOverlayHitTesting();
+  }
 
   if (!target || root.contains(target)) {
     return false;
@@ -670,6 +673,25 @@ export function forwardWheelToUnderlyingElement(
   });
   target.dispatchEvent(forwarded);
   return true;
+}
+
+/** 临时关闭 overlay 命中测试，避免滚轮转发时隐藏工具栏导致闪动。 */
+function disableOverlayHitTesting(root: HTMLElement): () => void {
+  const elements = [root, ...Array.from(root.querySelectorAll?.("*") ?? [])];
+  const previousPointerEvents = elements.map((element) => ({
+    element: element as HTMLElement,
+    pointerEvents: (element as HTMLElement).style.pointerEvents,
+  }));
+
+  for (const { element } of previousPointerEvents) {
+    element.style.pointerEvents = "none";
+  }
+
+  return () => {
+    for (const { element, pointerEvents } of previousPointerEvents) {
+      element.style.pointerEvents = pointerEvents;
+    }
+  };
 }
 
 /** 兼容插件全局缺失 WheelEvent 时，从 reader window 获取构造器。 */

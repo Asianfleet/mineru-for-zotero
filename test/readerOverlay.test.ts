@@ -1373,7 +1373,8 @@ describe("readerOverlay", function () {
       elementFromPoint(clientX: number, clientY: number) {
         assert.equal(clientX, 10);
         assert.equal(clientY, 20);
-        assert.equal(root.style.display, "none");
+        assert.notEqual(root.style.display, "none");
+        assert.equal(root.style.pointerEvents, "none");
         return underlying;
       },
       documentElement: null,
