@@ -26,6 +26,7 @@ interface RawBlock {
   html?: string;
   latex?: string;
   formula?: string;
+  image_path?: string;
   blocks?: RawBlock[];
   lines?: Array<{ spans?: RawSpan[] }>;
 }
@@ -34,6 +35,7 @@ interface RawSpan {
   type?: string;
   content?: string;
   text?: string;
+  image_path?: string;
 }
 
 export function normalizeMinerUBoxes(result: unknown): NormalizedBox[] {
@@ -55,7 +57,8 @@ export function normalizeMinerUBoxes(result: unknown): NormalizedBox[] {
         block.type ?? block.block_type ?? block.category_type,
       );
       const markdown = getBlockMarkdown(block);
-      boxes.push({
+      const imagePath = getBlockImagePath(block);
+      const box: NormalizedBox = {
         rawIndex: boxes.length,
         page: pageNumber,
         type,
@@ -67,7 +70,11 @@ export function normalizeMinerUBoxes(result: unknown): NormalizedBox[] {
         },
         markdown,
         formula: isFormulaType(type) ? getBlockFormula(block, markdown) : null,
-      });
+      };
+      if (imagePath) {
+        box.imagePath = imagePath;
+      }
+      boxes.push(box);
     }
   }
 
@@ -194,6 +201,45 @@ function getBlockFormula(block: RawBlock, markdown: string): string | null {
     block.formula ?? block.latex ?? getLinesText(block, "visual") ?? markdown;
   const formula = String(value ?? "").trim();
   return formula ? formula : null;
+}
+
+function getBlockImagePath(block: RawBlock): string | null {
+  const direct = normalizeImagePath(block.image_path);
+  if (direct) {
+    return direct;
+  }
+
+  for (const line of block.lines ?? []) {
+    for (const span of line.spans ?? []) {
+      const spanPath = normalizeImagePath(span.image_path);
+      if (spanPath) {
+        return spanPath;
+      }
+    }
+  }
+
+  for (const child of block.blocks ?? []) {
+    const childPath = getBlockImagePath(child);
+    if (childPath) {
+      return childPath;
+    }
+  }
+  return null;
+}
+
+function normalizeImagePath(path: unknown): string | null {
+  const value = String(path ?? "")
+    .trim()
+    .replace(/\\/g, "/");
+  if (
+    !value ||
+    value.startsWith("/") ||
+    /^[a-z]:/i.test(value) ||
+    value.split("/").some((part) => !part || part === "." || part === "..")
+  ) {
+    return null;
+  }
+  return value;
 }
 
 function getLinesText(

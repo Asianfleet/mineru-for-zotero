@@ -44,6 +44,7 @@ reader-copy-selected-boxes = 复制已选内容
 reader-copy-full-markdown = 复制全文 markdown
 reader-clear-selection = 清空选择
 reader-overlay-missing-result = 当前 PDF 还没有可用的 MinerU 解析结果，请先解析后再开启 box
+reader-copy-image-missing = 当前 box 没有可复制的图片。
 reader-copy-box = 复制
 reader-select-copy-box = 选择复制
 reader-copy-formula-menu = 公式复制选项

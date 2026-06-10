@@ -445,6 +445,178 @@ describe("readerOverlay", function () {
     }
   });
 
+  it("copies a visual box image from its markdown image link", async function () {
+    const copiedImages: string[] = [];
+    const globals = globalThis as typeof globalThis & {
+      ztoolkit?: unknown;
+    };
+    const originalZtoolkit = globals.ztoolkit;
+    globals.ztoolkit = {
+      Clipboard: class {
+        addImage(source: string) {
+          copiedImages.push(source);
+          return this;
+        }
+
+        copy() {}
+      },
+    };
+    const attachment = {
+      id: 1,
+      key: "BOXIMAGE",
+      libraryID: 1,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    const imageBytes = new Uint8Array([137, 80, 78, 71]);
+    await createStorage(getMinerUStorageRoot()).writeResult({
+      attachment,
+      mineruTaskID: "task-box-image",
+      rawResult: { content_list: [] },
+      markdown: "![figure](images/figure.png)",
+      boxes: [createBox(0, "image", "![figure](images/figure.png)")],
+      images: [{ path: "figure.png", bytes: imageBytes }],
+    });
+
+    try {
+      const doc = createDocumentStub();
+      const root = buildReaderOverlayRoot(
+        doc as unknown as Document,
+        [createBox(0, "image", "![figure](images/figure.png)")],
+        "hover",
+        { attachment },
+      );
+      findElementsByDataAction(root, "copy")[0].dispatch(
+        "click",
+        createClickEvent(),
+      );
+
+      await waitForAsync(() => {
+        assert.deepEqual(copiedImages, ["data:image/png;base64,iVBORw=="]);
+      });
+    } finally {
+      globals.ztoolkit = originalZtoolkit;
+    }
+  });
+
+  it("copies a visual box image from its normalized image path", async function () {
+    const copiedImages: string[] = [];
+    const globals = globalThis as typeof globalThis & {
+      ztoolkit?: unknown;
+    };
+    const originalZtoolkit = globals.ztoolkit;
+    globals.ztoolkit = {
+      Clipboard: class {
+        addImage(source: string) {
+          copiedImages.push(source);
+          return this;
+        }
+
+        copy() {}
+      },
+    };
+    const attachment = {
+      id: 1,
+      key: "BOXPATH",
+      libraryID: 1,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    await createStorage(getMinerUStorageRoot()).writeResult({
+      attachment,
+      mineruTaskID: "task-box-image-path",
+      rawResult: { content_list: [] },
+      markdown: "![figure](images/figure.jpg)",
+      boxes: [
+        {
+          ...createBox(0, "image", ""),
+          imagePath: "figure.jpg",
+        },
+      ],
+      images: [{ path: "figure.jpg", bytes: new Uint8Array([255, 216, 255]) }],
+    });
+
+    try {
+      const doc = createDocumentStub();
+      const root = buildReaderOverlayRoot(
+        doc as unknown as Document,
+        [{ ...createBox(0, "image", ""), imagePath: "figure.jpg" }],
+        "hover",
+        { attachment },
+      );
+      findElementsByDataAction(root, "copy")[0].dispatch(
+        "click",
+        createClickEvent(),
+      );
+
+      await waitForAsync(() => {
+        assert.deepEqual(copiedImages, ["data:image/jpeg;base64,/9j/"]);
+      });
+    } finally {
+      globals.ztoolkit = originalZtoolkit;
+    }
+  });
+
+  it("shows a notice when a visual box has no copied image", async function () {
+    const notices: string[] = [];
+    const globals = globalThis as typeof globalThis & {
+      ztoolkit?: unknown;
+      addon?: unknown;
+    };
+    const originalZtoolkit = globals.ztoolkit;
+    const originalAddon = globals.addon;
+    globals.addon = {
+      data: {
+        config: { addonName: "MinerU for Zotero" },
+        locale: {
+          current: {
+            formatMessagesSync(messages: Array<{ id: string }>) {
+              return messages.map(({ id }) => ({
+                value:
+                  id === "mineruForZotero-reader-copy-image-missing"
+                    ? "当前 box 没有可复制的图片。"
+                    : null,
+                attributes: null,
+              }));
+            },
+          },
+        },
+      },
+    };
+    globals.ztoolkit = {
+      ProgressWindow: class {
+        createLine(input: { text: string }) {
+          notices.push(input.text);
+          return this;
+        }
+
+        show() {}
+      },
+    };
+
+    try {
+      const doc = createDocumentStub();
+      const root = buildReaderOverlayRoot(
+        doc as unknown as Document,
+        [createBox(0, "image", "")],
+        "hover",
+      );
+      findElementsByDataAction(root, "copy")[0].dispatch(
+        "click",
+        createClickEvent(),
+      );
+
+      await waitForAsync(() => {
+        assert.deepEqual(notices, ["当前 box 没有可复制的图片。"]);
+      });
+    } finally {
+      globals.ztoolkit = originalZtoolkit;
+      globals.addon = originalAddon;
+    }
+  });
+
   it("isolates selectable copy textarea pointer and context menu events", function () {
     const doc = createDocumentStub();
     const root = buildReaderOverlayRoot(
@@ -3458,6 +3630,20 @@ function createClickEvent(
     preventDefault() {},
     stopPropagation() {},
   } as unknown as MouseEvent;
+}
+
+async function waitForAsync(assertion: () => void): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw lastError;
 }
 
 function createKeyEvent(key: string): KeyboardEvent {

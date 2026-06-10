@@ -1,4 +1,4 @@
-import type { NormalizedBox, OverlayMode } from "../domain";
+import type { AttachmentRef, NormalizedBox, OverlayMode } from "../domain";
 
 export type ReaderOverlayKey = `${string}:${string}`;
 
@@ -41,6 +41,7 @@ export interface ReaderOverlayPositioningController {
 }
 
 export interface ReaderOverlaySelectionOptions {
+  attachment?: Pick<AttachmentRef, "libraryID" | "key">;
   selectedRawIndexes?: Set<number>;
   selectableRawIndexes?: number[];
   getSelectionAnchorRawIndex?: () => number | null;

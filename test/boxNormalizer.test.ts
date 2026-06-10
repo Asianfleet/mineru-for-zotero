@@ -269,6 +269,45 @@ describe("boxNormalizer", function () {
     assert.equal(boxes[0].type, "table");
   });
 
+  it("preserves nested visual image paths for image copying", function () {
+    const boxes = normalizeMinerUBoxes({
+      pdf_info: [
+        {
+          page_idx: 0,
+          page_size: [1000, 2000],
+          para_blocks: [
+            {
+              type: "image",
+              bbox: [100, 200, 500, 700],
+              blocks: [
+                {
+                  type: "image_body",
+                  bbox: [100, 200, 500, 600],
+                  lines: [
+                    {
+                      spans: [
+                        {
+                          type: "image",
+                          content: "",
+                          image_path: "figure.jpg",
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    assert.equal(boxes[0].type, "image");
+    assert.equal(boxes[0].imagePath, "figure.jpg");
+    assert.equal(boxes[1].type, "image_body");
+    assert.equal(boxes[1].imagePath, "figure.jpg");
+  });
+
   it("drops list container boxes when reference child boxes are available", function () {
     const boxes = normalizeMinerUBoxes({
       pdf_info: [

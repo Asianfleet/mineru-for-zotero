@@ -21,6 +21,7 @@ export interface NormalizedBox {
   };
   markdown: string;
   formula: string | null;
+  imagePath?: string | null;
 }
 
 export interface MinerUImageFile {

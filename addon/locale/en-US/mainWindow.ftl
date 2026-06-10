@@ -44,6 +44,7 @@ reader-copy-selected-boxes = Copy selected content
 reader-copy-full-markdown = Copy full markdown
 reader-clear-selection = Clear selection
 reader-overlay-missing-result = This PDF does not have a MinerU parse result yet. Parse it before enabling boxes.
+reader-copy-image-missing = This box does not have an image to copy.
 reader-copy-box = Copy
 reader-select-copy-box = Select copy
 reader-copy-formula-menu = Formula copy options

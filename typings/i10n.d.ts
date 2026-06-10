@@ -103,6 +103,7 @@ export type FluentMessageId =
   | 'reader-copy-formula-with-dollar'
   | 'reader-copy-formula-without-dollar'
   | 'reader-copy-full-markdown'
+  | 'reader-copy-image-missing'
   | 'reader-copy-selected-boxes'
   | 'reader-disable-plugin'
   | 'reader-mode-group-label'

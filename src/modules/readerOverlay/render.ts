@@ -1,7 +1,7 @@
 import { formatBoxesForCopy, formatFormulaBoxForCopy } from "../copyFormatter";
 import { safeReaderOverlayCleanup } from "./diagnostics";
-import { readerOverlayString } from "./notice";
-import { copyText } from "./copy";
+import { readerOverlayString, showReaderOverlayNotice } from "./notice";
+import { copyBoxImageFromStorage, copyText, isImageCopyBox } from "./copy";
 import { setBoxSelectedClass, selectBoxRange } from "./selection";
 import type {
   NormalizedBox,
@@ -153,7 +153,7 @@ export function createBoxActions(
   toolbar.className = "mineru-copy-box-toolbar";
   toolbar.addEventListener("mousedown", stopOverlayActionEvent);
   toolbar.addEventListener("click", stopOverlayActionEvent);
-  const copyControl = createToolbarCopyControl(doc, box);
+  const copyControl = createToolbarCopyControl(doc, box, selectionOptions);
   bindFormulaMenuActiveState(copyControl, doc, actions, box, selectionOptions);
   toolbar.append(
     copyControl,
@@ -228,6 +228,7 @@ interface ToolbarButtonOptions {
 function createToolbarCopyControl(
   doc: Document,
   box: NormalizedBox,
+  selectionOptions: ReaderOverlaySelectionOptions,
 ): HTMLButtonElement | HTMLDivElement {
   if (!isFormulaBox(box)) {
     return createToolbarButton(doc, {
@@ -235,6 +236,16 @@ function createToolbarCopyControl(
       className: "mineru-copy-toolbar-button-copy",
       label: readerOverlayString("reader-copy-box", "Copy"),
       onClick: () => {
+        if (isImageCopyBox(box)) {
+          void copyBoxImageFromStorage(box, selectionOptions.attachment).then(
+            (copied) => {
+              if (!copied) {
+                showReaderOverlayNotice("reader-copy-image-missing");
+              }
+            },
+          );
+          return;
+        }
         copyText(formatBoxesForCopy([box]));
       },
     });
