@@ -79,6 +79,23 @@ describe("readerOverlay", function () {
         createBox(5, "interline_equation", "E=mc^2", "E=mc^2"),
         createBox(6, "table_body", "<table></table>"),
         createBox(7, "reference", "[1] Paper"),
+        createBox(8, "image_footnote", "Image note"),
+        createBox(9, "table_footnote", "Table note"),
+        createBox(10, "chart", "Chart"),
+        createBox(11, "chart_body", "Chart body"),
+        createBox(12, "chart_caption", "Chart caption"),
+        createBox(13, "chart_footnote", "Chart note"),
+        createBox(14, "index", "Index"),
+        createBox(15, "phonetic", "Phonetic"),
+        createBox(16, "code", "Code"),
+        createBox(17, "algorithm", "Algorithm"),
+        createBox(18, "code_caption", "Code caption"),
+        createBox(19, "code_body", "Algorithm description"),
+        createBox(20, "code_footnote", "Code note"),
+        createBox(21, "aside_text", "Aside"),
+        createBox(22, "page_aside_text", "Page aside"),
+        createBox(23, "paragraph", "Paragraph"),
+        createBox(24, "equation_interline", "E=mc^2", "E=mc^2"),
       ],
       "hover",
     );
@@ -96,17 +113,34 @@ describe("readerOverlay", function () {
         "Formula",
         "Table",
         "Reference",
+        "Image footnote",
+        "Table footnote",
+        "Chart",
+        "Chart",
+        "Chart caption",
+        "Chart footnote",
+        "Index",
+        "Phonetic",
+        "Code",
+        "Algorithm",
+        "Code caption",
+        "Algorithm description",
+        "Code footnote",
+        "Aside",
+        "Aside",
+        "Text",
+        "Formula",
       ],
     );
-    assert.lengthOf(findElementsByClass(root, "mineru-copy-box-toolbar"), 8);
-    assert.lengthOf(findElementsByDataAction(root, "copy"), 8);
-    assert.lengthOf(findElementsByDataAction(root, "select-copy"), 8);
+    assert.lengthOf(findElementsByClass(root, "mineru-copy-box-toolbar"), 25);
+    assert.lengthOf(findElementsByDataAction(root, "copy"), 25);
+    assert.lengthOf(findElementsByDataAction(root, "select-copy"), 25);
     assert.lengthOf(
       findElementsByClass(root, "mineru-copy-toolbar-divider"),
-      8,
+      25,
     );
-    assert.lengthOf(findElementsByClass(root, "mineru-copy-formula-menu"), 1);
-    assert.lengthOf(findElementsByClass(root, "mineru-copy-select-panel"), 8);
+    assert.lengthOf(findElementsByClass(root, "mineru-copy-formula-menu"), 2);
+    assert.lengthOf(findElementsByClass(root, "mineru-copy-select-panel"), 25);
   });
 
   it("uses Fluent messages for hover labels and copy controls", function () {

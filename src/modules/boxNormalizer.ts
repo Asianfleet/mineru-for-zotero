@@ -305,7 +305,9 @@ function isFormulaType(type: string): boolean {
   return [
     "formula",
     "interline_equation",
+    "equation_interline",
     "inline_equation",
+    "equation_inline",
     "equation",
   ].includes(type);
 }

@@ -34,6 +34,22 @@ describe("copyFormatter", function () {
     );
   });
 
+  it("wraps selected equation_interline boxes with display dollars", function () {
+    assert.equal(
+      formatBoxesForCopy([
+        {
+          rawIndex: 0,
+          page: 1,
+          type: "equation_interline",
+          bbox: { x: 0, y: 0, width: 1, height: 1 },
+          markdown: "E=mc^2",
+          formula: "E=mc^2",
+        },
+      ]),
+      "$$\nE=mc^2\n$$",
+    );
+  });
+
   it("copies formula with dollars", function () {
     assert.equal(formatFormulaForCopy("E=mc^2", "with-dollar"), "$E=mc^2$");
   });

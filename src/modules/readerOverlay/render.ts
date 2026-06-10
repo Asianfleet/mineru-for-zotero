@@ -721,7 +721,9 @@ export function isFormulaBox(box: NormalizedBox): boolean {
   return [
     "formula",
     "interline_equation",
+    "equation_interline",
     "inline_equation",
+    "equation_inline",
     "equation",
   ].includes(box.type);
 }
@@ -777,10 +779,13 @@ export function formatBoxTypeLabel(type: string): string {
   const normalized = normalizeBoxType(type);
   const labels: Record<string, { id: string; fallback: string }> = {
     text: { id: "reader-box-type-text", fallback: "Text" },
+    paragraph: { id: "reader-box-type-text", fallback: "Text" },
     title: { id: "reader-box-type-title", fallback: "Title" },
     list: { id: "reader-box-type-list", fallback: "List" },
     table: { id: "reader-box-type-table", fallback: "Table" },
     table_body: { id: "reader-box-type-table", fallback: "Table" },
+    chart: { id: "reader-box-type-chart", fallback: "Chart" },
+    chart_body: { id: "reader-box-type-chart", fallback: "Chart" },
     figure: { id: "reader-box-type-image", fallback: "Image" },
     image: { id: "reader-box-type-image", fallback: "Image" },
     image_body: { id: "reader-box-type-image", fallback: "Image" },
@@ -791,6 +796,22 @@ export function formatBoxTypeLabel(type: string): string {
     table_caption: {
       id: "reader-box-type-table-caption",
       fallback: "Table caption",
+    },
+    chart_caption: {
+      id: "reader-box-type-chart-caption",
+      fallback: "Chart caption",
+    },
+    image_footnote: {
+      id: "reader-box-type-image-footnote",
+      fallback: "Image footnote",
+    },
+    table_footnote: {
+      id: "reader-box-type-table-footnote",
+      fallback: "Table footnote",
+    },
+    chart_footnote: {
+      id: "reader-box-type-chart-footnote",
+      fallback: "Chart footnote",
     },
     page_header: { id: "reader-box-type-page-header", fallback: "Header" },
     header: { id: "reader-box-type-page-header", fallback: "Header" },
@@ -805,8 +826,28 @@ export function formatBoxTypeLabel(type: string): string {
     bibliography: { id: "reader-box-type-reference", fallback: "Reference" },
     formula: { id: "reader-box-type-formula", fallback: "Formula" },
     interline_equation: { id: "reader-box-type-formula", fallback: "Formula" },
+    equation_interline: { id: "reader-box-type-formula", fallback: "Formula" },
     inline_equation: { id: "reader-box-type-formula", fallback: "Formula" },
+    equation_inline: { id: "reader-box-type-formula", fallback: "Formula" },
     equation: { id: "reader-box-type-formula", fallback: "Formula" },
+    index: { id: "reader-box-type-index", fallback: "Index" },
+    phonetic: { id: "reader-box-type-phonetic", fallback: "Phonetic" },
+    code: { id: "reader-box-type-code", fallback: "Code" },
+    algorithm: { id: "reader-box-type-algorithm", fallback: "Algorithm" },
+    code_caption: {
+      id: "reader-box-type-code-caption",
+      fallback: "Code caption",
+    },
+    code_body: {
+      id: "reader-box-type-code-body",
+      fallback: "Algorithm description",
+    },
+    code_footnote: {
+      id: "reader-box-type-code-footnote",
+      fallback: "Code footnote",
+    },
+    aside_text: { id: "reader-box-type-aside", fallback: "Aside" },
+    page_aside_text: { id: "reader-box-type-aside", fallback: "Aside" },
     unknown: { id: "reader-box-type-unknown", fallback: "Unknown" },
   };
   const label = labels[normalized];

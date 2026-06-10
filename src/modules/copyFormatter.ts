@@ -44,7 +44,9 @@ export function formatFormulaForCopy(
 }
 
 function isDisplayFormulaBox(box: NormalizedBox): boolean {
-  return normalizeBoxType(box.type) === "interline_equation";
+  return ["interline_equation", "equation_interline"].includes(
+    normalizeBoxType(box.type),
+  );
 }
 
 function isInlineFormulaBox(box: NormalizedBox): boolean {

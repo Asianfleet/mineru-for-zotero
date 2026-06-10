@@ -369,6 +369,11 @@ describe("boxNormalizer", function () {
               bbox: [100, 300, 500, 360],
               lines: [{ spans: [{ content: "E=mc^2" }] }],
             },
+            {
+              type: "equation_interline",
+              bbox: [100, 400, 500, 460],
+              lines: [{ spans: [{ content: "a+b" }] }],
+            },
           ],
         },
       ],
@@ -382,8 +387,10 @@ describe("boxNormalizer", function () {
         "page_header",
         "page_number",
         "interline_equation",
+        "equation_interline",
       ],
     );
     assert.equal(boxes[4].formula, "E=mc^2");
+    assert.equal(boxes[5].formula, "a+b");
   });
 });
