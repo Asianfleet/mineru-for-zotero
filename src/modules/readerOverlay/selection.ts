@@ -98,13 +98,12 @@ export function findBoxAtPoint(
   }
 
   if (options.prioritizeActiveActions ?? true) {
-    const activeBox = findBoxInActionsHoverArea(
-      boxes.filter((box) =>
-        hasClassName(box, "mineru-copy-box-actions-active"),
-      ),
-      clientX,
-      clientY,
+    const activeBoxes = boxes.filter((box) =>
+      hasClassName(box, "mineru-copy-box-actions-active"),
     );
+    const activeBox =
+      findLastBoxWithVisibleActions(activeBoxes) ??
+      findBoxInActionsHoverArea(activeBoxes, clientX, clientY);
     if (activeBox) {
       return activeBox;
     }
@@ -122,14 +121,94 @@ export function findBoxAtPoint(
     return actionHoveredBox;
   }
 
-  for (let index = boxes.length - 1; index >= 0; index -= 1) {
-    const box = boxes[index];
+  const visibleActionsBox = findBoxInVisibleActionsHoverArea(
+    boxes,
+    clientX,
+    clientY,
+  );
+  if (visibleActionsBox) {
+    return visibleActionsBox;
+  }
+
+  const normalHitTestBoxes = getNormalHitTestBoxes(
+    root,
+    boxes,
+    clientX,
+    clientY,
+  );
+  for (let index = normalHitTestBoxes.length - 1; index >= 0; index -= 1) {
+    const box = normalHitTestBoxes[index];
     const rect = box.getBoundingClientRect?.();
     if (rect && isPointInRect(clientX, clientY, rect)) {
       return box;
     }
   }
   return null;
+}
+
+function findLastBoxWithVisibleActions(
+  boxes: HTMLElement[],
+): HTMLElement | null {
+  for (let index = boxes.length - 1; index >= 0; index -= 1) {
+    const box = boxes[index];
+    const actions = getBoxActionsElement(box);
+    if (actions && isElementVisiblyRected(actions)) {
+      return box;
+    }
+  }
+  return null;
+}
+
+function findBoxInVisibleActionsHoverArea(
+  boxes: HTMLElement[],
+  clientX: number,
+  clientY: number,
+): HTMLElement | null {
+  for (let index = boxes.length - 1; index >= 0; index -= 1) {
+    const box = boxes[index];
+    const actions = getBoxActionsElement(box);
+    if (!actions || !isElementVisiblyRected(actions)) {
+      continue;
+    }
+    const rect = box.getBoundingClientRect?.();
+    if (rect && isPointInBoxActionsHoverArea(box, rect, clientX, clientY)) {
+      return box;
+    }
+  }
+  return null;
+}
+
+function getNormalHitTestBoxes(
+  root: HTMLElement,
+  boxes: HTMLElement[],
+  clientX: number,
+  clientY: number,
+): HTMLElement[] {
+  const layers = getPageLayerElements(root);
+  if (layers.length === 0) {
+    return boxes;
+  }
+
+  for (let index = layers.length - 1; index >= 0; index -= 1) {
+    const layer = layers[index];
+    if (layer.hidden) {
+      continue;
+    }
+    const rect = layer.getBoundingClientRect?.();
+    if (rect && isPointInRect(clientX, clientY, rect)) {
+      return getBoxElements(layer);
+    }
+  }
+  return boxes;
+}
+
+function getPageLayerElements(root: HTMLElement): HTMLElement[] {
+  if (typeof root.querySelectorAll !== "function") {
+    return [];
+  }
+  return Array.from(
+    root.querySelectorAll(".mineru-copy-page-layer"),
+  ) as HTMLElement[];
 }
 
 function findOpenSelectPanelBoxAtPoint(
@@ -270,6 +349,17 @@ export function isPointInRect(
   );
 }
 
+function isElementVisiblyRected(element: HTMLElement): boolean {
+  const rect = element.getBoundingClientRect?.();
+  return Boolean(
+    rect &&
+    (rect.width > 0 ||
+      rect.height > 0 ||
+      rect.right > rect.left ||
+      rect.bottom > rect.top),
+  );
+}
+
 /** 读取 box 上的 action 容器，兼容真实 DOM 与测试桩。 */
 export function getBoxActionsElement(box: HTMLElement): HTMLElement | null {
   const querySelector = box.querySelector?.bind(box);
@@ -337,6 +427,9 @@ export function setElementClass(
   enabled: boolean,
 ): void {
   if (element.classList) {
+    if (element.classList.contains(className) === enabled) {
+      return;
+    }
     element.classList.toggle(className, enabled);
     return;
   }
@@ -344,6 +437,9 @@ export function setElementClass(
   const currentClassName =
     typeof element.className === "string" ? element.className : "";
   const classes = new Set(currentClassName.split(/\s+/).filter(Boolean));
+  if (classes.has(className) === enabled) {
+    return;
+  }
   if (enabled) {
     classes.add(className);
   } else {

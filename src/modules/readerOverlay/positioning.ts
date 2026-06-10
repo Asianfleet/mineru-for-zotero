@@ -28,10 +28,12 @@ export function createReaderOverlayPositioningController(
   options: ReaderOverlayPositioningControllerOptions,
 ): ReaderOverlayPositioningController {
   let scheduledHandle: number | null = null;
+  let hoverScheduledHandle: number | null = null;
   let intervalHandle: number | null = null;
   let blurCleanupHandle: number | null = null;
   let cleaned = false;
   let modifierActive = false;
+  let pendingMouseMove: MouseEvent | null = null;
   const scrollContainer = getPrimaryScrollContainer(options.doc);
   const scrollContainers = getReaderScrollContainers(options.doc);
   const eventWindows = getReaderOverlayEventWindows(options.win);
@@ -164,6 +166,9 @@ export function createReaderOverlayPositioningController(
         blurCleanupHandle = null;
       }
       if (scheduledHandle === null) {
+        if (hoverScheduledHandle !== null) {
+          cancelHoverFrame();
+        }
         return;
       }
 
@@ -176,6 +181,9 @@ export function createReaderOverlayPositioningController(
         safeReaderOverlayCleanup(() => options.win.clearTimeout(handle));
       }
       scheduledHandle = null;
+      if (hoverScheduledHandle !== null) {
+        cancelHoverFrame();
+      }
     },
   };
 
@@ -251,6 +259,10 @@ export function createReaderOverlayPositioningController(
 
   /** 处理窗口失焦时的 modifier 态回收，避免卡在可交互模式。 */
   function onWindowBlur(): void {
+    pendingMouseMove = null;
+    if (hoverScheduledHandle !== null) {
+      cancelHoverFrame();
+    }
     if (!modifierActive) {
       setOverlayModifierActive(options.root, false);
       setHoveredBox(options.root, null);
@@ -265,20 +277,64 @@ export function createReaderOverlayPositioningController(
       return;
     }
 
-    const mouseEvent = event as MouseEvent;
+    pendingMouseMove = event as MouseEvent;
+    scheduleHoverUpdate();
+  }
+
+  /** 合并高频鼠标移动事件，每帧只处理最新位置。 */
+  function scheduleHoverUpdate(): void {
+    if (cleaned || hoverScheduledHandle !== null) {
+      return;
+    }
+
+    let timerRan = false;
+    const handle = options.win.setTimeout(() => {
+      timerRan = true;
+      hoverScheduledHandle = null;
+      processPendingMouseMove();
+    }, 16);
+    if (!timerRan) {
+      hoverScheduledHandle = handle;
+    }
+  }
+
+  /** 按最新鼠标位置同步 hover box 与 modifier 激活状态。 */
+  function processPendingMouseMove(): void {
+    if (cleaned || !pendingMouseMove) {
+      return;
+    }
+
+    const mouseEvent = pendingMouseMove;
+    pendingMouseMove = null;
     const selectPanelActive =
       options.selectionOptions?.isSelectPanelActive?.() ?? false;
     const formulaMenuActive =
       options.selectionOptions?.isFormulaMenuActive?.() ?? false;
-    const hitBox = selectPanelActive
+    const actionsOwnerBox = selectPanelActive
       ? null
-      : findBoxAtPoint(options.root, mouseEvent.clientX, mouseEvent.clientY, {
-          formulaMenuActive,
-        });
+      : findActionsOwnerBoxFromTarget(options.root, mouseEvent.target);
+    const hitBox =
+      actionsOwnerBox ??
+      (selectPanelActive
+        ? null
+        : findBoxAtPoint(options.root, mouseEvent.clientX, mouseEvent.clientY, {
+            formulaMenuActive,
+          }));
     clearPendingModifierBlurCleanup();
     modifierActive = Boolean(mouseEvent.shiftKey || mouseEvent.ctrlKey);
     setOverlayModifierActive(options.root, modifierActive);
     setHoveredBox(options.root, hitBox);
+  }
+
+  /** 取消待处理 hover frame，避免 cleanup/blur 后异步恢复旧 hover。 */
+  function cancelHoverFrame(): void {
+    const handle = hoverScheduledHandle;
+    hoverScheduledHandle = null;
+    pendingMouseMove = null;
+    if (handle === null) {
+      return;
+    }
+    options.win.clearTimeout(handle);
   }
 
   /** 在按住 Shift 或 Ctrl 点击时走 overlay 自己的多选语义。 */
@@ -436,6 +492,73 @@ function hasClassName(
   );
 }
 
+/** 从事件 target 反查其所属 actions 的 box，避免工具栏悬浮时 hover 穿透到下方 box。 */
+function findActionsOwnerBoxFromTarget(
+  root: HTMLElement,
+  target: EventTarget | null,
+): HTMLElement | null {
+  let element = target as {
+    className?: unknown;
+    classList?: { contains: (className: string) => boolean };
+    parentElement?: unknown;
+  } | null;
+  let actions: typeof element = null;
+
+  while (element) {
+    if (hasClassName(element, "mineru-copy-box-actions")) {
+      actions = element;
+      break;
+    }
+    if (element === root) {
+      return null;
+    }
+    element = element.parentElement as typeof element;
+  }
+  if (!actions) {
+    return null;
+  }
+
+  element = actions.parentElement as typeof element;
+  while (element) {
+    if (hasClassName(element, "mineru-copy-box")) {
+      return isElementWithinRoot(root, element)
+        ? (element as HTMLElement)
+        : null;
+    }
+    if (element === root) {
+      return null;
+    }
+    element = element.parentElement as typeof element;
+  }
+  return null;
+}
+
+/** 兼容真实 DOM 与测试桩的祖先关系判断。 */
+function isElementWithinRoot(
+  root: HTMLElement,
+  element: {
+    parentElement?: unknown;
+  },
+): boolean {
+  const contains = root.contains?.bind(root);
+  if (contains) {
+    try {
+      return contains(element as Node);
+    } catch {
+      // 测试桩不一定是 Node，继续走 parentElement 链判断。
+    }
+  }
+
+  let current: typeof element | null = element;
+  while (current) {
+    if (current === root) {
+      return true;
+    }
+    current = current.parentElement as typeof current;
+  }
+  return false;
+}
+
 /** 返回 reader 内可能承载 PDF 滚动的容器集合。 */
 export function getReaderScrollContainers(doc: Document): Element[] {
   const selectors = [
@@ -515,10 +638,13 @@ export function forwardWheelToUnderlyingElement(
     return false;
   }
 
-  const previousDisplay = root.style.display;
-  root.style.display = "none";
-  const target = elementFromPoint(event.clientX, event.clientY);
-  root.style.display = previousDisplay;
+  let target: Element | null = null;
+  const restoreOverlayHitTesting = disableOverlayHitTesting(root);
+  try {
+    target = elementFromPoint(event.clientX, event.clientY);
+  } finally {
+    restoreOverlayHitTesting();
+  }
 
   if (!target || root.contains(target)) {
     return false;
@@ -547,6 +673,25 @@ export function forwardWheelToUnderlyingElement(
   });
   target.dispatchEvent(forwarded);
   return true;
+}
+
+/** 临时关闭 overlay 命中测试，避免滚轮转发时隐藏工具栏导致闪动。 */
+function disableOverlayHitTesting(root: HTMLElement): () => void {
+  const elements = [root, ...Array.from(root.querySelectorAll?.("*") ?? [])];
+  const previousPointerEvents = elements.map((element) => ({
+    element: element as HTMLElement,
+    pointerEvents: (element as HTMLElement).style.pointerEvents,
+  }));
+
+  for (const { element } of previousPointerEvents) {
+    element.style.pointerEvents = "none";
+  }
+
+  return () => {
+    for (const { element, pointerEvents } of previousPointerEvents) {
+      element.style.pointerEvents = pointerEvents;
+    }
+  };
 }
 
 /** 兼容插件全局缺失 WheelEvent 时，从 reader window 获取构造器。 */
