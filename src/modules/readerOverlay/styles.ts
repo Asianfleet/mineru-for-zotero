@@ -181,7 +181,7 @@ export const READER_OVERLAY_CSS = `
 }
 
 .mineru-copy-toolbar-button:hover,
-.mineru-copy-formula-copy-group:hover > .mineru-copy-toolbar-button {
+.mineru-copy-menu-group:hover > .mineru-copy-toolbar-button {
   background-color: rgba(0, 0, 0, 0.08);
 }
 
@@ -217,11 +217,12 @@ export const READER_OVERLAY_CSS = `
   border-left: 1px solid rgba(0, 0, 0, 0.18);
 }
 
-.mineru-copy-formula-copy-group {
+.mineru-copy-menu-group {
   position: relative;
   display: flex;
 }
 
+.mineru-copy-menu-group::after,
 .mineru-copy-formula-copy-group::after {
   content: "";
   position: absolute;
@@ -232,7 +233,12 @@ export const READER_OVERLAY_CSS = `
   pointer-events: auto;
 }
 
-.mineru-copy-formula-menu {
+.mineru-copy-formula-copy-group::after {
+  height: 6px;
+  pointer-events: auto;
+}
+
+.mineru-copy-menu {
   position: absolute;
   left: 0;
   top: calc(100% + 6px);
@@ -247,12 +253,23 @@ export const READER_OVERLAY_CSS = `
   pointer-events: auto;
 }
 
+.mineru-copy-formula-menu {
+  top: calc(100% + 6px);
+}
+
+.mineru-copy-menu-group:hover .mineru-copy-menu,
+.mineru-copy-formula-menu-open .mineru-copy-menu,
 .mineru-copy-formula-copy-group:hover .mineru-copy-formula-menu,
 .mineru-copy-formula-menu-open .mineru-copy-formula-menu {
   display: flex;
 }
 
-.mineru-copy-formula-menu-item {
+.mineru-copy-formula-copy-group:hover .mineru-copy-formula-menu,
+.mineru-copy-formula-menu-open .mineru-copy-formula-menu {
+  display: flex;
+}
+
+.mineru-copy-menu-item {
   width: 100%;
   height: auto;
   border: 0;
@@ -267,7 +284,12 @@ export const READER_OVERLAY_CSS = `
   white-space: nowrap;
 }
 
-.mineru-copy-formula-menu-item:hover {
+.mineru-copy-formula-menu-item {
+  width: 100%;
+  height: auto;
+}
+
+.mineru-copy-menu-item:hover {
   background-color: rgba(0, 0, 0, 0.08);
 }
 

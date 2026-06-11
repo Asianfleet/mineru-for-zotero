@@ -22,6 +22,7 @@ export interface NormalizedBox {
   markdown: string;
   formula: string | null;
   imagePath?: string | null;
+  tableFormats?: Partial<Record<TableCopyTextFormat, string>>;
 }
 
 export interface MinerUImageFile {
@@ -58,3 +59,5 @@ export interface LiteParseManifest {
 
 export type OverlayMode = "all" | "hover" | "off";
 export type FormulaCopyMode = "with-dollar" | "without-dollar";
+export type TableCopyTextFormat = "latex" | "markdown" | "html" | "tsv";
+export type TableCopyFormat = TableCopyTextFormat | "image";

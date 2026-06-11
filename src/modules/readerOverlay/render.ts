@@ -1,4 +1,8 @@
-import { formatBoxesForCopy, formatFormulaBoxForCopy } from "../copyFormatter";
+import {
+  formatBoxesForCopy,
+  formatFormulaBoxForCopy,
+  formatTableBoxForCopy,
+} from "../copyFormatter";
 import { safeReaderOverlayCleanup } from "./diagnostics";
 import { readerOverlayString, showReaderOverlayNotice } from "./notice";
 import { copyBoxImageFromStorage, copyText, isImageCopyBox } from "./copy";
@@ -9,6 +13,7 @@ import type {
   ReaderOverlayBoxStyle,
   ReaderOverlaySelectionOptions,
 } from "./types";
+import type { TableCopyFormat, TableCopyTextFormat } from "../domain";
 
 const ACTIVE_BOX_ACTIONS_CLASS = "mineru-copy-box-actions-active";
 const SELECT_PANEL_TOP_GUARD_PX = 80;
@@ -154,7 +159,7 @@ export function createBoxActions(
   toolbar.addEventListener("mousedown", stopOverlayActionEvent);
   toolbar.addEventListener("click", stopOverlayActionEvent);
   const copyControl = createToolbarCopyControl(doc, box, selectionOptions);
-  bindFormulaMenuActiveState(copyControl, doc, actions, box, selectionOptions);
+  bindCopyMenuActiveState(copyControl, doc, actions, box, selectionOptions);
   toolbar.append(
     copyControl,
     createToolbarDivider(doc),
@@ -195,15 +200,15 @@ export function createBoxActions(
   return actions;
 }
 
-/** 把公式下拉菜单纳入 overlay active 状态，避免浮层下方 box 被 hover。 */
-function bindFormulaMenuActiveState(
+/** 把复制下拉菜单纳入 overlay active 状态，避免浮层下方 box 被 hover。 */
+function bindCopyMenuActiveState(
   copyControl: HTMLButtonElement | HTMLDivElement,
   doc: Document,
   actions: HTMLDivElement,
   box: NormalizedBox,
   selectionOptions: ReaderOverlaySelectionOptions,
 ): void {
-  if (!isFormulaBox(box)) {
+  if (!hasCopyMenu(box)) {
     return;
   }
 
@@ -231,6 +236,10 @@ function createToolbarCopyControl(
   selectionOptions: ReaderOverlaySelectionOptions,
 ): HTMLButtonElement | HTMLDivElement {
   if (!isFormulaBox(box)) {
+    if (isTableBox(box)) {
+      return createTableCopyControl(doc, box, selectionOptions);
+    }
+
     return createToolbarButton(doc, {
       action: "copy",
       className: "mineru-copy-toolbar-button-copy",
@@ -252,7 +261,7 @@ function createToolbarCopyControl(
   }
 
   const group = doc.createElement("div");
-  group.className = "mineru-copy-formula-copy-group";
+  group.className = "mineru-copy-formula-copy-group mineru-copy-menu-group";
   const label = readerOverlayString(
     "reader-copy-formula-menu",
     "Formula copy options",
@@ -266,17 +275,17 @@ function createToolbarCopyControl(
     onClick: () => {},
   });
   const menu = doc.createElement("div");
-  menu.className = "mineru-copy-formula-menu";
+  menu.className = "mineru-copy-formula-menu mineru-copy-menu";
   menu.title = label;
   menu.append(
-    createFormulaMenuItem(
+    createCopyMenuItem(
       doc,
       readerOverlayString("reader-copy-formula-with-dollar", "Copy with $"),
       () => {
         copyText(formatFormulaBoxForCopy(box, "with-dollar"));
       },
     ),
-    createFormulaMenuItem(
+    createCopyMenuItem(
       doc,
       readerOverlayString(
         "reader-copy-formula-without-dollar",
@@ -289,6 +298,86 @@ function createToolbarCopyControl(
   );
   group.append(trigger, menu);
   return group;
+}
+
+function createTableCopyControl(
+  doc: Document,
+  box: NormalizedBox,
+  selectionOptions: ReaderOverlaySelectionOptions,
+): HTMLDivElement {
+  const group = doc.createElement("div");
+  group.className = "mineru-copy-table-copy-group mineru-copy-menu-group";
+  const label = readerOverlayString(
+    "reader-copy-table-menu",
+    "Table copy options",
+  );
+  group.title = label;
+
+  const trigger = createToolbarButton(doc, {
+    action: "copy",
+    className: "mineru-copy-toolbar-button-copy",
+    label,
+    onClick: () => {},
+  });
+  const menu = doc.createElement("div");
+  menu.className = "mineru-copy-table-menu mineru-copy-menu";
+  menu.title = label;
+  menu.append(...createTableCopyMenuItems(doc, box, selectionOptions));
+  group.append(trigger, menu);
+  return group;
+}
+
+function createTableCopyMenuItems(
+  doc: Document,
+  box: NormalizedBox,
+  selectionOptions: ReaderOverlaySelectionOptions,
+): HTMLButtonElement[] {
+  const formats: Array<{ format: TableCopyFormat; label: string }> = [
+    {
+      format: "latex",
+      label: readerOverlayString("reader-copy-table-latex", "LaTeX"),
+    },
+    {
+      format: "markdown",
+      label: readerOverlayString("reader-copy-table-markdown", "Markdown"),
+    },
+    {
+      format: "html",
+      label: readerOverlayString("reader-copy-table-html", "HTML"),
+    },
+    {
+      format: "tsv",
+      label: readerOverlayString("reader-copy-table-tsv", "TSV"),
+    },
+    {
+      format: "image",
+      label: readerOverlayString("reader-copy-table-image", "Image"),
+    },
+  ];
+  return formats.map(({ format, label }) =>
+    createTableCopyMenuItem(doc, label, () => {
+      copyTableBoxByFormat(box, format, selectionOptions);
+    }),
+  );
+}
+
+function copyTableBoxByFormat(
+  box: NormalizedBox,
+  format: TableCopyFormat,
+  selectionOptions: ReaderOverlaySelectionOptions,
+): void {
+  if (format === "image") {
+    void copyBoxImageFromStorage(box, selectionOptions.attachment).then(
+      (copied) => {
+        if (!copied) {
+          showReaderOverlayNotice("reader-copy-image-missing");
+        }
+      },
+    );
+    return;
+  }
+
+  copyText(formatTableBoxForCopy(box, format as TableCopyTextFormat));
 }
 
 /** 创建 toolbar 按钮并阻止事件继续进入 PDF.js 选择逻辑。 */
@@ -320,15 +409,15 @@ function createToolbarDivider(doc: Document): HTMLSpanElement {
   return divider;
 }
 
-/** 创建公式复制下拉菜单中的具体复制动作。 */
-function createFormulaMenuItem(
+/** 创建复制下拉菜单中的具体复制动作。 */
+function createCopyMenuItem(
   doc: Document,
   label: string,
   onCopy: () => void,
 ): HTMLButtonElement {
   const button = doc.createElement("button");
   button.type = "button";
-  button.className = "mineru-copy-formula-menu-item";
+  button.className = "mineru-copy-formula-menu-item mineru-copy-menu-item";
   button.textContent = label;
   button.title = label;
   button.setAttribute("aria-label", label);
@@ -336,6 +425,16 @@ function createFormulaMenuItem(
     stopOverlayActionEvent(event);
     onCopy();
   });
+  return button;
+}
+
+function createTableCopyMenuItem(
+  doc: Document,
+  label: string,
+  onCopy: () => void,
+): HTMLButtonElement {
+  const button = createCopyMenuItem(doc, label, onCopy);
+  button.className = `${button.className} mineru-copy-table-menu-item`;
   return button;
 }
 
@@ -737,6 +836,14 @@ export function isFormulaBox(box: NormalizedBox): boolean {
     "equation_inline",
     "equation",
   ].includes(box.type);
+}
+
+function isTableBox(box: NormalizedBox): boolean {
+  return ["table", "table_body"].includes(normalizeBoxType(box.type));
+}
+
+function hasCopyMenu(box: NormalizedBox): boolean {
+  return isFormulaBox(box) || isTableBox(box);
 }
 
 /** 过滤出当前页真正需要渲染的 box 集合。 */

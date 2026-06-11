@@ -140,6 +140,7 @@ describe("readerOverlay", function () {
       25,
     );
     assert.lengthOf(findElementsByClass(root, "mineru-copy-formula-menu"), 2);
+    assert.lengthOf(findElementsByClass(root, "mineru-copy-table-menu"), 1);
     assert.lengthOf(findElementsByClass(root, "mineru-copy-select-panel"), 25);
   });
 
@@ -166,6 +167,8 @@ describe("readerOverlay", function () {
                   "Select copy localized",
                 "mineruForZotero-reader-copy-formula-menu":
                   "Formula copy options localized",
+                "mineruForZotero-reader-copy-table-menu":
+                  "Table copy options localized",
               };
               return messages.map(({ id }) => ({
                 value: values[id] ?? null,
@@ -222,6 +225,7 @@ describe("readerOverlay", function () {
         ),
         ["Formula copy options localized"],
       );
+      assert.lengthOf(findElementsByClass(root, "mineru-copy-table-menu"), 0);
       assert.lengthOf(findElementsByClass(root, "mineru-copy-select-panel"), 4);
     } finally {
       globals.addon = originalAddon;
@@ -258,6 +262,7 @@ describe("readerOverlay", function () {
       6,
     );
     assert.lengthOf(findElementsByClass(root, "mineru-copy-formula-menu"), 1);
+    assert.lengthOf(findElementsByClass(root, "mineru-copy-table-menu"), 0);
     assert.lengthOf(findElementsByClass(root, "mineru-copy-select-panel"), 6);
   });
 
@@ -553,6 +558,127 @@ describe("readerOverlay", function () {
 
       await waitForAsync(() => {
         assert.deepEqual(copiedImages, ["data:image/jpeg;base64,/9j/"]);
+      });
+    } finally {
+      globals.ztoolkit = originalZtoolkit;
+    }
+  });
+
+  it("renders table copy options and copies text formats", function () {
+    const copied: string[] = [];
+    const globals = globalThis as typeof globalThis & {
+      ztoolkit?: unknown;
+    };
+    const originalZtoolkit = globals.ztoolkit;
+    globals.ztoolkit = {
+      Clipboard: class {
+        private text = "";
+
+        addText(text: string, type: string) {
+          if (type === "text/unicode") {
+            this.text = text;
+          }
+          return this;
+        }
+
+        copy() {
+          copied.push(this.text);
+        }
+      },
+    };
+
+    try {
+      const doc = createDocumentStub();
+      const root = buildReaderOverlayRoot(
+        doc as unknown as Document,
+        [
+          {
+            ...createBox(0, "table", "| A |\n| - |\n| 1 |"),
+            tableFormats: {
+              latex: "\\begin{tabular}{c}A\\\\1\\end{tabular}",
+              markdown: "| A |\n| - |\n| 1 |",
+              html: "<table><tr><td>A</td></tr><tr><td>1</td></tr></table>",
+              tsv: "A\n1",
+            },
+          },
+        ],
+        "hover",
+      );
+
+      const menu = findElementsByClass(root, "mineru-copy-table-menu")[0];
+      const items = findElementsByClass(menu, "mineru-copy-table-menu-item");
+
+      assert.equal(menu.title, "Table copy options");
+      assert.deepEqual(
+        items.map((element) => element.textContent),
+        ["LaTeX", "Markdown", "HTML", "TSV", "Image"],
+      );
+
+      for (const item of items.slice(0, 4)) {
+        item.dispatch("click", createClickEvent());
+      }
+
+      assert.deepEqual(copied, [
+        "\\begin{tabular}{c}A\\\\1\\end{tabular}",
+        "| A |\n| - |\n| 1 |",
+        "<table><tr><td>A</td></tr><tr><td>1</td></tr></table>",
+        "A\n1",
+      ]);
+    } finally {
+      globals.ztoolkit = originalZtoolkit;
+    }
+  });
+
+  it("copies a table image from the table copy menu image option", async function () {
+    const copiedImages: string[] = [];
+    const globals = globalThis as typeof globalThis & {
+      ztoolkit?: unknown;
+    };
+    const originalZtoolkit = globals.ztoolkit;
+    globals.ztoolkit = {
+      Clipboard: class {
+        addImage(source: string) {
+          copiedImages.push(source);
+          return this;
+        }
+
+        copy() {}
+      },
+    };
+    const attachment = {
+      id: 1,
+      key: "TABLEIMG",
+      libraryID: 1,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    await createStorage(getMinerUStorageRoot()).writeResult({
+      attachment,
+      mineruTaskID: "task-table-image",
+      rawResult: { content_list: [] },
+      markdown: "![table](images/table.png)",
+      boxes: [{ ...createBox(0, "table", ""), imagePath: "table.png" }],
+      images: [{ path: "table.png", bytes: new Uint8Array([137, 80, 78, 71]) }],
+    });
+
+    try {
+      const doc = createDocumentStub();
+      const root = buildReaderOverlayRoot(
+        doc as unknown as Document,
+        [{ ...createBox(0, "table", ""), imagePath: "table.png" }],
+        "hover",
+        { attachment },
+      );
+      const tableItems = findElementsByClass(
+        root,
+        "mineru-copy-table-menu-item",
+      );
+
+      tableItems[4].dispatch("click", createClickEvent());
+
+      await waitForAsync(() => {
+        assert.deepEqual(copiedImages, ["data:image/png;base64,iVBORw=="]);
       });
     } finally {
       globals.ztoolkit = originalZtoolkit;

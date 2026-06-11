@@ -769,6 +769,74 @@ describe("storage", function () {
     assert.equal(boxes[0].imagePath, "figure.jpg");
   });
 
+  it("refreshes stale normalized table boxes with span html from the raw MinerU result", async function () {
+    const storage = createStorage(rootDir);
+    const attachment = {
+      id: 1,
+      key: "TABREFRESH",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+
+    await writeResultOrFail(storage, {
+      attachment,
+      mineruTaskID: "task-table-format-refresh",
+      rawResult: {
+        pdf_info: [
+          {
+            page_idx: 0,
+            page_size: [1000, 2000],
+            para_blocks: [
+              {
+                type: "table",
+                bbox: [100, 900, 500, 1200],
+                blocks: [
+                  {
+                    type: "table_body",
+                    bbox: [100, 900, 500, 1200],
+                    lines: [
+                      {
+                        spans: [
+                          {
+                            type: "table",
+                            html: "<table><tr><td>A</td></tr><tr><td>1</td></tr></table>",
+                            image_path: "table.png",
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      markdown: "| A |\n| - |\n| 1 |",
+      boxes: [
+        {
+          rawIndex: 0,
+          page: 1,
+          type: "table",
+          bbox: { x: 0.1, y: 0.45, width: 0.4, height: 0.15 },
+          markdown: "",
+          formula: null,
+          imagePath: "table.png",
+        },
+      ],
+      images: [{ path: "table.png", bytes: new Uint8Array([137, 80, 78, 71]) }],
+    });
+
+    const boxes = await storage.readBoxes(attachment);
+
+    assert.deepEqual(boxes[0].tableFormats, {
+      html: "<table><tr><td>A</td></tr><tr><td>1</td></tr></table>",
+    });
+    assert.equal(boxes[0].imagePath, "table.png");
+  });
+
   it("refreshes stale normalized boxes when the raw MinerU types become more detailed", async function () {
     const storage = createStorage(rootDir);
     const attachment = {
