@@ -132,7 +132,7 @@ export async function renderReaderOverlayForReader(
     }
 
     const mountContainer = getReaderOverlayMountContainer(doc);
-    const selectionOptions = createSelectionOptions(state);
+    const selectionOptions = createSelectionOptions(state, attachment);
     const root = buildReaderOverlayRoot(doc, boxes, mode, selectionOptions);
     ensureReaderOverlayStyles(doc);
     positionPageLayers(doc, root);
@@ -156,8 +156,10 @@ export async function renderReaderOverlayForReader(
 /** 基于当前 state 构造渲染与定位共用的 selection options。 */
 function createSelectionOptions(
   state: ReaderOverlayState,
+  attachment: { libraryID: number; key: string },
 ): import("./types").ReaderOverlaySelectionOptions {
   return {
+    attachment,
     selectedRawIndexes: state.selectedRawIndexes,
     getSelectionAnchorRawIndex: () => state.selectionAnchorRawIndex,
     setSelectionAnchorRawIndex: (rawIndex) => {

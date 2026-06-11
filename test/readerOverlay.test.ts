@@ -79,6 +79,23 @@ describe("readerOverlay", function () {
         createBox(5, "interline_equation", "E=mc^2", "E=mc^2"),
         createBox(6, "table_body", "<table></table>"),
         createBox(7, "reference", "[1] Paper"),
+        createBox(8, "image_footnote", "Image note"),
+        createBox(9, "table_footnote", "Table note"),
+        createBox(10, "chart", "Chart"),
+        createBox(11, "chart_body", "Chart body"),
+        createBox(12, "chart_caption", "Chart caption"),
+        createBox(13, "chart_footnote", "Chart note"),
+        createBox(14, "index", "Index"),
+        createBox(15, "phonetic", "Phonetic"),
+        createBox(16, "code", "Code"),
+        createBox(17, "algorithm", "Algorithm"),
+        createBox(18, "code_caption", "Code caption"),
+        createBox(19, "code_body", "Algorithm description"),
+        createBox(20, "code_footnote", "Code note"),
+        createBox(21, "aside_text", "Aside"),
+        createBox(22, "page_aside_text", "Page aside"),
+        createBox(23, "paragraph", "Paragraph"),
+        createBox(24, "equation_interline", "E=mc^2", "E=mc^2"),
       ],
       "hover",
     );
@@ -96,17 +113,35 @@ describe("readerOverlay", function () {
         "Formula",
         "Table",
         "Reference",
+        "Image footnote",
+        "Table footnote",
+        "Chart",
+        "Chart",
+        "Chart caption",
+        "Chart footnote",
+        "Index",
+        "Phonetic",
+        "Code",
+        "Algorithm",
+        "Code caption",
+        "Algorithm description",
+        "Code footnote",
+        "Aside",
+        "Aside",
+        "Text",
+        "Formula",
       ],
     );
-    assert.lengthOf(findElementsByClass(root, "mineru-copy-box-toolbar"), 8);
-    assert.lengthOf(findElementsByDataAction(root, "copy"), 8);
-    assert.lengthOf(findElementsByDataAction(root, "select-copy"), 8);
+    assert.lengthOf(findElementsByClass(root, "mineru-copy-box-toolbar"), 25);
+    assert.lengthOf(findElementsByDataAction(root, "copy"), 25);
+    assert.lengthOf(findElementsByDataAction(root, "select-copy"), 25);
     assert.lengthOf(
       findElementsByClass(root, "mineru-copy-toolbar-divider"),
-      8,
+      25,
     );
-    assert.lengthOf(findElementsByClass(root, "mineru-copy-formula-menu"), 1);
-    assert.lengthOf(findElementsByClass(root, "mineru-copy-select-panel"), 8);
+    assert.lengthOf(findElementsByClass(root, "mineru-copy-formula-menu"), 2);
+    assert.lengthOf(findElementsByClass(root, "mineru-copy-table-menu"), 1);
+    assert.lengthOf(findElementsByClass(root, "mineru-copy-select-panel"), 25);
   });
 
   it("uses Fluent messages for hover labels and copy controls", function () {
@@ -132,6 +167,8 @@ describe("readerOverlay", function () {
                   "Select copy localized",
                 "mineruForZotero-reader-copy-formula-menu":
                   "Formula copy options localized",
+                "mineruForZotero-reader-copy-table-menu":
+                  "Table copy options localized",
               };
               return messages.map(({ id }) => ({
                 value: values[id] ?? null,
@@ -188,6 +225,7 @@ describe("readerOverlay", function () {
         ),
         ["Formula copy options localized"],
       );
+      assert.lengthOf(findElementsByClass(root, "mineru-copy-table-menu"), 0);
       assert.lengthOf(findElementsByClass(root, "mineru-copy-select-panel"), 4);
     } finally {
       globals.addon = originalAddon;
@@ -224,6 +262,7 @@ describe("readerOverlay", function () {
       6,
     );
     assert.lengthOf(findElementsByClass(root, "mineru-copy-formula-menu"), 1);
+    assert.lengthOf(findElementsByClass(root, "mineru-copy-table-menu"), 0);
     assert.lengthOf(findElementsByClass(root, "mineru-copy-select-panel"), 6);
   });
 
@@ -408,6 +447,299 @@ describe("readerOverlay", function () {
       assert.isTrue(stoppedImmediate);
     } finally {
       globals.ztoolkit = originalZtoolkit;
+    }
+  });
+
+  it("copies a visual box image from its markdown image link", async function () {
+    const copiedImages: string[] = [];
+    const globals = globalThis as typeof globalThis & {
+      ztoolkit?: unknown;
+    };
+    const originalZtoolkit = globals.ztoolkit;
+    globals.ztoolkit = {
+      Clipboard: class {
+        addImage(source: string) {
+          copiedImages.push(source);
+          return this;
+        }
+
+        copy() {}
+      },
+    };
+    const attachment = {
+      id: 1,
+      key: "BOXIMAGE",
+      libraryID: 1,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    const imageBytes = new Uint8Array([137, 80, 78, 71]);
+    await createStorage(getMinerUStorageRoot()).writeResult({
+      attachment,
+      mineruTaskID: "task-box-image",
+      rawResult: { content_list: [] },
+      markdown: "![figure](images/figure.png)",
+      boxes: [createBox(0, "image", "![figure](images/figure.png)")],
+      images: [{ path: "figure.png", bytes: imageBytes }],
+    });
+
+    try {
+      const doc = createDocumentStub();
+      const root = buildReaderOverlayRoot(
+        doc as unknown as Document,
+        [createBox(0, "image", "![figure](images/figure.png)")],
+        "hover",
+        { attachment },
+      );
+      findElementsByDataAction(root, "copy")[0].dispatch(
+        "click",
+        createClickEvent(),
+      );
+
+      await waitForAsync(() => {
+        assert.deepEqual(copiedImages, ["data:image/png;base64,iVBORw=="]);
+      });
+    } finally {
+      globals.ztoolkit = originalZtoolkit;
+    }
+  });
+
+  it("copies a visual box image from its normalized image path", async function () {
+    const copiedImages: string[] = [];
+    const globals = globalThis as typeof globalThis & {
+      ztoolkit?: unknown;
+    };
+    const originalZtoolkit = globals.ztoolkit;
+    globals.ztoolkit = {
+      Clipboard: class {
+        addImage(source: string) {
+          copiedImages.push(source);
+          return this;
+        }
+
+        copy() {}
+      },
+    };
+    const attachment = {
+      id: 1,
+      key: "BOXPATH",
+      libraryID: 1,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    await createStorage(getMinerUStorageRoot()).writeResult({
+      attachment,
+      mineruTaskID: "task-box-image-path",
+      rawResult: { content_list: [] },
+      markdown: "![figure](images/figure.jpg)",
+      boxes: [
+        {
+          ...createBox(0, "image", ""),
+          imagePath: "figure.jpg",
+        },
+      ],
+      images: [{ path: "figure.jpg", bytes: new Uint8Array([255, 216, 255]) }],
+    });
+
+    try {
+      const doc = createDocumentStub();
+      const root = buildReaderOverlayRoot(
+        doc as unknown as Document,
+        [{ ...createBox(0, "image", ""), imagePath: "figure.jpg" }],
+        "hover",
+        { attachment },
+      );
+      findElementsByDataAction(root, "copy")[0].dispatch(
+        "click",
+        createClickEvent(),
+      );
+
+      await waitForAsync(() => {
+        assert.deepEqual(copiedImages, ["data:image/jpeg;base64,/9j/"]);
+      });
+    } finally {
+      globals.ztoolkit = originalZtoolkit;
+    }
+  });
+
+  it("renders table copy options and copies text formats", function () {
+    const copied: string[] = [];
+    const globals = globalThis as typeof globalThis & {
+      ztoolkit?: unknown;
+    };
+    const originalZtoolkit = globals.ztoolkit;
+    globals.ztoolkit = {
+      Clipboard: class {
+        private text = "";
+
+        addText(text: string, type: string) {
+          if (type === "text/unicode") {
+            this.text = text;
+          }
+          return this;
+        }
+
+        copy() {
+          copied.push(this.text);
+        }
+      },
+    };
+
+    try {
+      const doc = createDocumentStub();
+      const root = buildReaderOverlayRoot(
+        doc as unknown as Document,
+        [
+          {
+            ...createBox(0, "table", "| A |\n| - |\n| 1 |"),
+            tableFormats: {
+              latex: "\\begin{tabular}{c}A\\\\1\\end{tabular}",
+              markdown: "| A |\n| - |\n| 1 |",
+              html: "<table><tr><td>A</td></tr><tr><td>1</td></tr></table>",
+              tsv: "A\n1",
+            },
+          },
+        ],
+        "hover",
+      );
+
+      const menu = findElementsByClass(root, "mineru-copy-table-menu")[0];
+      const items = findElementsByClass(menu, "mineru-copy-table-menu-item");
+
+      assert.equal(menu.title, "Table copy options");
+      assert.deepEqual(
+        items.map((element) => element.textContent),
+        ["LaTeX", "Markdown", "HTML", "TSV", "Image"],
+      );
+
+      for (const item of items.slice(0, 4)) {
+        item.dispatch("click", createClickEvent());
+      }
+
+      assert.deepEqual(copied, [
+        "\\begin{tabular}{c}A\\\\1\\end{tabular}",
+        "| A |\n| - |\n| 1 |",
+        "<table><tr><td>A</td></tr><tr><td>1</td></tr></table>",
+        "A\n1",
+      ]);
+    } finally {
+      globals.ztoolkit = originalZtoolkit;
+    }
+  });
+
+  it("copies a table image from the table copy menu image option", async function () {
+    const copiedImages: string[] = [];
+    const globals = globalThis as typeof globalThis & {
+      ztoolkit?: unknown;
+    };
+    const originalZtoolkit = globals.ztoolkit;
+    globals.ztoolkit = {
+      Clipboard: class {
+        addImage(source: string) {
+          copiedImages.push(source);
+          return this;
+        }
+
+        copy() {}
+      },
+    };
+    const attachment = {
+      id: 1,
+      key: "TABLEIMG",
+      libraryID: 1,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    await createStorage(getMinerUStorageRoot()).writeResult({
+      attachment,
+      mineruTaskID: "task-table-image",
+      rawResult: { content_list: [] },
+      markdown: "![table](images/table.png)",
+      boxes: [{ ...createBox(0, "table", ""), imagePath: "table.png" }],
+      images: [{ path: "table.png", bytes: new Uint8Array([137, 80, 78, 71]) }],
+    });
+
+    try {
+      const doc = createDocumentStub();
+      const root = buildReaderOverlayRoot(
+        doc as unknown as Document,
+        [{ ...createBox(0, "table", ""), imagePath: "table.png" }],
+        "hover",
+        { attachment },
+      );
+      const tableItems = findElementsByClass(
+        root,
+        "mineru-copy-table-menu-item",
+      );
+
+      tableItems[4].dispatch("click", createClickEvent());
+
+      await waitForAsync(() => {
+        assert.deepEqual(copiedImages, ["data:image/png;base64,iVBORw=="]);
+      });
+    } finally {
+      globals.ztoolkit = originalZtoolkit;
+    }
+  });
+
+  it("shows a notice when a visual box has no copied image", async function () {
+    const notices: string[] = [];
+    const globals = globalThis as typeof globalThis & {
+      ztoolkit?: unknown;
+      addon?: unknown;
+    };
+    const originalZtoolkit = globals.ztoolkit;
+    const originalAddon = globals.addon;
+    globals.addon = {
+      data: {
+        config: { addonName: "MinerU for Zotero" },
+        locale: {
+          current: {
+            formatMessagesSync(messages: Array<{ id: string }>) {
+              return messages.map(({ id }) => ({
+                value:
+                  id === "mineruForZotero-reader-copy-image-missing"
+                    ? "当前 box 没有可复制的图片。"
+                    : null,
+                attributes: null,
+              }));
+            },
+          },
+        },
+      },
+    };
+    globals.ztoolkit = {
+      ProgressWindow: class {
+        createLine(input: { text: string }) {
+          notices.push(input.text);
+          return this;
+        }
+
+        show() {}
+      },
+    };
+
+    try {
+      const doc = createDocumentStub();
+      const root = buildReaderOverlayRoot(
+        doc as unknown as Document,
+        [createBox(0, "image", "")],
+        "hover",
+      );
+      findElementsByDataAction(root, "copy")[0].dispatch(
+        "click",
+        createClickEvent(),
+      );
+
+      await waitForAsync(() => {
+        assert.deepEqual(notices, ["当前 box 没有可复制的图片。"]);
+      });
+    } finally {
+      globals.ztoolkit = originalZtoolkit;
+      globals.addon = originalAddon;
     }
   });
 
@@ -3424,6 +3756,20 @@ function createClickEvent(
     preventDefault() {},
     stopPropagation() {},
   } as unknown as MouseEvent;
+}
+
+async function waitForAsync(assertion: () => void): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      assertion();
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  throw lastError;
 }
 
 function createKeyEvent(key: string): KeyboardEvent {

@@ -467,6 +467,33 @@ describe("storage", function () {
     assert.isFalse(await exists(joinPath(dir, "escape.png")));
   });
 
+  it("reads MinerU image links as data URLs", async function () {
+    const storage = createStorage(rootDir);
+    const attachment = {
+      id: 1,
+      key: "IMGURL",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+
+    await writeResultOrFail(storage, {
+      attachment,
+      mineruTaskID: "task-image-data-url",
+      rawResult: { ok: true },
+      markdown: "![A](images/a.png)",
+      boxes: normalizedBoxes,
+      images: [{ path: "a.png", bytes: new Uint8Array([137, 80, 78, 71]) }],
+    });
+
+    assert.equal(
+      await storage.readImageDataURL(attachment, "images/a.png"),
+      "data:image/png;base64,iVBORw==",
+    );
+    assert.isNull(await storage.readImageDataURL(attachment, "../a.png"));
+  });
+
   it("reports missing or non-ready results as not ready", async function () {
     const storage = createStorage(rootDir);
 
@@ -676,6 +703,138 @@ describe("storage", function () {
 
     assert.isAbove(boxes.length, 1);
     assert.isTrue(boxes.some((box) => box.markdown === "Figure 1: caption"));
+  });
+
+  it("refreshes stale normalized boxes with image paths from the raw MinerU result", async function () {
+    const storage = createStorage(rootDir);
+    const attachment = {
+      id: 1,
+      key: "IMGREFRESH",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+
+    await writeResultOrFail(storage, {
+      attachment,
+      mineruTaskID: "task-image-path-refresh",
+      rawResult: {
+        pdf_info: [
+          {
+            page_idx: 0,
+            page_size: [1000, 2000],
+            para_blocks: [
+              {
+                type: "image",
+                bbox: [100, 200, 500, 700],
+                blocks: [
+                  {
+                    type: "image_body",
+                    bbox: [100, 200, 500, 600],
+                    lines: [
+                      {
+                        spans: [
+                          {
+                            type: "image",
+                            content: "",
+                            image_path: "figure.jpg",
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      markdown: "![figure](images/figure.jpg)",
+      boxes: [
+        {
+          rawIndex: 0,
+          page: 1,
+          type: "image",
+          bbox: { x: 0.1, y: 0.1, width: 0.4, height: 0.2 },
+          markdown: "",
+          formula: null,
+        },
+      ],
+      images: [{ path: "figure.jpg", bytes: new Uint8Array([255, 216, 255]) }],
+    });
+
+    const boxes = await storage.readBoxes(attachment);
+
+    assert.equal(boxes[0].imagePath, "figure.jpg");
+  });
+
+  it("refreshes stale normalized table boxes with span html from the raw MinerU result", async function () {
+    const storage = createStorage(rootDir);
+    const attachment = {
+      id: 1,
+      key: "TABREFRESH",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+
+    await writeResultOrFail(storage, {
+      attachment,
+      mineruTaskID: "task-table-format-refresh",
+      rawResult: {
+        pdf_info: [
+          {
+            page_idx: 0,
+            page_size: [1000, 2000],
+            para_blocks: [
+              {
+                type: "table",
+                bbox: [100, 900, 500, 1200],
+                blocks: [
+                  {
+                    type: "table_body",
+                    bbox: [100, 900, 500, 1200],
+                    lines: [
+                      {
+                        spans: [
+                          {
+                            type: "table",
+                            html: "<table><tr><td>A</td></tr><tr><td>1</td></tr></table>",
+                            image_path: "table.png",
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      markdown: "| A |\n| - |\n| 1 |",
+      boxes: [
+        {
+          rawIndex: 0,
+          page: 1,
+          type: "table",
+          bbox: { x: 0.1, y: 0.45, width: 0.4, height: 0.15 },
+          markdown: "",
+          formula: null,
+          imagePath: "table.png",
+        },
+      ],
+      images: [{ path: "table.png", bytes: new Uint8Array([137, 80, 78, 71]) }],
+    });
+
+    const boxes = await storage.readBoxes(attachment);
+
+    assert.deepEqual(boxes[0].tableFormats, {
+      html: "<table><tr><td>A</td></tr><tr><td>1</td></tr></table>",
+    });
+    assert.equal(boxes[0].imagePath, "table.png");
   });
 
   it("refreshes stale normalized boxes when the raw MinerU types become more detailed", async function () {

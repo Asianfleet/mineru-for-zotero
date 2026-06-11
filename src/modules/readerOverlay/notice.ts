@@ -52,5 +52,8 @@ export function getReaderOverlayNoticeText(id: FluentMessageId): string {
       "Parse it before enabling boxes."
     );
   }
+  if (id === "reader-copy-image-missing") {
+    return "This box does not have an image to copy.";
+  }
   return id;
 }

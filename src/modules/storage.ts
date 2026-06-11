@@ -24,6 +24,10 @@ export interface StorageAdapter {
   readMarkdown(ref: AttachmentKeyRef): Promise<string>;
   readPreferredMarkdown(ref: AttachmentKeyRef): Promise<string>;
   readBoxes(ref: AttachmentKeyRef): Promise<NormalizedBox[]>;
+  readImageDataURL(
+    ref: AttachmentKeyRef,
+    imageMarkdownPath: string,
+  ): Promise<string | null>;
   writeResult(input: {
     attachment: AttachmentRef;
     mineruTaskID: string;
@@ -133,6 +137,13 @@ export function createStorage(rootDir: string): StorageAdapter {
         throw new Error("boxes.normalized.json is not an array");
       }
       return refreshStaleBoxes(dir, boxes as NormalizedBox[]);
+    },
+
+    async readImageDataURL(ref, imageMarkdownPath) {
+      return readImageDataURLFromDir(
+        getAttachmentDir(fsRoot, ref),
+        imageMarkdownPath,
+      );
     },
 
     async writeResult(input) {
@@ -372,6 +383,22 @@ async function readReadyLiteMarkdown(
   return readText(joinPath(dir, LITE_CONTENT_FILE));
 }
 
+async function readImageDataURLFromDir(
+  dir: string,
+  imageMarkdownPath: string,
+): Promise<string | null> {
+  const relativePath = normalizeMinerUImageMarkdownPath(imageMarkdownPath);
+  if (!relativePath) {
+    return null;
+  }
+  const imagePath = joinPath(dir, IMAGES_DIR, relativePath);
+  if (!(await exists(imagePath))) {
+    return null;
+  }
+  const bytes = await readBytes(imagePath);
+  return `data:${getImageMimeType(relativePath)};base64,${bytesToBase64(bytes)}`;
+}
+
 function getAttachmentDir(root: string, ref: AttachmentKeyRef): string {
   return joinPath(root, ATTACHMENTS_DIR, `${ref.libraryID}-${ref.key}`);
 }
@@ -504,6 +531,16 @@ async function writeBytes(path: string, value: Uint8Array): Promise<void> {
   });
 }
 
+async function readBytes(path: string): Promise<Uint8Array> {
+  if (hasIOUtils()) {
+    return IOUtils.read(toNativePath(path));
+  }
+  const value = await OS.File.read(toNativePath(path));
+  return typeof value === "string"
+    ? new TextEncoder().encode(value)
+    : new Uint8Array(value as ArrayBuffer | ArrayLike<number>);
+}
+
 async function makeDir(path: string): Promise<void> {
   if (hasIOUtils()) {
     await IOUtils.makeDirectory(toNativePath(path), {
@@ -627,6 +664,55 @@ function normalizeSafeRelativePath(path: string): string | null {
     return null;
   }
   return parts.join("/");
+}
+
+function normalizeMinerUImageMarkdownPath(path: string): string | null {
+  const safePath = normalizeSafeRelativePath(decodeMarkdownPath(path));
+  if (!safePath?.startsWith(`${IMAGES_DIR}/`)) {
+    return null;
+  }
+  return safePath.slice(IMAGES_DIR.length + 1);
+}
+
+function decodeMarkdownPath(path: string): string {
+  const withoutAnchor = path.split("#", 1)[0] ?? "";
+  const withoutQuery = withoutAnchor.split("?", 1)[0] ?? "";
+  try {
+    return decodeURIComponent(withoutQuery);
+  } catch {
+    return withoutQuery;
+  }
+}
+
+function getImageMimeType(path: string): string {
+  const extension = path.split(".").pop()?.toLowerCase();
+  if (extension === "jpg" || extension === "jpeg") {
+    return "image/jpeg";
+  }
+  if (extension === "webp") {
+    return "image/webp";
+  }
+  if (extension === "gif") {
+    return "image/gif";
+  }
+  return "image/png";
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  const alphabet =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  let output = "";
+  for (let index = 0; index < bytes.length; index += 3) {
+    const first = bytes[index] ?? 0;
+    const second = bytes[index + 1] ?? 0;
+    const third = bytes[index + 2] ?? 0;
+    const value = (first << 16) | (second << 8) | third;
+    output += alphabet[(value >> 18) & 63];
+    output += alphabet[(value >> 12) & 63];
+    output += index + 1 < bytes.length ? alphabet[(value >> 6) & 63] : "=";
+    output += index + 2 < bytes.length ? alphabet[value & 63] : "=";
+  }
+  return output;
 }
 
 function toNativePath(path: string): string {

@@ -26,6 +26,7 @@ interface RawBlock {
   html?: string;
   latex?: string;
   formula?: string;
+  image_path?: string;
   blocks?: RawBlock[];
   lines?: Array<{ spans?: RawSpan[] }>;
 }
@@ -34,6 +35,12 @@ interface RawSpan {
   type?: string;
   content?: string;
   text?: string;
+  markdown?: string;
+  html?: string;
+  latex?: string;
+  tsv?: string;
+  table_body?: string;
+  image_path?: string;
 }
 
 export function normalizeMinerUBoxes(result: unknown): NormalizedBox[] {
@@ -55,7 +62,11 @@ export function normalizeMinerUBoxes(result: unknown): NormalizedBox[] {
         block.type ?? block.block_type ?? block.category_type,
       );
       const markdown = getBlockMarkdown(block);
-      boxes.push({
+      const imagePath = getBlockImagePath(block);
+      const tableFormats = isTableType(type)
+        ? getBlockTableFormats(block, markdown)
+        : undefined;
+      const box: NormalizedBox = {
         rawIndex: boxes.length,
         page: pageNumber,
         type,
@@ -67,7 +78,14 @@ export function normalizeMinerUBoxes(result: unknown): NormalizedBox[] {
         },
         markdown,
         formula: isFormulaType(type) ? getBlockFormula(block, markdown) : null,
-      });
+      };
+      if (imagePath) {
+        box.imagePath = imagePath;
+      }
+      if (tableFormats) {
+        box.tableFormats = tableFormats;
+      }
+      boxes.push(box);
     }
   }
 
@@ -196,6 +214,103 @@ function getBlockFormula(block: RawBlock, markdown: string): string | null {
   return formula ? formula : null;
 }
 
+function getBlockTableFormats(
+  block: RawBlock,
+  markdown: string,
+): NonNullable<NormalizedBox["tableFormats"]> | undefined {
+  const formats = {
+    latex: normalizeFormatText(block.latex),
+    markdown: normalizeFormatText(block.markdown ?? markdown),
+    html: normalizeFormatText(block.html ?? readRawField(block, "table_body")),
+    tsv: normalizeFormatText(readRawField(block, "tsv")),
+  };
+
+  for (const line of block.lines ?? []) {
+    for (const span of line.spans ?? []) {
+      formats.latex ??= normalizeFormatText(span.latex);
+      formats.markdown ??= normalizeFormatText(span.markdown);
+      formats.html ??= normalizeFormatText(span.html ?? span.table_body);
+      formats.tsv ??= normalizeFormatText(span.tsv);
+    }
+  }
+
+  for (const child of block.blocks ?? []) {
+    const childType = normalizeType(
+      child.type ?? child.block_type ?? child.category_type,
+    );
+    if (!isTableType(childType)) {
+      continue;
+    }
+    const childMarkdown = getBlockMarkdown(child);
+    const childFormats = getBlockTableFormats(child, childMarkdown);
+    formats.latex ??= childFormats?.latex;
+    formats.markdown ??= childFormats?.markdown;
+    formats.html ??= childFormats?.html;
+    formats.tsv ??= childFormats?.tsv;
+  }
+  return compactTableFormats(formats);
+}
+
+function compactTableFormats(
+  formats: NonNullable<NormalizedBox["tableFormats"]>,
+): NonNullable<NormalizedBox["tableFormats"]> | undefined {
+  const compacted: NonNullable<NormalizedBox["tableFormats"]> = {};
+  for (const format of ["latex", "markdown", "html", "tsv"] as const) {
+    if (formats[format]) {
+      compacted[format] = formats[format];
+    }
+  }
+  return Object.values(compacted).some(Boolean) ? compacted : undefined;
+}
+
+function readRawField(block: RawBlock, key: string): unknown {
+  return (block as Record<string, unknown>)[key];
+}
+
+function normalizeFormatText(value: unknown): string | undefined {
+  const text = String(value ?? "").trim();
+  return text || undefined;
+}
+
+function getBlockImagePath(block: RawBlock): string | null {
+  const direct = normalizeImagePath(block.image_path);
+  if (direct) {
+    return direct;
+  }
+
+  for (const line of block.lines ?? []) {
+    for (const span of line.spans ?? []) {
+      const spanPath = normalizeImagePath(span.image_path);
+      if (spanPath) {
+        return spanPath;
+      }
+    }
+  }
+
+  for (const child of block.blocks ?? []) {
+    const childPath = getBlockImagePath(child);
+    if (childPath) {
+      return childPath;
+    }
+  }
+  return null;
+}
+
+function normalizeImagePath(path: unknown): string | null {
+  const value = String(path ?? "")
+    .trim()
+    .replace(/\\/g, "/");
+  if (
+    !value ||
+    value.startsWith("/") ||
+    /^[a-z]:/i.test(value) ||
+    value.split("/").some((part) => !part || part === "." || part === "..")
+  ) {
+    return null;
+  }
+  return value;
+}
+
 function getLinesText(
   block: RawBlock,
   mode: "paragraph" | "visual" = "paragraph",
@@ -305,9 +420,15 @@ function isFormulaType(type: string): boolean {
   return [
     "formula",
     "interline_equation",
+    "equation_interline",
     "inline_equation",
+    "equation_inline",
     "equation",
   ].includes(type);
+}
+
+function isTableType(type: string): boolean {
+  return ["table", "table_body"].includes(type);
 }
 
 function positiveOrOne(value: number): number {

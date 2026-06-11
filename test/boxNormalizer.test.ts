@@ -188,6 +188,112 @@ describe("boxNormalizer", function () {
     });
   });
 
+  it("preserves table copy formats from MinerU blocks", function () {
+    const boxes = normalizeMinerUBoxes({
+      pdf_info: [
+        {
+          page_idx: 0,
+          page_size: [1000, 2000],
+          layout_dets: [
+            {
+              category_type: "table",
+              poly: [100, 400, 400, 400, 400, 500, 100, 500],
+              markdown: "| A |\n| - |\n| 1 |",
+              html: "<table><tr><td>A</td></tr></table>",
+              latex: "\\begin{tabular}{c}A\\\\1\\end{tabular}",
+              tsv: "A\n1",
+            },
+          ],
+        },
+      ],
+    });
+
+    assert.deepEqual(boxes[0].tableFormats, {
+      latex: "\\begin{tabular}{c}A\\\\1\\end{tabular}",
+      markdown: "| A |\n| - |\n| 1 |",
+      html: "<table><tr><td>A</td></tr></table>",
+      tsv: "A\n1",
+    });
+  });
+
+  it("inherits table copy formats from nested table body blocks", function () {
+    const boxes = normalizeMinerUBoxes({
+      pdf_info: [
+        {
+          page_idx: 0,
+          page_size: [1000, 2000],
+          para_blocks: [
+            {
+              type: "table",
+              bbox: [100, 900, 500, 1200],
+              blocks: [
+                {
+                  type: "table_caption",
+                  bbox: [120, 860, 480, 900],
+                  lines: [{ spans: [{ content: "Table 1: caption" }] }],
+                },
+                {
+                  type: "table_body",
+                  bbox: [100, 900, 500, 1200],
+                  markdown: "| A |\n| - |\n| 1 |",
+                  html: "<table><tr><td>A</td></tr></table>",
+                  latex: "\\begin{tabular}{c}A\\\\1\\end{tabular}",
+                  tsv: "A\n1",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    assert.deepEqual(boxes[0].tableFormats, {
+      latex: "\\begin{tabular}{c}A\\\\1\\end{tabular}",
+      markdown: "| A |\n| - |\n| 1 |",
+      html: "<table><tr><td>A</td></tr></table>",
+      tsv: "A\n1",
+    });
+  });
+
+  it("reads table html from nested MinerU table spans", function () {
+    const html =
+      "<table><tr><td>algorithm</td><td>score</td></tr><tr><td>PPO</td><td>0.82</td></tr></table>";
+    const boxes = normalizeMinerUBoxes({
+      pdf_info: [
+        {
+          page_idx: 0,
+          page_size: [1000, 2000],
+          para_blocks: [
+            {
+              type: "table",
+              bbox: [100, 900, 500, 1200],
+              blocks: [
+                {
+                  type: "table_body",
+                  bbox: [100, 900, 500, 1200],
+                  lines: [
+                    {
+                      spans: [
+                        {
+                          type: "table",
+                          html,
+                          image_path: "table.jpg",
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    assert.equal(boxes[0].imagePath, "table.jpg");
+    assert.deepEqual(boxes[0].tableFormats, { html });
+  });
+
   it("extracts nested image and table captions from para_blocks", function () {
     const boxes = normalizeMinerUBoxes({
       pdf_info: [
@@ -267,6 +373,45 @@ describe("boxNormalizer", function () {
 
     assert.equal(boxes.length, 1);
     assert.equal(boxes[0].type, "table");
+  });
+
+  it("preserves nested visual image paths for image copying", function () {
+    const boxes = normalizeMinerUBoxes({
+      pdf_info: [
+        {
+          page_idx: 0,
+          page_size: [1000, 2000],
+          para_blocks: [
+            {
+              type: "image",
+              bbox: [100, 200, 500, 700],
+              blocks: [
+                {
+                  type: "image_body",
+                  bbox: [100, 200, 500, 600],
+                  lines: [
+                    {
+                      spans: [
+                        {
+                          type: "image",
+                          content: "",
+                          image_path: "figure.jpg",
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    assert.equal(boxes[0].type, "image");
+    assert.equal(boxes[0].imagePath, "figure.jpg");
+    assert.equal(boxes[1].type, "image_body");
+    assert.equal(boxes[1].imagePath, "figure.jpg");
   });
 
   it("drops list container boxes when reference child boxes are available", function () {
@@ -369,6 +514,11 @@ describe("boxNormalizer", function () {
               bbox: [100, 300, 500, 360],
               lines: [{ spans: [{ content: "E=mc^2" }] }],
             },
+            {
+              type: "equation_interline",
+              bbox: [100, 400, 500, 460],
+              lines: [{ spans: [{ content: "a+b" }] }],
+            },
           ],
         },
       ],
@@ -382,8 +532,10 @@ describe("boxNormalizer", function () {
         "page_header",
         "page_number",
         "interline_equation",
+        "equation_interline",
       ],
     );
     assert.equal(boxes[4].formula, "E=mc^2");
+    assert.equal(boxes[5].formula, "a+b");
   });
 });
