@@ -3364,6 +3364,43 @@ describe("readerOverlay", function () {
     assert.include(boxes[2].className, "mineru-copy-box-selected");
   });
 
+  it("skips page decoration boxes when shift-selecting a text range", function () {
+    const doc = createDocumentStub();
+    const selectionAnchor = { rawIndex: null as number | null };
+    const boxesForSelection = [
+      createBox(0, "text", "跨页段落上一页"),
+      { ...createBox(1, "header", "页眉别名"), page: 2 },
+      { ...createBox(2, "page_header", "页眉"), page: 2 },
+      { ...createBox(3, "page_number", "2"), page: 2 },
+      { ...createBox(4, "text", "跨页段落下一页"), page: 2 },
+    ];
+    const state = {
+      selectedRawIndexes: new Set<number>(),
+      getSelectionAnchorRawIndex: () => selectionAnchor.rawIndex,
+      setSelectionAnchorRawIndex: (rawIndex: number | null) => {
+        selectionAnchor.rawIndex = rawIndex;
+      },
+    };
+
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      boxesForSelection,
+      "all",
+      state,
+    ) as unknown as FakeElement;
+    const renderedBoxes = findElementsByClass(root, "mineru-copy-box");
+
+    renderedBoxes[0].dispatch("click", createClickEvent({ ctrlKey: true }));
+    renderedBoxes[4].dispatch("click", createClickEvent({ shiftKey: true }));
+
+    assert.deepEqual([...state.selectedRawIndexes].sort(), [0, 4]);
+    assert.include(renderedBoxes[0].className, "mineru-copy-box-selected");
+    assert.notInclude(renderedBoxes[1].className, "mineru-copy-box-selected");
+    assert.notInclude(renderedBoxes[2].className, "mineru-copy-box-selected");
+    assert.notInclude(renderedBoxes[3].className, "mineru-copy-box-selected");
+    assert.include(renderedBoxes[4].className, "mineru-copy-box-selected");
+  });
+
   it("formats selected boxes by rawIndex before copying", function () {
     const formatter = (
       readerOverlay as unknown as {

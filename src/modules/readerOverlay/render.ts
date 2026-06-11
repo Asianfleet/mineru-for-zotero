@@ -52,6 +52,9 @@ export function buildReaderOverlayRoot(
   const selectableRawIndexes = [
     ...(selectionOptions.selectableRawIndexes ?? []),
   ];
+  const rangeSelectableRawIndexes = [
+    ...(selectionOptions.rangeSelectableRawIndexes ?? []),
+  ];
 
   for (const page of groupBoxesByPage(boxes)) {
     const layer = doc.createElement("div");
@@ -62,14 +65,38 @@ export function buildReaderOverlayRoot(
       if (!selectableRawIndexes.includes(box.rawIndex)) {
         selectableRawIndexes.push(box.rawIndex);
       }
+      if (
+        isRangeSelectableBox(box) &&
+        !rangeSelectableRawIndexes.includes(box.rawIndex)
+      ) {
+        rangeSelectableRawIndexes.push(box.rawIndex);
+      }
       layer.append(createBoxElement(doc, box, selectionOptions));
     }
     root.append(layer);
   }
   selectionOptions.selectableRawIndexes = selectableRawIndexes;
+  selectionOptions.rangeSelectableRawIndexes = rangeSelectableRawIndexes;
   root.dataset.selectableRawIndexes = selectableRawIndexes.join(",");
+  root.dataset.rangeSelectableRawIndexes = rangeSelectableRawIndexes.join(",");
 
   return root;
+}
+
+/** Shift 范围选择默认跳过页眉、页脚、页码等页面装饰 box。 */
+function isRangeSelectableBox(box: NormalizedBox): boolean {
+  return !isPageDecorationBoxType(box.type);
+}
+
+function isPageDecorationBoxType(type: string): boolean {
+  const normalizedType = type.trim().toLowerCase();
+  return (
+    normalizedType === "page_number" ||
+    normalizedType === "page_header" ||
+    normalizedType === "header" ||
+    normalizedType === "page_footer" ||
+    normalizedType === "footer"
+  );
 }
 
 /** 安全移除 overlay root，兼容 dead object teardown。 */
