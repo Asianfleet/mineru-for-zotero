@@ -304,6 +304,90 @@ describe("readerOverlay", function () {
     );
   });
 
+  it("shows table markdown in selectable copy panels when raw markdown is empty", function () {
+    const doc = createDocumentStub();
+
+    const root = buildReaderOverlayRoot(
+      doc as unknown as Document,
+      [
+        {
+          ...createBox(0, "table", ""),
+          tableFormats: {
+            html: "<table><tr><th>A</th><th>B</th></tr><tr><td>1</td><td>2</td></tr></table>",
+          },
+        },
+      ],
+      "hover",
+    );
+
+    const textareas = findElementsByClass(
+      root,
+      "mineru-copy-select-panel-textarea",
+    );
+
+    assert.deepEqual(
+      textareas.map((element) => element.value),
+      ["| A | B |\n| --- | --- |\n| 1 | 2 |"],
+    );
+  });
+
+  it("shows a notice instead of opening an empty selectable copy panel", async function () {
+    const notices: string[] = [];
+    const globals = globalThis as typeof globalThis & {
+      ztoolkit?: unknown;
+      addon?: unknown;
+    };
+    const originalZtoolkit = globals.ztoolkit;
+    const originalAddon = globals.addon;
+    globals.addon = {
+      data: {
+        config: { addonName: "MinerU for Zotero" },
+        locale: {
+          current: {
+            formatMessagesSync(messages: Array<{ id: string }>) {
+              return messages.map(({ id }) => ({
+                value:
+                  id === "mineruForZotero-reader-copy-text-missing"
+                    ? "当前 box 没有可选择复制的文本。"
+                    : null,
+                attributes: null,
+              }));
+            },
+          },
+        },
+      },
+    };
+    globals.ztoolkit = {
+      ProgressWindow: class {
+        createLine(input: { text: string }) {
+          notices.push(input.text);
+          return this;
+        }
+
+        show() {}
+      },
+    };
+
+    try {
+      const doc = createDocumentStub();
+      const root = buildReaderOverlayRoot(
+        doc as unknown as Document,
+        [createBox(0, "image", "")],
+        "hover",
+      );
+      const selectButton = findElementsByDataAction(root, "select-copy")[0];
+      const actions = findElementsByClass(root, "mineru-copy-box-actions")[0];
+
+      selectButton.dispatch("click", createClickEvent());
+
+      assert.notInclude(actions.className, "mineru-copy-select-panel-open");
+      assert.deepEqual(notices, ["当前 box 没有可选择复制的文本。"]);
+    } finally {
+      globals.ztoolkit = originalZtoolkit;
+      globals.addon = originalAddon;
+    }
+  });
+
   it("keeps textarea keyboard behavior inside selectable copy panels", function () {
     const doc = createDocumentStub();
     const root = buildReaderOverlayRoot(

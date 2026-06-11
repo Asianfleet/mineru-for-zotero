@@ -195,6 +195,10 @@ export function createBoxActions(
       className: "mineru-copy-toolbar-button-select",
       label: readerOverlayString("reader-select-copy-box", "Select copy"),
       onClick: () => {
+        if (!getSelectableBoxText(box).trim()) {
+          showReaderOverlayNotice("reader-copy-text-missing");
+          return;
+        }
         closeOpenSelectPanels(doc, selectionOptions, false);
         clearBoxActionsActive(doc);
         actions.classList.add("mineru-copy-select-panel-open");
@@ -501,11 +505,15 @@ function createSelectCopyPanel(
 
 /** 获取 select-copy 面板中允许用户手动选择的文本。 */
 export function getSelectableBoxText(box: NormalizedBox): string {
-  if (!isFormulaBox(box)) {
-    return box.markdown || formatBoxesForCopy([box]);
+  if (isFormulaBox(box)) {
+    return formatFormulaBoxForCopy(box, "with-dollar");
   }
 
-  return formatFormulaBoxForCopy(box, "with-dollar");
+  if (isTableBox(box)) {
+    return formatTableBoxForCopy(box, "markdown");
+  }
+
+  return box.markdown || formatBoxesForCopy([box]);
 }
 
 /** 根据文本长度估算 textarea 初始行数，避免长内容面板仍只有默认两行。 */

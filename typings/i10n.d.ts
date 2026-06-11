@@ -111,6 +111,7 @@ export type FluentMessageId =
   | 'reader-copy-table-markdown'
   | 'reader-copy-table-menu'
   | 'reader-copy-table-tsv'
+  | 'reader-copy-text-missing'
   | 'reader-disable-plugin'
   | 'reader-mode-group-label'
   | 'reader-overlay-missing-result'
