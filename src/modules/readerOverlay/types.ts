@@ -44,6 +44,7 @@ export interface ReaderOverlaySelectionOptions {
   attachment?: Pick<AttachmentRef, "libraryID" | "key">;
   selectedRawIndexes?: Set<number>;
   selectableRawIndexes?: number[];
+  rangeSelectableRawIndexes?: number[];
   getSelectionAnchorRawIndex?: () => number | null;
   setSelectionAnchorRawIndex?: (rawIndex: number | null) => void;
   onSelectionChange?: () => void;

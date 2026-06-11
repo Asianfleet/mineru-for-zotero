@@ -466,13 +466,30 @@ export function selectBoxRange(
   }
 
   const rangeRawIndexes = getRawIndexRange(
-    selectionOptions.selectableRawIndexes ?? [],
+    getRangeSelectableRawIndexes(selectionOptions, anchorRawIndex, rawIndex),
     anchorRawIndex,
     rawIndex,
   );
   for (const rangeRawIndex of rangeRawIndexes) {
     selectedRawIndexes.add(rangeRawIndex);
   }
+}
+
+/** 优先使用过滤后的范围候选；端点不在候选内时回退到完整可选集合。 */
+function getRangeSelectableRawIndexes(
+  selectionOptions: ReaderOverlaySelectionOptions,
+  anchorRawIndex: number,
+  rawIndex: number,
+): number[] {
+  const rangeSelectableRawIndexes =
+    selectionOptions.rangeSelectableRawIndexes ?? [];
+  if (
+    rangeSelectableRawIndexes.includes(anchorRawIndex) &&
+    rangeSelectableRawIndexes.includes(rawIndex)
+  ) {
+    return rangeSelectableRawIndexes;
+  }
+  return selectionOptions.selectableRawIndexes ?? [];
 }
 
 /** 在 selectableRawIndexes 中计算两个 rawIndex 之间的闭区间。 */

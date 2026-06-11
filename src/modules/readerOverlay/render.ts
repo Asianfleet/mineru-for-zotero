@@ -52,6 +52,9 @@ export function buildReaderOverlayRoot(
   const selectableRawIndexes = [
     ...(selectionOptions.selectableRawIndexes ?? []),
   ];
+  const rangeSelectableRawIndexes = [
+    ...(selectionOptions.rangeSelectableRawIndexes ?? []),
+  ];
 
   for (const page of groupBoxesByPage(boxes)) {
     const layer = doc.createElement("div");
@@ -62,14 +65,38 @@ export function buildReaderOverlayRoot(
       if (!selectableRawIndexes.includes(box.rawIndex)) {
         selectableRawIndexes.push(box.rawIndex);
       }
+      if (
+        isRangeSelectableBox(box) &&
+        !rangeSelectableRawIndexes.includes(box.rawIndex)
+      ) {
+        rangeSelectableRawIndexes.push(box.rawIndex);
+      }
       layer.append(createBoxElement(doc, box, selectionOptions));
     }
     root.append(layer);
   }
   selectionOptions.selectableRawIndexes = selectableRawIndexes;
+  selectionOptions.rangeSelectableRawIndexes = rangeSelectableRawIndexes;
   root.dataset.selectableRawIndexes = selectableRawIndexes.join(",");
+  root.dataset.rangeSelectableRawIndexes = rangeSelectableRawIndexes.join(",");
 
   return root;
+}
+
+/** Shift 范围选择默认跳过页眉、页脚、页码等页面装饰 box。 */
+function isRangeSelectableBox(box: NormalizedBox): boolean {
+  return !isPageDecorationBoxType(box.type);
+}
+
+function isPageDecorationBoxType(type: string): boolean {
+  const normalizedType = type.trim().toLowerCase();
+  return (
+    normalizedType === "page_number" ||
+    normalizedType === "page_header" ||
+    normalizedType === "header" ||
+    normalizedType === "page_footer" ||
+    normalizedType === "footer"
+  );
 }
 
 /** 安全移除 overlay root，兼容 dead object teardown。 */
@@ -168,6 +195,10 @@ export function createBoxActions(
       className: "mineru-copy-toolbar-button-select",
       label: readerOverlayString("reader-select-copy-box", "Select copy"),
       onClick: () => {
+        if (!getSelectableBoxText(box).trim()) {
+          showReaderOverlayNotice("reader-copy-text-missing");
+          return;
+        }
         closeOpenSelectPanels(doc, selectionOptions, false);
         clearBoxActionsActive(doc);
         actions.classList.add("mineru-copy-select-panel-open");
@@ -474,11 +505,15 @@ function createSelectCopyPanel(
 
 /** 获取 select-copy 面板中允许用户手动选择的文本。 */
 export function getSelectableBoxText(box: NormalizedBox): string {
-  if (!isFormulaBox(box)) {
-    return box.markdown || formatBoxesForCopy([box]);
+  if (isFormulaBox(box)) {
+    return formatFormulaBoxForCopy(box, "with-dollar");
   }
 
-  return formatFormulaBoxForCopy(box, "with-dollar");
+  if (isTableBox(box)) {
+    return formatTableBoxForCopy(box, "markdown");
+  }
+
+  return box.markdown || formatBoxesForCopy([box]);
 }
 
 /** 根据文本长度估算 textarea 初始行数，避免长内容面板仍只有默认两行。 */
