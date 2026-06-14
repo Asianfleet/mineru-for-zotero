@@ -11,7 +11,7 @@
  * 从而阻断泄漏路径。
  */
 
-import { writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,6 +37,7 @@ for (const rel of PROFILES) {
   const userJsPath = resolve(ROOT, rel, "user.js");
 
   if (!existsSync(userJsPath)) {
+    mkdirSync(dirname(userJsPath), { recursive: true });
     writeFileSync(userJsPath, USER_JS_CONTENT, "utf-8");
     console.log(`  [创建] ${rel}/user.js`);
     count++;
