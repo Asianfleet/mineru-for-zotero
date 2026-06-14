@@ -14,6 +14,8 @@ import type {
 } from "./types";
 import { getReaderOverlayEventWindows } from "./windows";
 
+const forwardedWheelEvents = new WeakSet<Event>();
+
 /** 在缺少 page 元素时，返回基于视口尺寸的后备页矩形。 */
 export function createFallbackPageRect(doc: Document): PageRect {
   const root = doc.documentElement ?? null;
@@ -216,6 +218,9 @@ export function createReaderOverlayPositioningController(
 
   /** 拦截 overlay 上的滚轮事件，并优先转发给底层 PDF 元素。 */
   function onWheel(event: WheelEvent): void {
+    if (forwardedWheelEvents.has(event)) {
+      return;
+    }
     if (cleaned || !scrollContainer) {
       return;
     }
@@ -671,7 +676,12 @@ export function forwardWheelToUnderlyingElement(
     altKey: event.altKey,
     metaKey: event.metaKey,
   });
-  target.dispatchEvent(forwarded);
+  forwardedWheelEvents.add(forwarded);
+  try {
+    target.dispatchEvent(forwarded);
+  } finally {
+    forwardedWheelEvents.delete(forwarded);
+  }
   return true;
 }
 

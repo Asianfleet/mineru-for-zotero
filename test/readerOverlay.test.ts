@@ -1856,6 +1856,102 @@ describe("readerOverlay", function () {
     assert.equal(dispatched[0].deltaY, 120);
   });
 
+  it("does not forward a redispatched wheel event recursively", function () {
+    let wheelListener: ((event: WheelEvent) => void) | null = null;
+    const target = {} as Node;
+    const dispatched: WheelEvent[] = [];
+    const underlying = {
+      dispatchEvent(event: Event) {
+        dispatched.push(event as WheelEvent);
+        if (dispatched.length > 1) {
+          throw new Error("wheel was forwarded recursively");
+        }
+        Object.defineProperty(event, "target", {
+          configurable: true,
+          value: target,
+        });
+        wheelListener?.(event as WheelEvent);
+        return true;
+      },
+    } as unknown as Element;
+    const root = {
+      style: { pointerEvents: "" },
+      contains(node: Node) {
+        return node === target;
+      },
+      querySelectorAll() {
+        return [];
+      },
+    } as unknown as HTMLDivElement;
+    const scrollContainer = {
+      addEventListener() {},
+      removeEventListener() {},
+      scrollBy() {
+        assert.fail("Expected redispatched wheel to be ignored");
+      },
+    } as unknown as Element;
+    const doc = {
+      querySelector(selector: string) {
+        return selector === "#viewerContainer" ? scrollContainer : null;
+      },
+      elementFromPoint() {
+        return underlying;
+      },
+      documentElement: null,
+      body: null,
+    } as unknown as Document;
+    const win = {
+      addEventListener(type: string, listener: EventListener) {
+        if (type === "wheel") {
+          wheelListener = listener as (event: WheelEvent) => void;
+        }
+      },
+      removeEventListener() {},
+      requestAnimationFrame() {
+        return 1;
+      },
+      cancelAnimationFrame() {},
+      setTimeout() {
+        return 1;
+      },
+      clearTimeout() {},
+      setInterval() {
+        return 1;
+      },
+      clearInterval() {},
+    } as unknown as Window;
+
+    createReaderOverlayPositioningController({
+      doc,
+      win,
+      root,
+      reposition() {},
+    });
+
+    assert.doesNotThrow(() => {
+      wheelListener?.({
+        target,
+        clientX: 10,
+        clientY: 20,
+        screenX: 30,
+        screenY: 40,
+        deltaX: 4,
+        deltaY: 120,
+        deltaZ: 0,
+        deltaMode: 0,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        metaKey: false,
+        preventDefault() {},
+        stopPropagation() {},
+        stopImmediatePropagation() {},
+      } as unknown as WheelEvent);
+    });
+
+    assert.equal(dispatched.length, 1);
+  });
+
   it("keeps overlay pointer events active across transient blur while a modifier is held", function () {
     const listeners = new Map<string, EventListener[]>();
     let blurTimeout: TimerHandler | null = null;
