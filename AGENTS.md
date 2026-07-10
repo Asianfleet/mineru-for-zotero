@@ -8,15 +8,15 @@ Core feature modules currently include `mineruClient/` for selecting and running
 
 ## Build, Test, and Development Commands
 
-- Use `pnpm` for package scripts and dependency operations in this repository; do not use `npm` unless the user explicitly asks for it.
-- `pnpm start`: runs `zotero-plugin serve`, builds in development mode, launches Zotero, and watches `src/**` and `addon/**` for hot reload.
-- `pnpm build`: creates a production plugin build with `zotero-plugin build`, then runs `tsc --noEmit` for type checking.
-- `pnpm test`: runs the scaffold test suite.
-- `pnpm lint:check`: checks Prettier formatting and ESLint rules.
-- `pnpm lint:fix`: formats files and applies safe ESLint fixes.
-- `pnpm release`: starts the configured release flow for versioning, packaging, tags, and GitHub release assets.
+- Use `npm` for package scripts and dependency operations in this repository. The tracked lockfile is `package-lock.json`.
+- `npm start`: runs `zotero-plugin serve`, builds in development mode, launches Zotero, and watches `src/**` and `addon/**` for hot reload.
+- `npm run build`: creates a production plugin build with `zotero-plugin build`, then runs `tsc --noEmit` for type checking.
+- `npm test`: runs the scaffold test suite.
+- `npm run lint:check`: checks Prettier formatting and ESLint rules.
+- `npm run lint:fix`: formats files and applies safe ESLint fixes.
+- `npm run release`: starts the configured release flow for versioning, packaging, tags, and GitHub release assets.
 
-Treat `pnpm lint:check` as the local equivalent of the CI lint gate. Before any commit, run it after all file edits are complete and fix every reported Prettier or ESLint issue. Do not tell the user a change is ready to commit, push, or merge while `pnpm lint:check` is failing or has not been run after the latest edit.
+Treat `npm run lint:check` as the local equivalent of the CI lint gate. Before any commit, run it after all file edits are complete and fix every reported Prettier or ESLint issue. Do not tell the user a change is ready to commit, push, or merge while `npm run lint:check` is failing or has not been run after the latest edit.
 
 ## Coding Style & Naming Conventions
 
@@ -34,6 +34,8 @@ After code changes, run the full scaffold test suite with `zotero-plugin test --
 
 This project does not use Vitest. Do not look for or run `.\node_modules\.bin\vitest.cmd`.
 
+Standalone Node tests under `scripts/` are not part of the scaffold suite. Run them separately with `node --test scripts/*.test.mjs` when those scripts change.
+
 For small edits to existing XHTML files such as `addon/content/preferences.xhtml`, avoid running `prettier --write` unless formatting is part of the task. It can reflow unrelated long tags and expand the diff; if it happens during validation, restore unrelated formatting before final verification.
 
 For user-facing Markdown documents such as `README.md` and `README_zh.md`, do not manually hard-wrap paragraphs or list items to 80 columns unless the surrounding document already uses that style. Preserve natural single-line sentences so later content edits stay readable and diffs stay focused.
@@ -41,18 +43,18 @@ For user-facing Markdown documents such as `README.md` and `README_zh.md`, do no
 For generated or agent-maintained Markdown under `docs/superpowers/`, especially `docs/superpowers/plans/*.md` and `docs/superpowers/specs/*.md`, always run Prettier on the touched files before final lint verification:
 
 ```powershell
-pnpm exec prettier --write docs/superpowers/plans/<file>.md docs/superpowers/specs/<file>.md
+npx prettier --write docs/superpowers/plans/<file>.md docs/superpowers/specs/<file>.md
 ```
 
-If multiple Markdown files were created or edited, include all of them in that command. This rule exists because unformatted plan/spec Markdown has repeatedly caused GitHub Actions `pnpm lint:check` failures.
+If multiple Markdown files were created or edited, include all of them in that command. This rule exists because unformatted plan/spec Markdown has repeatedly caused GitHub Actions `npm run lint:check` failures.
 
 ## Test Profile Port Isolation
 
 `zotero-plugin-scaffold` generates the test profile with `extensions.zotero.httpServer.port` set to **23124** (instead of the default 23119) to avoid conflicts with a running production Zotero instance. However, the scaffold writes this setting directly into `prefs.js`, which Zotero persists on shutdown. If the test profile ever cross-contaminates the real profile (e.g. manual file copy, plugin behavior), port 23124 leaks into the production profile and breaks the Zotero Connector browser extension (which expects port 23119).
 
-The mitigation is `scripts/fix-test-profile.mjs`, which runs via `preserve`/`pretest` hooks before every `pnpm start` / `pnpm test`. It creates a `user.js` in each test profile that sets the port override. Unlike `prefs.js`, `user.js` overrides preferences at every Zotero startup but is never written back, cutting off the leak path.
+The mitigation is `scripts/fix-test-profile.mjs`, which runs via `preserve`/`pretest` hooks before every `npm start` / `npm test`. It creates a `user.js` in each test profile that sets the port override. Unlike `prefs.js`, `user.js` overrides preferences at every Zotero startup but is never written back, cutting off the leak path.
 
-If the connector stops detecting Zotero after development work, check the real profile's `prefs.js` for a stray `extensions.zotero.httpServer.port = 23124` and remove it (or reset it to 23119).
+If the connector stops detecting Zotero after development work, first fully exit Zotero, then run `node scripts/fix-zotero-connector-port.mjs`. The script repairs only the leaked test port `23124` in Windows Zotero profiles and restores the Connector default port `23119`. If needed, manually check the real profile's `prefs.js` for the same stray setting.
 
 ## Project Notes
 
@@ -92,4 +94,4 @@ If the connector stops detecting Zotero after development work, check the real p
 
 Recent history follows Conventional Commits, such as `feat(mineru): add official api client boundary` and `test(mineru): add domain formatter normalizer coverage`. Use a short imperative subject with a meaningful scope. Pull requests should describe the behavioral change, list test results, link related issues, and include screenshots or recordings for visible Zotero UI changes. Do not commit local secrets from `.env`; use `.env.example` for documented configuration.
 
-Before suggesting or making a commit, explicitly confirm the latest `pnpm lint:check` result in the final response. If the command was not run, state that clearly and do not provide a commit-ready summary.
+Before suggesting or making a commit, explicitly confirm the latest `npm run lint:check` result in the final response. If the command was not run, state that clearly and do not provide a commit-ready summary.
