@@ -1,6 +1,10 @@
 import { getString, initLocale } from "./utils/locale";
 import { registerItemMenu } from "./modules/itemMenu";
 import {
+  registerMarkdownQueryApiEndpoint,
+  unregisterMarkdownQueryApiEndpoint,
+} from "./modules/markdownQuery/apiEndpoint";
+import {
   registerItemTreeColumn,
   unregisterItemTreeColumn,
 } from "./modules/itemTreeColumn";
@@ -22,6 +26,7 @@ async function onStartup() {
   initLocale();
 
   registerPreferencePane();
+  registerMarkdownQueryApiEndpoint();
 
   await Promise.all(
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
@@ -86,6 +91,7 @@ function onShutdown(): void {
     removeMainWindowStylesheet(win);
   });
   unregisterReaderToolbar();
+  unregisterMarkdownQueryApiEndpoint();
   destroyAllReaderOverlays();
   unregisterItemTreeColumn();
   ztoolkit.unregisterAll();
