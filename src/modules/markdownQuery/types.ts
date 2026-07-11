@@ -120,3 +120,31 @@ export interface ParseStatusReader {
     key: string;
   }): Promise<{ preciseReady: boolean; liteReady: boolean }>;
 }
+
+/**
+ * 表示 Markdown 查询返回内容的粒度。
+ */
+export type MarkdownGranularity = "full" | "headings" | "section" | "search";
+
+/**
+ * 表示查询结果中的条目摘要信息。
+ */
+export interface ItemSummary {
+  itemID: number;
+  libraryID: number;
+  key: string;
+  type: "regular" | "attachment";
+  title: string;
+}
+
+/**
+ * 表示查询结果中的附件摘要信息。
+ */
+export interface AttachmentSummary {
+  itemID: number;
+  libraryID: number;
+  key: string;
+  fileName: string;
+  preciseReady?: boolean;
+  liteReady?: boolean;
+}
