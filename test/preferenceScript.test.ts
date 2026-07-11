@@ -217,8 +217,10 @@ describe("preferenceScript", function () {
       'data-l10n-id="mineruForZotero-pref-query-api-title"',
       'id="zotero-prefpane-mineruForZotero-api-enabled"',
       'id="zotero-prefpane-mineruForZotero-api-require-token"',
+      'id="mineruForZotero-api-token"',
       'id="mineruForZotero-api-regenerate-token"',
     ]);
+    assert.include(preferences, 'readonly="readonly"');
     assert.notInclude(preferences, "Authorization: Bearer");
   });
 
@@ -251,23 +253,28 @@ describe("preferenceScript", function () {
   it("regenerates and replaces the markdown query API token from preferences", async function () {
     const regenerate = fakePreferenceElement("", "", "button");
     const status = fakePreferenceElement("", "", "span");
+    const tokenInput = fakePreferenceElement("", "", "text");
     const document = fakePreferenceDocument({
       "mineruForZotero-api-regenerate-token": regenerate,
       "mineruForZotero-api-token-status": status,
+      "mineruForZotero-api-token": tokenInput,
     });
     const _window = fakePreferenceWindow(document);
 
     try {
-      setMarkdownApiToken("");
+      setMarkdownApiToken("visible-token");
       const originalToken = getMarkdownApiToken();
 
       await registerPrefsScripts(_window);
+
+      assert.equal(tokenInput.value, originalToken);
 
       regenerate.emit("click");
 
       const regeneratedToken = getMarkdownApiToken();
       assert.match(regeneratedToken, /^[A-Za-z0-9_-]{32,}$/);
       assert.notEqual(regeneratedToken, originalToken);
+      assert.equal(tokenInput.value, regeneratedToken);
       assert.equal(status.textContent, "Token generated");
     } finally {
       setMarkdownApiToken("");

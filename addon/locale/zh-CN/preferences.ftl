@@ -22,6 +22,7 @@ pref-query-api-enabled =
     .label = 启用本地 Markdown 查询 API
 pref-query-api-require-token =
     .label = 要求 token
+pref-query-api-token = Token
 pref-query-api-regenerate-token = 生成 token
 pref-query-api-token-ready = token 已生成
 pref-query-api-token-empty = 尚未生成 token

@@ -244,8 +244,29 @@ function jsonError(error: unknown) {
     });
   }
 
+  logUnexpectedError(error);
   return json(500, {
     error: "internal-error",
-    message: error instanceof Error ? error.message : "Unexpected error",
+    message: "Unexpected internal error",
   });
+}
+
+/**
+ * 将未知内部异常写入 Zotero debug，但不影响测试环境或 HTTP 响应。
+ */
+function logUnexpectedError(error: unknown): void {
+  const debug = (
+    globalThis as unknown as {
+      Zotero?: { debug?: (message: string) => void };
+    }
+  ).Zotero?.debug;
+  if (typeof debug !== "function") {
+    return;
+  }
+
+  const detail =
+    error instanceof Error
+      ? (error.stack ?? error.message)
+      : String(error ?? "Unknown error");
+  debug(`[MinerU] Markdown query API internal error: ${detail}`);
 }

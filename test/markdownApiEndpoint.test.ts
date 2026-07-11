@@ -79,6 +79,34 @@ describe("markdownApiEndpoint", function () {
     assert.include(String(response[2]), '"candidates":[]');
   });
 
+  it("uses a generic internal-error message for unexpected errors", async function () {
+    setMarkdownApiEnabled(true);
+    setMarkdownApiRequireToken(false);
+    const endpoint = createMarkdownQueryEndpoint({
+      async searchByTitle() {
+        return { candidates: [] };
+      },
+      async queryMarkdown() {
+        throw new Error("database path C:\\Users\\secret\\profile.sqlite");
+      },
+    });
+
+    const response = await endpoint.init(
+      request("/mineru-for-zotero/markdown", {
+        query: { libraryID: "1", key: "PDF1" },
+      }),
+    );
+    const payload = JSON.parse(String(response[2])) as {
+      error: string;
+      message: string;
+    };
+
+    assert.equal(response[0], 500);
+    assert.equal(payload.error, "internal-error");
+    assert.equal(payload.message, "Unexpected internal error");
+    assert.notInclude(String(response[2]), "profile.sqlite");
+  });
+
   it("registers the expected endpoint paths", function () {
     assert.deepEqual(MARKDOWN_ENDPOINT_PATHS, [
       "/mineru-for-zotero/search",

@@ -288,16 +288,17 @@ async function updateParsedCount(
 }
 
 /**
- * 刷新 Markdown 查询 API token 的状态文案。
+ * 刷新 Markdown 查询 API token 的可见值与状态文案。
  */
 async function updateMarkdownApiTokenStatus(_window: Window): Promise<void> {
-  const hasToken = Boolean(getMarkdownApiToken());
+  const token = getMarkdownApiToken();
+  setInputValue(_window.document, `${config.addonRef}-api-token`, token);
   setText(
     _window.document,
     `${config.addonRef}-api-token-status`,
     await formatL10n(
       _window,
-      hasToken ? "pref-query-api-token-ready" : "pref-query-api-token-empty",
+      token ? "pref-query-api-token-ready" : "pref-query-api-token-empty",
     ),
   );
 }
@@ -335,4 +336,17 @@ function setText(document: Document, id: string, value: string): void {
   if (element) {
     element.textContent = value;
   }
+}
+
+/**
+ * 同步只读输入框的当前值和 value 属性，便于偏好页立即显示 token。
+ */
+function setInputValue(document: Document, id: string, value: string): void {
+  const element = document.getElementById(id) as HTMLInputElement | null;
+  if (!element) {
+    return;
+  }
+
+  element.value = value;
+  element.setAttribute("value", value);
 }

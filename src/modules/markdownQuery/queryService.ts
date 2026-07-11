@@ -113,7 +113,10 @@ export function createMarkdownQueryService(deps: {
       const base = {
         item: summarizeItem(resolved.item),
         attachment,
-        result: { source: "preferred" as const },
+        result: {
+          mode: parseStatus.preciseReady ? "precise" : ("lite" as const),
+          source: "preferred" as const,
+        },
       };
       const granularity = input.granularity ?? "full";
 

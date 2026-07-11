@@ -22,6 +22,7 @@ pref-query-api-enabled =
     .label = Enable local Markdown query API
 pref-query-api-require-token =
     .label = Require token
+pref-query-api-token = Token
 pref-query-api-regenerate-token = Generate token
 pref-query-api-token-ready = Token generated
 pref-query-api-token-empty = No token generated

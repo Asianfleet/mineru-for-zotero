@@ -69,6 +69,7 @@ export type FluentMessageId =
   | 'pref-query-api-regenerate-token'
   | 'pref-query-api-require-token'
   | 'pref-query-api-title'
+  | 'pref-query-api-token'
   | 'pref-query-api-token-empty'
   | 'pref-query-api-token-ready'
   | 'pref-save-images'

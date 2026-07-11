@@ -21,9 +21,36 @@ describe("markdownQueryService", function () {
     assert.include(JSON.stringify(response), "# Precise");
   });
 
+  it("reports precise mode when precise and lite results are both ready", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Precise",
+        parseStatus: {
+          preciseReady: true,
+          liteReady: true,
+        },
+      }),
+    );
+
+    const response = await service.queryMarkdown({
+      libraryID: 1,
+      key: "PDF1",
+      granularity: "full",
+    });
+
+    assert.nestedPropertyVal(response, "result.source", "preferred");
+    assert.nestedPropertyVal(response, "result.mode", "precise");
+  });
+
   it("uses preferred markdown so lite-only results can be returned", async function () {
     const service = createMarkdownQueryService(
-      fakeDeps({ markdown: "# Lite" }),
+      fakeDeps({
+        markdown: "# Lite",
+        parseStatus: {
+          preciseReady: false,
+          liteReady: true,
+        },
+      }),
     );
 
     const response = await service.queryMarkdown({
@@ -33,6 +60,7 @@ describe("markdownQueryService", function () {
     });
 
     assert.include(JSON.stringify(response), "# Lite");
+    assert.nestedPropertyVal(response, "result.mode", "lite");
   });
 
   it("returns heading granularity", async function () {
