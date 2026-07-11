@@ -146,7 +146,13 @@ export function setMarkdownApiRequireToken(value: boolean) {
  */
 export function getMarkdownApiToken(): string {
   const value = getPref("apiToken");
-  return typeof value === "string" ? value : "";
+  if (typeof value === "string" && value.trim()) {
+    return value;
+  }
+
+  const token = generateMarkdownApiToken();
+  setMarkdownApiToken(token);
+  return token;
 }
 
 /**

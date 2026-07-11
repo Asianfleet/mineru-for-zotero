@@ -1,6 +1,7 @@
 import { assert } from "chai";
 import {
   openExternalURL,
+  registerPrefsScripts,
   registerPreferenceValueSync,
 } from "../src/modules/preferenceScript";
 import {
@@ -108,9 +109,18 @@ describe("preferenceScript", function () {
   });
 
   it("defaults the markdown query API to disabled with token required", function () {
-    assert.isFalse(getMarkdownApiEnabled());
-    assert.isTrue(getMarkdownApiRequireToken());
-    assert.equal(getMarkdownApiToken(), "");
+    try {
+      setMarkdownApiToken("");
+
+      assert.isFalse(getMarkdownApiEnabled());
+      assert.isTrue(getMarkdownApiRequireToken());
+
+      const token = getMarkdownApiToken();
+      assert.match(token, /^[A-Za-z0-9_-]{32,}$/);
+      assert.equal(getMarkdownApiToken(), token);
+    } finally {
+      setMarkdownApiToken("");
+    }
   });
 
   it("generates and persists a markdown query API token", function () {
@@ -238,6 +248,32 @@ describe("preferenceScript", function () {
     }
   });
 
+  it("regenerates and replaces the markdown query API token from preferences", async function () {
+    const regenerate = fakePreferenceElement("", "", "button");
+    const status = fakePreferenceElement("", "", "span");
+    const document = fakePreferenceDocument({
+      "mineruForZotero-api-regenerate-token": regenerate,
+      "mineruForZotero-api-token-status": status,
+    });
+    const _window = fakePreferenceWindow(document);
+
+    try {
+      setMarkdownApiToken("");
+      const originalToken = getMarkdownApiToken();
+
+      await registerPrefsScripts(_window);
+
+      regenerate.emit("click");
+
+      const regeneratedToken = getMarkdownApiToken();
+      assert.match(regeneratedToken, /^[A-Za-z0-9_-]{32,}$/);
+      assert.notEqual(regeneratedToken, originalToken);
+      assert.equal(status.textContent, "Token generated");
+    } finally {
+      setMarkdownApiToken("");
+    }
+  });
+
   it("persists local API timeout changes from the preferences UI immediately", function () {
     const timeout = fakePreferenceElement("45", "", "number");
     const document = fakePreferenceDocument({
@@ -261,6 +297,7 @@ describe("preferenceScript", function () {
 interface FakePreferenceElement {
   checked: boolean;
   name: string;
+  textContent: string;
   type: string;
   value: string;
   addEventListener(type: string, listener: EventListener): void;
@@ -282,6 +319,7 @@ function fakePreferenceElement(
   return {
     checked: value === "true",
     name,
+    textContent: "",
     type,
     value,
     addEventListener(type, listener) {
@@ -315,6 +353,30 @@ function fakePreferenceDocument(
       return [] as unknown as NodeListOf<Element>;
     },
   } as unknown as Document;
+}
+
+function fakePreferenceWindow(document: Document): Window {
+  return {
+    document: Object.assign(document, {
+      l10n: {
+        formatValue: async (id: string) => {
+          if (id === "pref-query-api-token-ready") {
+            return "Token generated";
+          }
+          if (id === "pref-query-api-token-empty") {
+            return "No token generated";
+          }
+          if (id === "pref-data-folder-path") {
+            return "Data folder: ProfD/mineru-copy";
+          }
+          if (id === "pref-parsed-count") {
+            return "Parsed PDFs: 0";
+          }
+          return "Parsed PDFs: failed to read";
+        },
+      },
+    }),
+  } as unknown as Window;
 }
 
 function assertIncreasingIndexes(source: string, snippets: string[]): void {
