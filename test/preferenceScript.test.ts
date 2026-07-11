@@ -4,11 +4,18 @@ import {
   registerPreferenceValueSync,
 } from "../src/modules/preferenceScript";
 import {
+  generateMarkdownApiToken,
+  getMarkdownApiEnabled,
+  getMarkdownApiRequireToken,
+  getMarkdownApiToken,
   getLocalApiBaseURL,
   getLocalApiTimeoutMinutes,
   getParseMode,
   getParseSource,
   getSaveImages,
+  setMarkdownApiEnabled,
+  setMarkdownApiRequireToken,
+  setMarkdownApiToken,
   setLocalApiBaseURL,
   setLocalApiTimeoutMinutes,
   setParseMode,
@@ -100,6 +107,23 @@ describe("preferenceScript", function () {
     assert.equal(getLocalApiTimeoutMinutes(), 30);
   });
 
+  it("defaults the markdown query API to disabled with token required", function () {
+    assert.isFalse(getMarkdownApiEnabled());
+    assert.isTrue(getMarkdownApiRequireToken());
+    assert.equal(getMarkdownApiToken(), "");
+  });
+
+  it("generates and persists a markdown query API token", function () {
+    try {
+      const token = generateMarkdownApiToken();
+      assert.match(token, /^[A-Za-z0-9_-]{32,}$/);
+      setMarkdownApiToken(token);
+      assert.equal(getMarkdownApiToken(), token);
+    } finally {
+      setMarkdownApiToken("");
+    }
+  });
+
   it("round-trips parse source, parse mode, and local API URL", function () {
     try {
       setParseSource("local");
@@ -173,6 +197,44 @@ describe("preferenceScript", function () {
     } finally {
       setParseSource("online");
       setParseMode("precise");
+    }
+  });
+
+  it("shows local query API controls without a request example", async function () {
+    const preferences = await fetchPreferencePanelMarkup();
+
+    assertIncreasingIndexes(preferences, [
+      'data-l10n-id="mineruForZotero-pref-query-api-title"',
+      'id="zotero-prefpane-mineruForZotero-api-enabled"',
+      'id="zotero-prefpane-mineruForZotero-api-require-token"',
+      'id="mineruForZotero-api-regenerate-token"',
+    ]);
+    assert.notInclude(preferences, "Authorization: Bearer");
+  });
+
+  it("persists markdown query API checkbox changes immediately", function () {
+    const enabled = fakePreferenceElement("false", "", "checkbox");
+    const requireToken = fakePreferenceElement("true", "", "checkbox");
+    const document = fakePreferenceDocument({
+      "zotero-prefpane-mineruForZotero-api-enabled": enabled,
+      "zotero-prefpane-mineruForZotero-api-require-token": requireToken,
+    });
+
+    try {
+      setMarkdownApiEnabled(false);
+      setMarkdownApiRequireToken(true);
+      registerPreferenceValueSync(document);
+
+      enabled.checked = true;
+      enabled.emit("command");
+      requireToken.checked = false;
+      requireToken.emit("command");
+
+      assert.isTrue(getMarkdownApiEnabled());
+      assert.isFalse(getMarkdownApiRequireToken());
+    } finally {
+      setMarkdownApiEnabled(false);
+      setMarkdownApiRequireToken(true);
     }
   });
 
