@@ -11,6 +11,14 @@ import {
 } from "./queryService";
 import { MarkdownQueryError, ZoteroItemLike } from "./types";
 
+interface MarkdownEndpointRequest {
+  method: "GET" | "POST";
+  pathname: string;
+  query: Record<string, string>;
+  headers: Record<string, string>;
+  data: unknown;
+}
+
 export const MARKDOWN_ENDPOINT_PATHS = [
   "/mineru-for-zotero/search",
   "/mineru-for-zotero/markdown",
@@ -28,7 +36,7 @@ export function registerMarkdownQueryApiEndpoint(): void {
   const endpoint = createMarkdownQueryEndpoint(service);
 
   for (const path of MARKDOWN_ENDPOINT_PATHS) {
-    Zotero.Server.Endpoints[path] = endpoint;
+    Zotero.Server.Endpoints[path] = toZoteroEndpoint(endpoint);
   }
 }
 
@@ -47,12 +55,7 @@ export function unregisterMarkdownQueryApiEndpoint(): void {
 export function createMarkdownQueryEndpoint(service: MarkdownQueryService) {
   return {
     supportedMethods: ["GET"],
-    async init(options: {
-      method: "GET" | "POST";
-      pathname: string;
-      query: Record<string, string>;
-      headers: Record<string, string>;
-    }) {
+    async init(options: MarkdownEndpointRequest) {
       try {
         authorize(options.query, options.headers);
         const payload =
@@ -87,14 +90,20 @@ export function createMarkdownQueryEndpoint(service: MarkdownQueryService) {
 }
 
 /**
+ * 将 promise-style endpoint 对象适配到 zotero-types 当前的 endpoint 注册类型。
+ */
+function toZoteroEndpoint(endpoint: unknown) {
+  return endpoint as unknown as typeof _ZoteroTypes.Server.Endpoint;
+}
+
+/**
  * 通过 Zotero.Search 按标题模糊检索库内条目。
  */
 async function searchItemsByTitle(input: {
   libraryID: number;
   title: string;
 }): Promise<ZoteroItemLike[]> {
-  const search = new Zotero.Search();
-  search.libraryID = input.libraryID;
+  const search = new Zotero.Search({ libraryID: input.libraryID });
   search.addCondition("title", "contains", input.title);
   const ids = await search.search();
   return Zotero.Items.getAsync(ids);
