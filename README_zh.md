@@ -72,6 +72,19 @@ API Key 只保存在本机 Zotero 首选项中。
 
 结果目录中包含解析出的 Markdown、Reader 使用的 box 数据，以及可选保存的图片。外部工具可以读取这些文件，但不建议手动修改。
 
+## 本地 Markdown 查询 API
+
+本地 Markdown 查询 API 默认关闭。可以在 `编辑` -> `设置` -> `MinerU for Zotero` 中启用，并生成 token。token 来自 Zotero 偏好页。
+
+最小调用示例：
+
+```shell
+curl "http://127.0.0.1:23119/mineru-for-zotero/markdown?libraryID=1&key=ABCD1234" \
+  -H "Authorization: Bearer <token>"
+```
+
+普通 Zotero 条目有多个 PDF attachment 时，可以传入 `attachmentKey=<PDF attachment key>` 精确选择附件。API 只读取已有本地解析结果；有精准 Markdown 时优先返回精准结果，没有时返回轻量 Markdown。
+
 ## 常见问题
 
 ### 提示未配置 API Key

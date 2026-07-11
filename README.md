@@ -72,6 +72,19 @@ Open `Edit` -> `Settings` -> `MinerU for Zotero` and click `Open Data Folder` to
 
 The result folder contains the parsed Markdown, box data used by the reader, and optional images. External tools may read these files, but editing them is not recommended.
 
+## Local Markdown Query API
+
+The local Markdown query API is disabled by default. Enable it from `Edit` -> `Settings` -> `MinerU for Zotero`, generate a token, and use the token in requests. The token comes from the Zotero preferences page.
+
+Minimal example:
+
+```shell
+curl "http://127.0.0.1:23119/mineru-for-zotero/markdown?libraryID=1&key=ABCD1234" \
+  -H "Authorization: Bearer <token>"
+```
+
+Use `attachmentKey=<PDF attachment key>` when a regular Zotero item has multiple PDF attachments and you want to select one explicitly. The API reads existing local parse results only. It returns precise Markdown first and falls back to lite Markdown when precise results are unavailable.
+
 ## Troubleshooting
 
 ### API Key Not Configured
