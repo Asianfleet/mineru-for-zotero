@@ -9,7 +9,6 @@ import {
 
 const DERIVED_NAME_PATTERN =
   /(annotated|annotation|annotations|highlight|highlights|note|notes|translated|translation|copy|edited|批注|注释|高亮|笔记|翻译|译文|副本|修改)/i;
-const AMBIGUITY_SCORE_WINDOW = 1;
 
 /**
  * 将 libraryID/key 解析为可用于 Markdown Query 的目标 PDF 附件。
@@ -71,7 +70,7 @@ export async function resolveAttachment(input: {
   const candidates = await scoreCandidates(item, attachments, input.storage);
   const topScore = Math.max(...candidates.map((candidate) => candidate.score));
   const winners = candidates.filter(
-    (candidate) => topScore - candidate.score <= AMBIGUITY_SCORE_WINDOW,
+    (candidate) => candidate.score === topScore,
   );
   if (winners.length !== 1) {
     throw new MarkdownQueryError(

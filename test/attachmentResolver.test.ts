@@ -72,14 +72,26 @@ describe("attachmentResolver", function () {
   });
 
   it("returns ambiguous-attachment when candidates tie", async function () {
-    const a = fakeItem({ id: 2, key: "PDFA", pdf: true, fileName: "a.pdf" });
-    const b = fakeItem({ id: 3, key: "PDFB", pdf: true, fileName: "b.pdf" });
+    const a = fakeItem({
+      id: 2,
+      key: "PDFA",
+      pdf: true,
+      fileName: "paper-copy-a.pdf",
+      dateAdded: "2026-01-01 00:00:00",
+    });
+    const b = fakeItem({
+      id: 3,
+      key: "PDFB",
+      pdf: true,
+      fileName: "paper-copy-b.pdf",
+      dateAdded: "2026-01-01 00:00:00",
+    });
     const parent = fakeItem({
       id: 1,
       key: "ITEM1",
       regular: true,
       attachments: [2, 3],
-      bestAttachments: [a, b],
+      bestAttachments: [],
       title: "Unrelated Title",
     });
 
@@ -93,6 +105,84 @@ describe("attachmentResolver", function () {
         }),
       "ambiguous-attachment",
     );
+  });
+
+  it("selects the unique highest-scoring attachment even when the gap is one point", async function () {
+    const earlier = fakeItem({
+      id: 2,
+      key: "EARLY",
+      pdf: true,
+      fileName: "paper.pdf",
+      dateAdded: "2026-01-01 00:00:00",
+    });
+    const later = fakeItem({
+      id: 3,
+      key: "LATE",
+      pdf: true,
+      fileName: "paper.pdf",
+      dateAdded: "2026-12-31 00:00:00",
+    });
+    const parent = fakeItem({
+      id: 1,
+      key: "ITEM1",
+      regular: true,
+      attachments: [2, 3],
+      bestAttachments: [earlier, later],
+      title: "paper",
+    });
+
+    const result = await resolveAttachment({
+      libraryID: 1,
+      key: "ITEM1",
+      items: fakeItems([parent, earlier, later]),
+      storage: fakeStatus(),
+    });
+
+    assert.equal(result.attachment.key, "EARLY");
+  });
+
+  it("does not boost candidates with existing parse results", async function () {
+    const original = fakeItem({
+      id: 2,
+      key: "ORIG",
+      pdf: true,
+      fileName: "example-paper.pdf",
+    });
+    const derived = fakeItem({
+      id: 3,
+      key: "DERIVED",
+      pdf: true,
+      fileName: "example-paper-annotated.pdf",
+    });
+    const parent = fakeItem({
+      id: 1,
+      key: "ITEM1",
+      regular: true,
+      attachments: [2, 3],
+      bestAttachments: [original, derived],
+      title: "Example Paper",
+    });
+
+    const result = await resolveAttachment({
+      libraryID: 1,
+      key: "ITEM1",
+      items: fakeItems([parent, original, derived]),
+      storage: fakeStatus({
+        ORIG: { preciseReady: false, liteReady: false },
+        DERIVED: { preciseReady: true, liteReady: true },
+      }),
+    });
+
+    assert.equal(result.attachment.key, "ORIG");
+    const derivedCandidate = (result.candidates ?? []).find(
+      (candidate) => candidate.key === "DERIVED",
+    );
+    assert.isDefined(derivedCandidate);
+    assert.include(derivedCandidate!, {
+      key: "DERIVED",
+      preciseReady: true,
+      liteReady: true,
+    });
   });
 
   it("uses attachmentKey to select a child PDF exactly", async function () {
@@ -116,6 +206,64 @@ describe("attachmentResolver", function () {
 
     assert.equal(result.attachment.key, "PDFB");
   });
+
+  it("returns attachment-not-found when attachmentKey targets a non-pdf child", async function () {
+    const pdf = fakeItem({ id: 2, key: "PDF1", pdf: true, parentItemID: 1 });
+    const note = fakeItem({
+      id: 3,
+      key: "NOTE1",
+      parentItemID: 1,
+      fileName: "note.txt",
+    });
+    const parent = fakeItem({
+      id: 1,
+      key: "ITEM1",
+      regular: true,
+      attachments: [2, 3],
+      bestAttachments: [pdf],
+    });
+
+    await assertRejectsCode(
+      () =>
+        resolveAttachment({
+          libraryID: 1,
+          key: "ITEM1",
+          attachmentKey: "NOTE1",
+          items: fakeItems([parent, pdf, note]),
+          storage: fakeStatus(),
+        }),
+      "attachment-not-found",
+    );
+  });
+
+  it("returns attachment-not-found when attachmentKey targets a pdf outside the parent", async function () {
+    const pdf = fakeItem({ id: 2, key: "PDF1", pdf: true, parentItemID: 1 });
+    const foreignPdf = fakeItem({
+      id: 3,
+      key: "PDF2",
+      pdf: true,
+      parentItemID: 99,
+    });
+    const parent = fakeItem({
+      id: 1,
+      key: "ITEM1",
+      regular: true,
+      attachments: [2],
+      bestAttachments: [pdf],
+    });
+
+    await assertRejectsCode(
+      () =>
+        resolveAttachment({
+          libraryID: 1,
+          key: "ITEM1",
+          attachmentKey: "PDF2",
+          items: fakeItems([parent, pdf, foreignPdf]),
+          storage: fakeStatus(),
+        }),
+      "attachment-not-found",
+    );
+  });
 });
 
 function fakeItem(input: {
@@ -125,6 +273,8 @@ function fakeItem(input: {
   pdf?: boolean;
   title?: string;
   fileName?: string;
+  dateAdded?: string;
+  parentItemID?: number | false;
   attachments?: number[];
   bestAttachments?: ZoteroItemLike[];
 }): ZoteroItemLike {
@@ -132,8 +282,11 @@ function fakeItem(input: {
     id: input.id,
     key: input.key,
     libraryID: 1,
-    dateAdded: `2026-01-${String(input.id).padStart(2, "0")} 00:00:00`,
+    dateAdded:
+      input.dateAdded ??
+      `2026-01-${String(input.id).padStart(2, "0")} 00:00:00`,
     attachmentFilename: input.fileName ?? `${input.key}.pdf`,
+    parentItemID: input.parentItemID,
     isRegularItem: () => Boolean(input.regular),
     isPDFAttachment: () => Boolean(input.pdf),
     getDisplayTitle: () => input.title ?? input.fileName ?? input.key,
@@ -164,10 +317,17 @@ function fakeItems(items: ZoteroItemLike[]): ZoteroItemsGateway {
   };
 }
 
-function fakeStatus() {
+function fakeStatus(
+  statuses: Record<string, { preciseReady: boolean; liteReady: boolean }> = {},
+) {
   return {
-    async readParseStatus() {
-      return { preciseReady: false, liteReady: false };
+    async readParseStatus(ref: { key: string }) {
+      return (
+        statuses[ref.key] ?? {
+          preciseReady: false,
+          liteReady: false,
+        }
+      );
     },
   };
 }
