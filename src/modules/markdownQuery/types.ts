@@ -58,3 +58,65 @@ export interface MarkdownSearchMatch {
   hit: string;
   after: string[];
 }
+
+/**
+ * 表示 Markdown Query API 解析附件时依赖的最小 Zotero item 视图。
+ */
+export interface ZoteroItemLike {
+  id: number;
+  key: string;
+  libraryID: number;
+  dateAdded?: string;
+  attachmentFilename?: string;
+  parentItemID?: number | false;
+  isRegularItem(): boolean;
+  isPDFAttachment(): boolean;
+  getDisplayTitle(): string;
+  getField(field: string): string;
+  getAttachments(includeTrashed?: boolean): number[];
+  getBestAttachments(): Promise<ZoteroItemLike[]>;
+}
+
+/**
+ * 表示 Attachment Resolver 读取 Zotero items 所需的最小网关接口。
+ */
+export interface ZoteroItemsGateway {
+  getAsync(ids: number[]): Promise<ZoteroItemLike[]>;
+  getByLibraryAndKeyAsync(
+    libraryID: number,
+    key: string,
+  ): Promise<ZoteroItemLike | false>;
+}
+
+/**
+ * 表示一个 PDF 附件候选项的评分与状态信息。
+ */
+export interface AttachmentCandidate {
+  itemID: number;
+  libraryID: number;
+  key: string;
+  fileName: string;
+  preciseReady: boolean;
+  liteReady: boolean;
+  score: number;
+  reasons: string[];
+}
+
+/**
+ * 表示附件解析完成后的父条目、目标附件与可选候选列表。
+ */
+export interface ResolvedAttachment {
+  item: ZoteroItemLike;
+  attachment: ZoteroItemLike;
+  candidates?: AttachmentCandidate[];
+}
+
+/**
+ * 表示读取附件解析状态所需的最小存储接口。
+ */
+export interface ParseStatusReader {
+  readParseStatus(ref: {
+    libraryID: number;
+    key: string;
+  }): Promise<{ preciseReady: boolean; liteReady: boolean }>;
+}
