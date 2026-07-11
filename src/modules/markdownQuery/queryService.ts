@@ -76,6 +76,10 @@ export function createMarkdownQueryService(deps: {
         items: deps.items,
         storage: deps.storage,
       });
+      const parseStatus = await deps.storage.readParseStatus({
+        libraryID: resolved.attachment.libraryID,
+        key: resolved.attachment.key,
+      });
 
       let markdown: string;
       try {
@@ -83,20 +87,32 @@ export function createMarkdownQueryService(deps: {
           libraryID: resolved.attachment.libraryID,
           key: resolved.attachment.key,
         });
-      } catch {
-        throw new MarkdownQueryError(
-          "parse-result-not-found",
-          404,
-          "Target PDF has no available parse result",
-        );
+      } catch (error) {
+        if (!parseStatus.preciseReady && !parseStatus.liteReady) {
+          throw new MarkdownQueryError(
+            "parse-result-not-found",
+            404,
+            "Target PDF has no available parse result",
+          );
+        }
+
+        throw error;
       }
+
+      const attachment = {
+        itemID: resolved.attachment.id,
+        libraryID: resolved.attachment.libraryID,
+        key: resolved.attachment.key,
+        fileName:
+          resolved.attachment.attachmentFilename ||
+          resolved.attachment.getDisplayTitle(),
+        preciseReady: parseStatus.preciseReady,
+        liteReady: parseStatus.liteReady,
+      };
 
       const base = {
         item: summarizeItem(resolved.item),
-        attachment: await summarizeAttachment(
-          resolved.attachment,
-          deps.storage,
-        ),
+        attachment,
         result: { source: "preferred" as const },
       };
       const granularity = input.granularity ?? "full";
