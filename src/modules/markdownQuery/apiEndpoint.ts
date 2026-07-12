@@ -14,6 +14,7 @@ import { MarkdownQueryError, ZoteroItemLike } from "./types";
 interface MarkdownEndpointRequest {
   method: "GET" | "POST";
   pathname: string;
+  searchParams?: URLSearchParams;
   query: Record<string, string>;
   headers: Record<string, string>;
   data: unknown;
@@ -33,10 +34,10 @@ export function registerMarkdownQueryApiEndpoint(): void {
     storage: createStorage(getMinerUStorageRoot()),
     searchItemsByTitle,
   });
-  const endpoint = createMarkdownQueryEndpoint(service);
+  const EndpointClass = createMarkdownQueryEndpointClass(service);
 
   for (const path of MARKDOWN_ENDPOINT_PATHS) {
-    Zotero.Server.Endpoints[path] = toZoteroEndpoint(endpoint);
+    Zotero.Server.Endpoints[path] = toZoteroEndpoint(EndpointClass);
   }
 }
 
@@ -57,27 +58,28 @@ export function createMarkdownQueryEndpoint(service: MarkdownQueryService) {
     supportedMethods: ["GET"],
     async init(options: MarkdownEndpointRequest) {
       try {
-        authorize(options.query, options.headers);
+        const query = getQuery(options);
+        authorize(query, options.headers);
         const payload =
           options.pathname === "/mineru-for-zotero/search"
             ? await service.searchByTitle({
-                libraryID: requireInteger(options.query.libraryID, "libraryID"),
-                title: requireString(options.query.title, "title"),
+                libraryID: requireInteger(query.libraryID, "libraryID"),
+                title: requireString(query.title, "title"),
               })
             : await service.queryMarkdown({
-                libraryID: requireInteger(options.query.libraryID, "libraryID"),
-                key: requireString(options.query.key, "key"),
-                attachmentKey: optionalString(options.query.attachmentKey),
-                granularity: optionalString(options.query.granularity) as
+                libraryID: requireInteger(query.libraryID, "libraryID"),
+                key: requireString(query.key, "key"),
+                attachmentKey: optionalString(query.attachmentKey),
+                granularity: optionalString(query.granularity) as
                   | "full"
                   | "headings"
                   | "section"
                   | "search"
                   | undefined,
-                sectionPath: parseSectionPath(options.query.sectionPath),
-                q: optionalString(options.query.q),
+                sectionPath: parseSectionPath(query.sectionPath),
+                q: optionalString(query.q),
                 contextParagraphs: parseOptionalInteger(
-                  options.query.contextParagraphs,
+                  query.contextParagraphs,
                 ),
               });
 
@@ -90,10 +92,32 @@ export function createMarkdownQueryEndpoint(service: MarkdownQueryService) {
 }
 
 /**
+ * 创建 Zotero.Server.Endpoints 需要的可构造 endpoint class。
+ */
+export function createMarkdownQueryEndpointClass(
+  service: MarkdownQueryService,
+) {
+  const endpoint = createMarkdownQueryEndpoint(service);
+
+  return class MarkdownQueryEndpoint {
+    supportedMethods = endpoint.supportedMethods;
+
+    /**
+     * 代理到共享 endpoint 逻辑，保持测试和运行时行为一致。
+     */
+    init(options: MarkdownEndpointRequest) {
+      return endpoint.init(options);
+    }
+  };
+}
+
+/**
  * 将 promise-style endpoint 对象适配到 zotero-types 当前的 endpoint 注册类型。
  */
-function toZoteroEndpoint(endpoint: unknown) {
-  return endpoint as unknown as typeof _ZoteroTypes.Server.Endpoint;
+function toZoteroEndpoint(
+  EndpointClass: ReturnType<typeof createMarkdownQueryEndpointClass>,
+) {
+  return EndpointClass as unknown as typeof _ZoteroTypes.Server.Endpoint;
 }
 
 /**
@@ -132,6 +156,16 @@ function authorize(
   if (!expected || provided !== expected) {
     throw new MarkdownQueryError("invalid-token", 403, "Invalid API token");
   }
+}
+
+/**
+ * 兼容单元测试中的 query 字典和 Zotero 运行时传入的 searchParams。
+ */
+function getQuery(options: MarkdownEndpointRequest): Record<string, string> {
+  if (options.searchParams) {
+    return Object.fromEntries(options.searchParams.entries());
+  }
+  return options.query;
 }
 
 /**

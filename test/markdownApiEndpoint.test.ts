@@ -1,6 +1,7 @@
 import { assert } from "chai";
 import {
   createMarkdownQueryEndpoint,
+  createMarkdownQueryEndpointClass,
   MARKDOWN_ENDPOINT_PATHS,
 } from "../src/modules/markdownQuery/apiEndpoint";
 import {
@@ -79,6 +80,37 @@ describe("markdownApiEndpoint", function () {
     assert.include(String(response[2]), '"candidates":[]');
   });
 
+  it("creates a constructible Zotero endpoint class", async function () {
+    setMarkdownApiEnabled(true);
+    setMarkdownApiRequireToken(false);
+    const EndpointClass = createMarkdownQueryEndpointClass(fakeService());
+    const endpoint = new EndpointClass();
+
+    const response = await endpoint.init(
+      runtimeRequest("/mineru-for-zotero/markdown", {
+        searchParams: new URLSearchParams({ libraryID: "1", key: "PDF1" }),
+      }),
+    );
+
+    assert.equal(response[0], 200);
+    assert.include(String(response[2]), "# Body");
+  });
+
+  it("reads query parameters from Zotero runtime searchParams", async function () {
+    setMarkdownApiEnabled(true);
+    setMarkdownApiRequireToken(false);
+    const endpoint = createMarkdownQueryEndpoint(fakeService());
+
+    const response = await endpoint.init(
+      runtimeRequest("/mineru-for-zotero/search", {
+        searchParams: new URLSearchParams({ libraryID: "1", title: "Doc" }),
+      }),
+    );
+
+    assert.equal(response[0], 200);
+    assert.include(String(response[2]), '"candidates":[]');
+  });
+
   it("uses a generic internal-error message for unexpected errors", async function () {
     setMarkdownApiEnabled(true);
     setMarkdownApiRequireToken(false);
@@ -123,6 +155,24 @@ function fakeService() {
     async queryMarkdown() {
       return { granularity: "full", content: "# Body" };
     },
+  };
+}
+
+function runtimeRequest(
+  pathname: string,
+  overrides: Partial<{
+    method: "GET" | "POST";
+    searchParams: URLSearchParams;
+    headers: Record<string, string>;
+  }> = {},
+) {
+  return {
+    method: overrides.method ?? "GET",
+    pathname,
+    pathParams: {},
+    searchParams: overrides.searchParams ?? new URLSearchParams(),
+    headers: overrides.headers ?? {},
+    data: undefined,
   };
 }
 
