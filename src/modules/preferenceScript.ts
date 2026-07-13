@@ -1,9 +1,16 @@
 import { config } from "../../package.json";
 import {
+  generateMarkdownApiToken,
+  getMarkdownApiEnabled,
+  getMarkdownApiRequireToken,
+  getMarkdownApiToken,
   getSaveImages,
   getLocalApiTimeoutMinutes,
   getParseMode,
   getParseSource,
+  setMarkdownApiEnabled,
+  setMarkdownApiRequireToken,
+  setMarkdownApiToken,
   setApiKey,
   setLocalApiBaseURL,
   setLocalApiTimeoutMinutes,
@@ -35,6 +42,7 @@ export async function registerPrefsScripts(_window: Window) {
   const document = _window.document;
 
   registerPreferenceValueSync(document);
+  void updateMarkdownApiTokenStatus(_window);
 
   setText(
     document,
@@ -48,6 +56,12 @@ export async function registerPrefsScripts(_window: Window) {
     .getElementById(`${config.addonRef}-open-data-folder`)
     ?.addEventListener("click", () => {
       void storage.openDataFolder();
+    });
+  document
+    .getElementById(`${config.addonRef}-api-regenerate-token`)
+    ?.addEventListener("click", () => {
+      setMarkdownApiToken(generateMarkdownApiToken());
+      void updateMarkdownApiTokenStatus(_window);
     });
 
   registerExternalLink(
@@ -99,6 +113,18 @@ export function registerPreferenceValueSync(document: Document): void {
     `zotero-prefpane-${config.addonRef}-local-api-timeout-minutes`,
     getLocalApiTimeoutMinutes,
     setLocalApiTimeoutMinutes,
+  );
+  registerCheckboxPreferenceSync(
+    document,
+    `zotero-prefpane-${config.addonRef}-api-enabled`,
+    getMarkdownApiEnabled,
+    setMarkdownApiEnabled,
+  );
+  registerCheckboxPreferenceSync(
+    document,
+    `zotero-prefpane-${config.addonRef}-api-require-token`,
+    getMarkdownApiRequireToken,
+    setMarkdownApiRequireToken,
   );
   registerCheckboxPreferenceSync(
     document,
@@ -261,6 +287,22 @@ async function updateParsedCount(
   }
 }
 
+/**
+ * 刷新 Markdown 查询 API token 的可见值与状态文案。
+ */
+async function updateMarkdownApiTokenStatus(_window: Window): Promise<void> {
+  const token = getMarkdownApiToken();
+  setInputValue(_window.document, `${config.addonRef}-api-token`, token);
+  setText(
+    _window.document,
+    `${config.addonRef}-api-token-status`,
+    await formatL10n(
+      _window,
+      token ? "pref-query-api-token-ready" : "pref-query-api-token-empty",
+    ),
+  );
+}
+
 async function formatL10n(
   _window: Window,
   id: string,
@@ -280,6 +322,12 @@ async function formatL10n(
   if (id === "pref-parsed-count") {
     return `Parsed PDFs: ${args?.count ?? 0}`;
   }
+  if (id === "pref-query-api-token-ready") {
+    return "Token generated";
+  }
+  if (id === "pref-query-api-token-empty") {
+    return "No token generated";
+  }
   return "Parsed PDFs: failed to read";
 }
 
@@ -288,4 +336,17 @@ function setText(document: Document, id: string, value: string): void {
   if (element) {
     element.textContent = value;
   }
+}
+
+/**
+ * 同步只读输入框的当前值和 value 属性，便于偏好页立即显示 token。
+ */
+function setInputValue(document: Document, id: string, value: string): void {
+  const element = document.getElementById(id) as HTMLInputElement | null;
+  if (!element) {
+    return;
+  }
+
+  element.value = value;
+  element.setAttribute("value", value);
 }

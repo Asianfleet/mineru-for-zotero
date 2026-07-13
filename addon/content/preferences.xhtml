@@ -79,6 +79,43 @@
   </vbox>
   <vbox>
     <label>
+      <html:h2 data-l10n-id="pref-query-api-title"></html:h2>
+    </label>
+    <checkbox
+      id="zotero-prefpane-__addonRef__-api-enabled"
+      data-l10n-id="pref-query-api-enabled"
+      native="true"
+      preference="apiEnabled"
+    />
+    <checkbox
+      id="zotero-prefpane-__addonRef__-api-require-token"
+      data-l10n-id="pref-query-api-require-token"
+      native="true"
+      preference="apiRequireToken"
+    />
+    <hbox align="center" style="gap: 6px">
+      <label
+        for="__addonRef__-api-token"
+        data-l10n-id="pref-query-api-token"
+      ></label>
+      <html:input
+        type="text"
+        id="__addonRef__-api-token"
+        readonly="readonly"
+        style="min-width: 320px"
+      ></html:input>
+    </hbox>
+    <hbox align="center" style="gap: 6px">
+      <html:button
+        id="__addonRef__-api-regenerate-token"
+        data-l10n-id="pref-query-api-regenerate-token"
+      ></html:button>
+      <html:span id="__addonRef__-api-token-status"></html:span>
+    </hbox>
+    <html:div data-l10n-id="pref-query-api-help"></html:div>
+  </vbox>
+  <vbox>
+    <label>
       <html:h2 data-l10n-id="pref-data-storage-title"></html:h2>
     </label>
     <vbox>

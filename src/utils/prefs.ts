@@ -113,6 +113,64 @@ export function setLocalApiTimeoutMinutes(value: number) {
   return setPref("localApiTimeoutMinutes", value);
 }
 
+/**
+ * 读取 Markdown 查询 API 是否启用。
+ */
+export function getMarkdownApiEnabled(): boolean {
+  return getPref("apiEnabled") === true;
+}
+
+/**
+ * 持久化 Markdown 查询 API 启用状态。
+ */
+export function setMarkdownApiEnabled(value: boolean) {
+  return setPref("apiEnabled", value);
+}
+
+/**
+ * 读取 Markdown 查询 API 是否要求 token，默认开启。
+ */
+export function getMarkdownApiRequireToken(): boolean {
+  return getPref("apiRequireToken") !== false;
+}
+
+/**
+ * 持久化 Markdown 查询 API 的 token 校验开关。
+ */
+export function setMarkdownApiRequireToken(value: boolean) {
+  return setPref("apiRequireToken", value);
+}
+
+/**
+ * 读取 Markdown 查询 API token。
+ */
+export function getMarkdownApiToken(): string {
+  const value = getPref("apiToken");
+  if (typeof value === "string" && value.trim()) {
+    return value;
+  }
+
+  const token = generateMarkdownApiToken();
+  setMarkdownApiToken(token);
+  return token;
+}
+
+/**
+ * 持久化 Markdown 查询 API token。
+ */
+export function setMarkdownApiToken(value: string) {
+  return setPref("apiToken", value);
+}
+
+/**
+ * 生成适合 URL 传输的随机 token。
+ */
+export function generateMarkdownApiToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return bytesToUrlToken(bytes);
+}
+
 export function getSaveImages(): boolean {
   const value = getPref("saveImages");
   return value !== false;
@@ -120,4 +178,17 @@ export function getSaveImages(): boolean {
 
 export function setSaveImages(value: boolean) {
   return setPref("saveImages", value);
+}
+
+/**
+ * 将字节数组编码为 URL-safe token。
+ */
+function bytesToUrlToken(bytes: Uint8Array): string {
+  const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join(
+    "",
+  );
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 }

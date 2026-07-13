@@ -72,6 +72,114 @@ API Key 只保存在本机 Zotero 首选项中。
 
 结果目录中包含解析出的 Markdown、Reader 使用的 box 数据，以及可选保存的图片。外部工具可以读取这些文件，但不建议手动修改。
 
+## 本地 Markdown 查询 API
+
+本地 Markdown 查询 API 让外部本地工具通过 Zotero 自带的本地 HTTP server 读取 MinerU for Zotero 已经保存的 Markdown 解析结果。它只查询本机已有结果，不会提交新的 MinerU 解析任务，也不会直接暴露插件数据目录。
+
+主要能力：
+
+- 按 Zotero 标题关键词检索候选条目和 PDF attachment。
+- 通过 `libraryID + key` 读取普通条目或 PDF attachment 的 Markdown。
+- 支持 `full`、`headings`、`section`、`search` 四种查询粒度，便于外部 agent 先看目录、再读取章节或关键词上下文。
+- 普通条目下有多个 PDF attachment 时，可用 `attachmentKey` 精确选择目标附件。
+- 优先返回精准解析 Markdown；没有精准结果但有轻量解析结果时，返回轻量 Markdown，并在响应里标记 `result.mode`。
+
+### 配置
+
+1. 启动 Zotero，并确保 MinerU for Zotero 插件已启用。
+2. 打开 `编辑` -> `设置` -> `MinerU for Zotero`。
+3. 在 `本地查询 API` 中勾选 `启用本地 Markdown 查询 API`。
+4. `要求 token` 控制调用方是否必须提供 token。开启后，可以点击 `生成 token`。
+5. 开启 token 校验时，调用方可以把 token 放入 `Authorization: Bearer <token>` header；API 也支持 `token=<token>` 查询参数。
+
+Zotero 默认本地端口通常是 `23119`。如果你改过 Zotero 本地 server 端口，需要把下面示例中的端口同步替换为实际端口。
+
+### HTTP 调用示例
+
+按标题检索候选条目：
+
+```shell
+curl --get "http://127.0.0.1:23119/mineru-for-zotero/search" \
+  --data-urlencode "libraryID=1" \
+  --data-urlencode "title=retrieval augmented generation" \
+  -H "Authorization: Bearer <token>"
+```
+
+读取全文 Markdown：
+
+```shell
+curl "http://127.0.0.1:23119/mineru-for-zotero/markdown?libraryID=1&key=ABCD1234" \
+  -H "Authorization: Bearer <token>"
+```
+
+只读取标题层级，适合先了解文档结构：
+
+```shell
+curl "http://127.0.0.1:23119/mineru-for-zotero/markdown?libraryID=1&key=ABCD1234&granularity=headings" \
+  -H "Authorization: Bearer <token>"
+```
+
+读取指定章节：
+
+```shell
+curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
+  --data-urlencode "libraryID=1" \
+  --data-urlencode "key=ABCD1234" \
+  --data-urlencode "granularity=section" \
+  --data-urlencode "sectionPath=Introduction/Background" \
+  -H "Authorization: Bearer <token>"
+```
+
+在 Markdown 中搜索关键词并返回前后文段落：
+
+```shell
+curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
+  --data-urlencode "libraryID=1" \
+  --data-urlencode "key=ABCD1234" \
+  --data-urlencode "granularity=search" \
+  --data-urlencode "q=retrieval" \
+  --data-urlencode "contextParagraphs=2" \
+  -H "Authorization: Bearer <token>"
+```
+
+常用参数：
+
+| 参数                | 端点                 | 说明                                                           |
+| ------------------- | -------------------- | -------------------------------------------------------------- |
+| `libraryID`         | `search`、`markdown` | Zotero library ID，个人库通常是 `1`。                          |
+| `title`             | `search`             | 标题关键词，用于查找候选 Zotero 条目。                         |
+| `key`               | `markdown`           | Zotero 普通条目 key 或 PDF attachment key。                    |
+| `attachmentKey`     | `markdown`           | 普通条目包含多个 PDF 时指定目标 PDF attachment。               |
+| `granularity`       | `markdown`           | `full`、`headings`、`section` 或 `search`，默认 `full`。       |
+| `sectionPath`       | `markdown`           | `section` 查询使用的标题路径，例如 `Introduction/Background`。 |
+| `q`                 | `markdown`           | `search` 查询使用的关键词。                                    |
+| `contextParagraphs` | `markdown`           | `search` 命中前后的上下文段落数。                              |
+
+常见错误码：
+
+- `api-disabled`：设置页尚未启用本地 Markdown 查询 API。
+- `invalid-token`：token 缺失或不匹配。
+- `ambiguous-attachment`：普通条目下有多个 PDF，请传入 `attachmentKey`。
+- `parse-result-not-found`：目标 PDF 还没有可用解析结果，请先在 Zotero 中解析。
+- `section-not-found`：章节路径不匹配，先用 `granularity=headings` 查看准确路径。
+- `missing-query`：`granularity=search` 时缺少 `q`。
+
+### 配套 Skill 与 CLI
+
+仓库内提供了配套 Skill：`mineru-for-zotero-cli/`。它面向 Codex 或其他本地 agent，封装了 HTTP 参数、token header、端口读取、错误提示和文本排版。前置条件与 HTTP API 相同：Zotero 正在运行，插件已启用本地 Markdown 查询 API；如果设置页要求 token，调用时传入 `--token <token>`。
+
+在仓库根目录可以直接运行 CLI：
+
+```shell
+node mineru-for-zotero-cli/scripts/query-markdown.mjs search --library-id 1 --title "paper title" --token "<token>"
+node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity headings --token "<token>"
+node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity section --section-path "Introduction/Background" --token "<token>"
+node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity search --query "retrieval" --context-paragraphs 2 --token "<token>"
+node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity full --format json --token "<token>"
+```
+
+CLI 默认会尝试从 Zotero 默认 profile 读取本地 HTTP server 端口，读不到时使用 `23119`。如果需要手动指定端口，添加 `--port <number>`。默认输出 `--format text`，适合 agent 直接阅读；需要脚本处理时使用 `--format json`。
+
 ## 常见问题
 
 ### 提示未配置 API Key

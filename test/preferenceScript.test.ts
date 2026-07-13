@@ -1,14 +1,22 @@
 import { assert } from "chai";
 import {
   openExternalURL,
+  registerPrefsScripts,
   registerPreferenceValueSync,
 } from "../src/modules/preferenceScript";
 import {
+  generateMarkdownApiToken,
+  getMarkdownApiEnabled,
+  getMarkdownApiRequireToken,
+  getMarkdownApiToken,
   getLocalApiBaseURL,
   getLocalApiTimeoutMinutes,
   getParseMode,
   getParseSource,
   getSaveImages,
+  setMarkdownApiEnabled,
+  setMarkdownApiRequireToken,
+  setMarkdownApiToken,
   setLocalApiBaseURL,
   setLocalApiTimeoutMinutes,
   setParseMode,
@@ -100,6 +108,32 @@ describe("preferenceScript", function () {
     assert.equal(getLocalApiTimeoutMinutes(), 30);
   });
 
+  it("defaults the markdown query API to disabled with token required", function () {
+    try {
+      setMarkdownApiToken("");
+
+      assert.isFalse(getMarkdownApiEnabled());
+      assert.isTrue(getMarkdownApiRequireToken());
+
+      const token = getMarkdownApiToken();
+      assert.match(token, /^[A-Za-z0-9_-]{32,}$/);
+      assert.equal(getMarkdownApiToken(), token);
+    } finally {
+      setMarkdownApiToken("");
+    }
+  });
+
+  it("generates and persists a markdown query API token", function () {
+    try {
+      const token = generateMarkdownApiToken();
+      assert.match(token, /^[A-Za-z0-9_-]{32,}$/);
+      setMarkdownApiToken(token);
+      assert.equal(getMarkdownApiToken(), token);
+    } finally {
+      setMarkdownApiToken("");
+    }
+  });
+
   it("round-trips parse source, parse mode, and local API URL", function () {
     try {
       setParseSource("local");
@@ -176,6 +210,77 @@ describe("preferenceScript", function () {
     }
   });
 
+  it("shows local query API controls without a request example", async function () {
+    const preferences = await fetchPreferencePanelMarkup();
+
+    assertIncreasingIndexes(preferences, [
+      'data-l10n-id="mineruForZotero-pref-query-api-title"',
+      'id="zotero-prefpane-mineruForZotero-api-enabled"',
+      'id="zotero-prefpane-mineruForZotero-api-require-token"',
+      'id="mineruForZotero-api-token"',
+      'id="mineruForZotero-api-regenerate-token"',
+    ]);
+    assert.include(preferences, 'readonly="readonly"');
+    assert.notInclude(preferences, "Authorization: Bearer");
+  });
+
+  it("persists markdown query API checkbox changes immediately", function () {
+    const enabled = fakePreferenceElement("false", "", "checkbox");
+    const requireToken = fakePreferenceElement("true", "", "checkbox");
+    const document = fakePreferenceDocument({
+      "zotero-prefpane-mineruForZotero-api-enabled": enabled,
+      "zotero-prefpane-mineruForZotero-api-require-token": requireToken,
+    });
+
+    try {
+      setMarkdownApiEnabled(false);
+      setMarkdownApiRequireToken(true);
+      registerPreferenceValueSync(document);
+
+      enabled.checked = true;
+      enabled.emit("command");
+      requireToken.checked = false;
+      requireToken.emit("command");
+
+      assert.isTrue(getMarkdownApiEnabled());
+      assert.isFalse(getMarkdownApiRequireToken());
+    } finally {
+      setMarkdownApiEnabled(false);
+      setMarkdownApiRequireToken(true);
+    }
+  });
+
+  it("regenerates and replaces the markdown query API token from preferences", async function () {
+    const regenerate = fakePreferenceElement("", "", "button");
+    const status = fakePreferenceElement("", "", "span");
+    const tokenInput = fakePreferenceElement("", "", "text");
+    const document = fakePreferenceDocument({
+      "mineruForZotero-api-regenerate-token": regenerate,
+      "mineruForZotero-api-token-status": status,
+      "mineruForZotero-api-token": tokenInput,
+    });
+    const _window = fakePreferenceWindow(document);
+
+    try {
+      setMarkdownApiToken("visible-token");
+      const originalToken = getMarkdownApiToken();
+
+      await registerPrefsScripts(_window);
+
+      assert.equal(tokenInput.value, originalToken);
+
+      regenerate.emit("click");
+
+      const regeneratedToken = getMarkdownApiToken();
+      assert.match(regeneratedToken, /^[A-Za-z0-9_-]{32,}$/);
+      assert.notEqual(regeneratedToken, originalToken);
+      assert.equal(tokenInput.value, regeneratedToken);
+      assert.equal(status.textContent, "Token generated");
+    } finally {
+      setMarkdownApiToken("");
+    }
+  });
+
   it("persists local API timeout changes from the preferences UI immediately", function () {
     const timeout = fakePreferenceElement("45", "", "number");
     const document = fakePreferenceDocument({
@@ -199,6 +304,7 @@ describe("preferenceScript", function () {
 interface FakePreferenceElement {
   checked: boolean;
   name: string;
+  textContent: string;
   type: string;
   value: string;
   addEventListener(type: string, listener: EventListener): void;
@@ -220,6 +326,7 @@ function fakePreferenceElement(
   return {
     checked: value === "true",
     name,
+    textContent: "",
     type,
     value,
     addEventListener(type, listener) {
@@ -253,6 +360,30 @@ function fakePreferenceDocument(
       return [] as unknown as NodeListOf<Element>;
     },
   } as unknown as Document;
+}
+
+function fakePreferenceWindow(document: Document): Window {
+  return {
+    document: Object.assign(document, {
+      l10n: {
+        formatValue: async (id: string) => {
+          if (id === "pref-query-api-token-ready") {
+            return "Token generated";
+          }
+          if (id === "pref-query-api-token-empty") {
+            return "No token generated";
+          }
+          if (id === "pref-data-folder-path") {
+            return "Data folder: ProfD/mineru-copy";
+          }
+          if (id === "pref-parsed-count") {
+            return "Parsed PDFs: 0";
+          }
+          return "Parsed PDFs: failed to read";
+        },
+      },
+    }),
+  } as unknown as Window;
 }
 
 function assertIncreasingIndexes(source: string, snippets: string[]): void {
