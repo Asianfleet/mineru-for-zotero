@@ -2,12 +2,18 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const cliPath = fileURLToPath(
-  new URL("../skill/scripts/query-markdown.mjs", import.meta.url),
+  new URL(
+    "../mineru-for-zotero-cli/scripts/query-markdown.mjs",
+    import.meta.url,
+  ),
 );
 
 test("formats search results as agent-friendly text", async () => {
@@ -38,11 +44,11 @@ test("formats search results as agent-friendly text", async () => {
         ],
       },
     },
-    async ({ baseUrl, requests }) => {
+    async ({ port, requests }) => {
       const result = await runCli([
         "search",
-        "--base-url",
-        baseUrl,
+        "--port",
+        String(port),
         "--library-id",
         "1",
         "--title",
@@ -97,11 +103,11 @@ test("formats markdown headings as json envelope without exposing token", async 
         ],
       },
     },
-    async ({ baseUrl, requests }) => {
+    async ({ port, requests }) => {
       const result = await runCli([
         "markdown",
-        "--base-url",
-        baseUrl,
+        "--port",
+        String(port),
         "--library-id",
         "1",
         "--key",
@@ -170,11 +176,11 @@ test("formats markdown search matches as text", async () => {
         ],
       },
     },
-    async ({ baseUrl, requests }) => {
+    async ({ port, requests }) => {
       const result = await runCli([
         "markdown",
-        "--base-url",
-        baseUrl,
+        "--port",
+        String(port),
         "--library-id",
         "1",
         "--key",
@@ -207,11 +213,11 @@ test("formats api errors as json and exits with code 1", async () => {
         message: "Target PDF has no available parse result",
       },
     },
-    async ({ baseUrl }) => {
+    async ({ port }) => {
       const result = await runCli([
         "markdown",
-        "--base-url",
-        baseUrl,
+        "--port",
+        String(port),
         "--library-id",
         "1",
         "--key",
@@ -243,6 +249,40 @@ test("prints parameter errors to stderr and exits with code 2", async () => {
   assert.match(result.stderr, /Usage:/);
 });
 
+test("discovers the listen port from the default Zotero profile", async () => {
+  await withServer(
+    {
+      status: 200,
+      body: {
+        candidates: [],
+      },
+    },
+    async ({ port, requests }) => {
+      await withZoteroProfile(port, async ({ env }) => {
+        const result = await runCli(
+          [
+            "search",
+            "--library-id",
+            "1",
+            "--title",
+            "retrieval",
+            "--format",
+            "json",
+          ],
+          { env },
+        );
+
+        assert.equal(result.code, 0);
+        assert.equal(result.stderr, "");
+        assert.equal(requests[0].pathname, "/mineru-for-zotero/search");
+
+        const output = JSON.parse(result.stdout);
+        assert.equal(output.request.baseUrl, `http://127.0.0.1:${port}`);
+      });
+    },
+  );
+});
+
 /**
  * Runs a temporary JSON HTTP server while a CLI test executes.
  */
@@ -267,7 +307,7 @@ async function withServer(response, run) {
 
   try {
     const { port } = server.address();
-    await run({ baseUrl: `http://127.0.0.1:${port}`, requests });
+    await run({ port, requests });
   } finally {
     await new Promise((resolve, reject) => {
       server.close((error) => {
@@ -282,11 +322,54 @@ async function withServer(response, run) {
 }
 
 /**
+ * Creates a temporary Zotero profile tree with the requested local API port.
+ */
+async function withZoteroProfile(port, run) {
+  const root = await mkdtemp(join(tmpdir(), "zotero-profile-"));
+  const appDataRoot = join(root, "AppData", "Roaming");
+  const zoteroRoot = join(appDataRoot, "Zotero", "Zotero");
+  const profilePath = join(zoteroRoot, "Profiles", "test.default");
+
+  await mkdir(profilePath, { recursive: true });
+  await writeFile(
+    join(zoteroRoot, "profiles.ini"),
+    [
+      "[Profile0]",
+      "Name=default",
+      "IsRelative=1",
+      "Path=Profiles/test.default",
+      "Default=1",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+  await writeFile(
+    join(profilePath, "prefs.js"),
+    `user_pref("extensions.zotero.httpServer.port", ${port});\n`,
+    "utf8",
+  );
+
+  try {
+    await run({
+      env: {
+        APPDATA: appDataRoot,
+      },
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+/**
  * Runs the Markdown query CLI and captures process output.
  */
-function runCli(args) {
+function runCli(args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cliPath, ...args], {
+      env: {
+        ...process.env,
+        ...(options.env ?? {}),
+      },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let stdout = "";

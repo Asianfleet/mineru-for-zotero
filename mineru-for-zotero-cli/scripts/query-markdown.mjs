@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 /* global AbortController, URL, clearTimeout, console, fetch, process, setTimeout */
 
-const DEFAULT_BASE_URL = "http://127.0.0.1:23124";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join, resolve } from "node:path";
+
+const DEFAULT_LISTEN_PORT = 23119;
 const DEFAULT_FORMAT = "text";
 const DEFAULT_TIMEOUT_MS = 30000;
 const SEARCH_ENDPOINT = "/mineru-for-zotero/search";
@@ -64,9 +68,8 @@ function parseCommand(argv) {
     throw new CliArgumentError("Invalid --format. Expected text or json.");
   }
 
-  const baseUrl = normalizeBaseUrl(
-    getFlag(flags, "--base-url", DEFAULT_BASE_URL),
-  );
+  const listenPort = resolveListenPort(flags);
+  const baseUrl = createBaseUrl(listenPort);
   const timeoutMs = parsePositiveInteger(
     getFlag(flags, "--timeout-ms", String(DEFAULT_TIMEOUT_MS)),
     "--timeout-ms",
@@ -80,6 +83,7 @@ function parseCommand(argv) {
     return {
       command,
       endpoint: SEARCH_ENDPOINT,
+      listenPort,
       baseUrl,
       format,
       timeoutMs,
@@ -117,6 +121,7 @@ function parseCommand(argv) {
   return {
     command,
     endpoint: MARKDOWN_ENDPOINT,
+    listenPort,
     baseUrl,
     format,
     timeoutMs,
@@ -248,6 +253,7 @@ function createErrorEnvelope(options, error) {
 function createRequestSummary(options) {
   return {
     command: options.command,
+    listenPort: options.listenPort,
     baseUrl: options.baseUrl,
     endpoint: options.endpoint,
     params: options.params,
@@ -464,7 +470,7 @@ function helpText() {
     "  node skill/scripts/query-markdown.mjs markdown --library-id <id> --key <key> [--granularity full|headings|section|search] [--format text|json]",
     "",
     "Common options:",
-    "  --base-url <url>             Zotero local server URL. Default: http://127.0.0.1:23119",
+    "  --port <number>              Zotero local server port. Default: auto-detect from Zotero profile, then 23119",
     "  --token <token>              Markdown query API token. Sent as Authorization: Bearer.",
     "  --format <text|json>         Output format. Default: text",
     "  --timeout-ms <number>        Request timeout. Default: 30000",
@@ -526,14 +532,146 @@ function parsePositiveInteger(value, name) {
 }
 
 /**
- * Normalizes a URL string while preserving the user-selected origin.
+ * Resolves the local Zotero listen port from CLI flags, profile prefs, or default.
  */
-function normalizeBaseUrl(value) {
-  try {
-    return new URL(value).toString().replace(/\/$/, "");
-  } catch {
-    throw new CliArgumentError(`Invalid URL for option: --base-url`);
+function resolveListenPort(flags) {
+  const explicitPort = getFlag(flags, "--port");
+  if (explicitPort !== undefined) {
+    return parseListenPort(explicitPort, "--port");
   }
+
+  return readZoteroListenPort() ?? DEFAULT_LISTEN_PORT;
+}
+
+/**
+ * Parses and validates a TCP port value.
+ */
+function parseListenPort(value, name) {
+  const port = parsePositiveInteger(value, name);
+  if (port > 65535) {
+    throw new CliArgumentError(`Invalid port for option: ${name}`);
+  }
+  return port;
+}
+
+/**
+ * Creates the loopback base URL used by the Zotero local API.
+ */
+function createBaseUrl(port) {
+  return `http://127.0.0.1:${port}`;
+}
+
+/**
+ * Reads Zotero's configured HTTP server port from the default profile prefs.
+ */
+function readZoteroListenPort() {
+  const profileDir = findDefaultZoteroProfileDir();
+  if (!profileDir) {
+    return undefined;
+  }
+
+  const prefsPath = join(profileDir, "prefs.js");
+  if (!existsSync(prefsPath)) {
+    return undefined;
+  }
+
+  try {
+    const prefs = readFileSync(prefsPath, "utf8");
+    const match = prefs.match(
+      /user_pref\("extensions\.zotero\.httpServer\.port",\s*(\d+)\);/,
+    );
+    if (!match) {
+      return undefined;
+    }
+    return parseListenPort(match[1], "Zotero profile port");
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Locates the default Zotero profile directory from profiles.ini.
+ */
+function findDefaultZoteroProfileDir() {
+  const configDir = getZoteroConfigDir();
+  if (!configDir) {
+    return undefined;
+  }
+
+  const profilesIniPath = join(configDir, "profiles.ini");
+  if (!existsSync(profilesIniPath)) {
+    return undefined;
+  }
+
+  try {
+    const profiles = parseProfilesIni(readFileSync(profilesIniPath, "utf8"));
+    const profile =
+      profiles.find((item) => item.Default === "1") ?? profiles[0];
+    if (!profile?.Path) {
+      return undefined;
+    }
+
+    return profile.IsRelative === "1"
+      ? resolve(configDir, profile.Path)
+      : resolve(profile.Path);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Returns the platform-specific Zotero configuration directory.
+ */
+function getZoteroConfigDir() {
+  if (process.platform === "win32") {
+    return process.env.APPDATA
+      ? join(process.env.APPDATA, "Zotero", "Zotero")
+      : undefined;
+  }
+
+  if (process.platform === "darwin") {
+    return join(homedir(), "Library", "Application Support", "Zotero");
+  }
+
+  return join(homedir(), ".zotero", "zotero");
+}
+
+/**
+ * Parses Firefox-style profile sections from a profiles.ini file.
+ */
+function parseProfilesIni(text) {
+  const profiles = [];
+  let currentProfile;
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (line === "" || line.startsWith("#") || line.startsWith(";")) {
+      continue;
+    }
+
+    const sectionMatch = line.match(/^\[(.+)]$/);
+    if (sectionMatch) {
+      currentProfile = sectionMatch[1].startsWith("Profile") ? {} : undefined;
+      if (currentProfile) {
+        profiles.push(currentProfile);
+      }
+      continue;
+    }
+
+    if (!currentProfile) {
+      continue;
+    }
+
+    const separatorIndex = line.indexOf("=");
+    if (separatorIndex === -1) {
+      continue;
+    }
+    currentProfile[line.slice(0, separatorIndex)] = line.slice(
+      separatorIndex + 1,
+    );
+  }
+
+  return profiles;
 }
 
 /**

@@ -14,7 +14,7 @@ Use the bundled CLI to query parsed Markdown that MinerU for Zotero has already 
 ## Preconditions
 
 - Zotero is running.
-- MinerU for Zotero plugin has been installed.
+- Markdown query API is available.
 - If the API requires a token, pass it with `--token <token>`.
 
 ## Recommended Flow
@@ -56,7 +56,7 @@ Use `--format text` for agent-readable text. Use `--format json` when another sc
 Common options:
 
 ```text
---base-url <url>          Zotero local server URL; default is http://127.0.0.1:23119
+--port <number>           Zotero local server port; default is auto-detected from the Zotero profile, then 23119
 --token <token>           API token, sent as Authorization: Bearer
 --format <text|json>      Output format; default is text
 --timeout-ms <number>     Request timeout; default is 30000
