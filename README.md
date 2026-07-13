@@ -74,16 +74,111 @@ The result folder contains the parsed Markdown, box data used by the reader, and
 
 ## Local Markdown Query API
 
-The local Markdown query API is disabled by default. Enable it from `Edit` -> `Settings` -> `MinerU for Zotero`, generate a token, and use the token in requests. The token comes from the Zotero preferences page.
+The local Markdown query API lets local external tools read Markdown parse results that MinerU for Zotero has already saved through Zotero's built-in local HTTP server. It only queries existing local results. It does not submit new MinerU parsing jobs or directly expose the plugin data folder.
 
-Minimal example:
+Main capabilities:
+
+- Search candidate Zotero items and PDF attachments by title keywords.
+- Read Markdown for a regular Zotero item or PDF attachment with `libraryID + key`.
+- Query at `full`, `headings`, `section`, or `search` granularity, so external agents can inspect structure before reading a section or keyword context.
+- Pass `attachmentKey` to select a specific PDF when a regular item has multiple PDF attachments.
+- Return precise Markdown first; if precise output is unavailable but lite output exists, return lite Markdown and mark it in `result.mode`.
+
+### Configuration
+
+1. Start Zotero and make sure MinerU for Zotero is enabled.
+2. Open `Edit` -> `Settings` -> `MinerU for Zotero`.
+3. In `Local Query API`, enable `Enable local Markdown query API`.
+4. `Require token` controls whether callers must provide a token. When it is enabled, click `Generate token`.
+5. When token validation is enabled, callers can send the token in the `Authorization: Bearer <token>` header. The API also supports a `token=<token>` query parameter.
+
+Zotero's local port is usually `23119`. If you changed Zotero's local server port, replace the port in the examples below with your actual port.
+
+### HTTP Examples
+
+Search candidate items by title:
+
+```shell
+curl --get "http://127.0.0.1:23119/mineru-for-zotero/search" \
+  --data-urlencode "libraryID=1" \
+  --data-urlencode "title=retrieval augmented generation" \
+  -H "Authorization: Bearer <token>"
+```
+
+Read the full Markdown:
 
 ```shell
 curl "http://127.0.0.1:23119/mineru-for-zotero/markdown?libraryID=1&key=ABCD1234" \
   -H "Authorization: Bearer <token>"
 ```
 
-Use `attachmentKey=<PDF attachment key>` when a regular Zotero item has multiple PDF attachments and you want to select one explicitly. The API reads existing local parse results only. It returns precise Markdown first and falls back to lite Markdown when precise results are unavailable.
+Read only the heading hierarchy:
+
+```shell
+curl "http://127.0.0.1:23119/mineru-for-zotero/markdown?libraryID=1&key=ABCD1234&granularity=headings" \
+  -H "Authorization: Bearer <token>"
+```
+
+Read a specific section:
+
+```shell
+curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
+  --data-urlencode "libraryID=1" \
+  --data-urlencode "key=ABCD1234" \
+  --data-urlencode "granularity=section" \
+  --data-urlencode "sectionPath=Introduction/Background" \
+  -H "Authorization: Bearer <token>"
+```
+
+Search Markdown and return surrounding paragraphs:
+
+```shell
+curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
+  --data-urlencode "libraryID=1" \
+  --data-urlencode "key=ABCD1234" \
+  --data-urlencode "granularity=search" \
+  --data-urlencode "q=retrieval" \
+  --data-urlencode "contextParagraphs=2" \
+  -H "Authorization: Bearer <token>"
+```
+
+Common parameters:
+
+| Parameter           | Endpoint             | Description                                                                |
+| ------------------- | -------------------- | -------------------------------------------------------------------------- |
+| `libraryID`         | `search`, `markdown` | Zotero library ID. Personal libraries are usually `1`.                     |
+| `title`             | `search`             | Title keyword used to find candidate Zotero items.                         |
+| `key`               | `markdown`           | Zotero regular item key or PDF attachment key.                             |
+| `attachmentKey`     | `markdown`           | Selects the target PDF attachment when a regular item contains PDFs.       |
+| `granularity`       | `markdown`           | `full`, `headings`, `section`, or `search`. Defaults to `full`.            |
+| `sectionPath`       | `markdown`           | Heading path for `section` queries, for example `Introduction/Background`. |
+| `q`                 | `markdown`           | Keyword used by `search` queries.                                          |
+| `contextParagraphs` | `markdown`           | Number of context paragraphs around each `search` match.                   |
+
+Common error codes:
+
+- `api-disabled`: the local Markdown query API is not enabled in settings.
+- `invalid-token`: the token is missing or does not match.
+- `ambiguous-attachment`: the regular item has multiple PDFs; pass `attachmentKey`.
+- `parse-result-not-found`: the target PDF has no usable parse result yet; parse it in Zotero first.
+- `section-not-found`: the section path does not match; run `granularity=headings` first to inspect exact paths.
+- `missing-query`: `granularity=search` was used without `q`.
+
+### Companion Skill and CLI
+
+The repository includes a companion Skill in `mineru-for-zotero-cli/`. It is intended for Codex or other local agents and wraps HTTP parameters, token headers, port detection, error hints, and readable text formatting. It has the same preconditions as the HTTP API: Zotero is running and the plugin's local Markdown query API is enabled. If the settings page requires a token, pass `--token <token>`.
+
+Run the CLI from the repository root:
+
+```shell
+node mineru-for-zotero-cli/scripts/query-markdown.mjs search --library-id 1 --title "paper title" --token "<token>"
+node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity headings --token "<token>"
+node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity section --section-path "Introduction/Background" --token "<token>"
+node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity search --query "retrieval" --context-paragraphs 2 --token "<token>"
+node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity full --format json --token "<token>"
+```
+
+The CLI tries to read Zotero's local HTTP server port from the default Zotero profile. If it cannot, it uses `23119`. Add `--port <number>` to set the port manually. The default output is `--format text`, which is easier for agents to read directly. Use `--format json` for scripts and pipelines.
 
 ## Troubleshooting
 
