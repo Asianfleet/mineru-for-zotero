@@ -17,15 +17,56 @@ Use the bundled CLI to query parsed Markdown that MinerU for Zotero has already 
 - Markdown query API is available.
 - If the API requires a token, pass it with `--token <token>`.
 
-## Recommended Flow
+## CLI Reference
 
-1. If the Zotero key is unknown, search by title first:
+### CLI Script
+
+All operations use `scripts/query-markdown.mjs` (Nodejs, zero external dependencies).
+
+```powershell
+node scripts/query-markdown.mjs <command> [options]
+```
+
+### Commands
+
+| Command    | Description                                                               | Example                                                                                                       |
+| ---------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `search`   | Search Zotero items by title and return matching candidates.              | `node scripts/query-markdown.mjs search --library-id 1 --title "keyword" --format json`                       |
+| `markdown` | Query saved MinerU Markdown for an item key, with selectable granularity. | `node scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity headings --format text` |
+
+### Common Options
+
+- `--library-id <id>` — Zotero library ID; required for both `search` and `markdown`
+- `--port <number>` — Zotero local server port; default is auto-detected from the Zotero profile, then 23119
+- `--token <token>` — API token, sent as Authorization: Bearer
+- `--format <text|json>` — Output format; default is text, use `--format text` for agent-readable text. use `--format json` when another script or pipeline needs structured output.
+- `--timeout-ms <number>` — Request timeout; default is 30000
+
+### Search options
+
+- `--title <text>` — Required search text for title matching
+
+### Markdown options
+
+- `--attachment-key <key>` — Select a specific PDF attachment after ambiguous-attachment or explicit user choice
+- `--granularity <kind>` — full, headings, section, or search
+- `--section-path <path>` — Exact full heading path from headings output, including root title
+- `--query <text>` — Search query for search queries
+- `--context-paragraphs <n>` — Context paragraphs for search queries
+
+## Workflows
+
+### Search a paper by title
+
+Use this when you do not yet know the Zotero item key.
 
 ```powershell
 node scripts/query-markdown.mjs search --library-id 1 --title "paper title"
 ```
 
-2. Let the CLI choose the parsed PDF attachment automatically before specifying an attachment:
+### Read headings first
+
+Let the CLI choose the parsed PDF attachment automatically before specifying an attachment.
 
 ```powershell
 node scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity headings
@@ -33,7 +74,9 @@ node scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granula
 
 If this succeeds, keep omitting `--attachment-key` for later `headings`, `section`, `search`, and `full` requests on the same item. Do not preemptively pick the first PDF just because the search result lists multiple attachments. The CLI's automatic selection prefers parsed attachments and should be allowed to resolve the item-level key first.
 
-3. Add `--attachment-key` only after the CLI returns `ambiguous-attachment`, or when the user explicitly asks for a specific attachment:
+### Select a specific attachment
+
+Add `--attachment-key` only after the CLI returns `ambiguous-attachment`, or when the user explicitly asks for a specific attachment.
 
 ```powershell
 node scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --attachment-key PDFKEY01 --granularity headings
@@ -41,13 +84,7 @@ node scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --attachm
 
 Use one of the candidate keys from the error output, then keep that same attachment key for later requests.
 
-4. Inspect headings before requesting large content:
-
-```powershell
-node scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity headings
-```
-
-5. Read a specific section only after copying the full heading path from `headings` output:
+### Read a section
 
 ```powershell
 node scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity section --section-path "Paper Title/Introduction/Background"
@@ -55,52 +92,21 @@ node scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granula
 
 `--section-path` must be the exact full path shown by `headings`, including the root title. A leaf heading such as `"Background"` is not enough when the headings output shows `"Paper Title/Introduction/Background"`.
 
-6. Search parsed Markdown for local context:
+### Search parsed Markdown
+
+Use this for local context inside a saved parse result.
 
 ```powershell
 node scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity search --query "retrieval" --context-paragraphs 2
 ```
 
-7. Fetch full Markdown only when section or search output is insufficient:
+### Fetch full Markdown
 
 ```powershell
 node scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity full
 ```
 
-## CLI Reference
-
-Use `--format text` for agent-readable text. Use `--format json` when another script or pipeline needs structured output.
-
-Common options:
-
-```text
---port <number>           Zotero local server port; default is auto-detected from the Zotero profile, then 23119
---token <token>           API token, sent as Authorization: Bearer
---format <text|json>      Output format; default is text
---timeout-ms <number>     Request timeout; default is 30000
-```
-
-Search command:
-
-```powershell
-node scripts/query-markdown.mjs search --library-id 1 --title "keyword" --format json
-```
-
-Markdown command:
-
-```powershell
-node scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity headings --format text
-```
-
-Markdown options:
-
-```text
---attachment-key <key>       Select a specific PDF attachment after ambiguous-attachment or explicit user choice
---granularity <kind>         full, headings, section, or search
---section-path <path>        Exact full heading path from headings output, including root title
---query <text>               Search query for search queries
---context-paragraphs <n>     Context paragraphs for search queries
-```
+Use full Markdown only when section or search output is insufficient.
 
 ## Error Handling
 
