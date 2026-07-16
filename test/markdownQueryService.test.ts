@@ -326,6 +326,43 @@ describe("markdownQueryService", function () {
     assert.nestedPropertyVal(response, "tables[0].rawIndex", 8);
   });
 
+  it("matches precise table box HTML captions after decoding entities", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc",
+        boxes: [
+          {
+            rawIndex: 9,
+            page: 5,
+            type: "table",
+            bbox: { x: 0, y: 0, width: 10, height: 10 },
+            markdown: "",
+            formula: null,
+            tableFormats: {
+              html: [
+                "<table>",
+                "<caption>R&amp;D Results</caption>",
+                "<tr><td>Score</td></tr>",
+                "</table>",
+              ].join(""),
+            },
+          },
+        ],
+      }),
+    );
+
+    const response = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "R&D",
+      match: "caption",
+      tableFormat: "html",
+    });
+
+    assert.nestedPropertyVal(response, "tables[0].caption", "R&D Results");
+    assert.nestedPropertyVal(response, "tables[0].rawIndex", 9);
+  });
+
   it("uses nearby Markdown captions and requested format for fallback tables", async function () {
     const service = createMarkdownQueryService(
       fakeDeps({

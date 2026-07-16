@@ -386,16 +386,31 @@ function extractTableCaption(box: NormalizedBox): string | undefined {
 function extractCaptionLine(value: string): string | undefined {
   const htmlCaption = /<caption\b[^>]*>([\s\S]*?)<\/caption>/i.exec(value);
   if (htmlCaption) {
-    return htmlCaption[1]
-      .replace(/<[^>]+>/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    return decodeHtmlEntities(
+      htmlCaption[1]
+        .replace(/<[^>]+>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim(),
+    );
   }
 
   return value
     .split(/\r?\n/)
     .map((line) => line.trim())
     .find((line) => /^Table\b.+$/i.test(line));
+}
+
+/**
+ * 解码 caption 查询所需的基础 HTML entity，保证搜索词与可见文本一致。
+ */
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'");
 }
 
 /**
