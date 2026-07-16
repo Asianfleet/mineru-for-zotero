@@ -160,6 +160,95 @@ describe("markdownParser", function () {
     );
   });
 
+  it("rejects empty grouped section queries", function () {
+    for (const input of [{}, { sectionNumber: "   ", sectionPath: "\t" }]) {
+      const error = assert.throws(
+        () => readSectionGroups(markdown, input),
+        MarkdownQueryError,
+        "missing-query",
+      );
+
+      assert.equal(error.status, 400);
+    }
+  });
+
+  it("uses section number tokens when reading grouped section ranges", function () {
+    const groupedMarkdown = [
+      "# Paper",
+      "",
+      "## 5.2 Results",
+      "",
+      "Results body.",
+      "",
+      "## 5.10 Appendix Results",
+      "",
+      "Appendix body.",
+      "",
+      "## 5.3 Analysis",
+      "",
+      "Analysis body.",
+    ].join("\n");
+
+    const [group] = readSectionGroups(groupedMarkdown, {
+      sectionNumber: "5.2-5.3",
+    });
+
+    assert.deepEqual(
+      group.matches.map((match) => match.heading.title),
+      ["5.2 Results", "5.3 Analysis"],
+    );
+  });
+
+  it("reports ambiguous grouped range endpoints", function () {
+    const duplicateMarkdown = [
+      "# Paper",
+      "",
+      "## 5.1 Setup",
+      "",
+      "A",
+      "",
+      "## 5.1 Setup Again",
+      "",
+      "B",
+      "",
+      "## 5.2 Results",
+      "",
+      "C",
+      "",
+      "## 5.3 Analysis",
+      "",
+      "D",
+      "",
+      "## 5.3 Analysis Again",
+      "",
+      "E",
+    ].join("\n");
+
+    const groups = readSectionGroups(duplicateMarkdown, {
+      sectionNumber: "5.1-5.2,5.2-5.3",
+    });
+
+    assert.deepEqual(
+      groups.map((group) => ({
+        query: group.query,
+        status: group.status,
+        candidates: group.candidates?.map((candidate) => candidate.title) ?? [],
+      })),
+      [
+        {
+          query: "5.1-5.2",
+          status: "ambiguous",
+          candidates: ["5.1 Setup", "5.1 Setup Again"],
+        },
+        {
+          query: "5.2-5.3",
+          status: "ambiguous",
+          candidates: ["5.3 Analysis", "5.3 Analysis Again"],
+        },
+      ],
+    );
+  });
+
   it("reports missing, ambiguous, and invalid section groups", function () {
     const duplicateMarkdown = [
       "# Paper",

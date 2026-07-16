@@ -91,22 +91,27 @@ export function readSectionGroups(
   markdown: string,
   input: { sectionNumber?: string; sectionPath?: string },
 ): MarkdownSectionGroup[] {
-  if (input.sectionNumber?.trim() && input.sectionPath?.trim()) {
+  const sectionNumber = input.sectionNumber?.trim() ?? "";
+  const sectionPath = input.sectionPath?.trim() ?? "";
+  if (sectionNumber && sectionPath) {
     throw new MarkdownQueryError(
       "invalid-request",
       400,
       "sectionNumber and sectionPath cannot be used together",
     );
   }
+  if (!sectionNumber && !sectionPath) {
+    throw new MarkdownQueryError("missing-query", 400, "missing-query");
+  }
 
   const lines = markdown.split(/\r?\n/);
   const headings = parseHeadings(markdown);
-  if (input.sectionNumber?.trim()) {
-    return splitQueryGroups(input.sectionNumber).map((query) =>
+  if (sectionNumber) {
+    return splitQueryGroups(sectionNumber).map((query) =>
       readSectionNumberGroup(lines, headings, query),
     );
   }
-  return splitQueryGroups(input.sectionPath ?? "").map((query) =>
+  return splitQueryGroups(sectionPath).map((query) =>
     readSectionPathGroup(lines, headings, query),
   );
 }
@@ -269,13 +274,21 @@ function readSectionNumberRangeGroup(
 
   const startMatches = headings.filter((heading) => heading.number === start);
   const endMatches = headings.filter((heading) => heading.number === end);
-  if (startMatches.length !== 1 || endMatches.length !== 1) {
+  const ambiguousCandidates = [...startMatches, ...endMatches].filter(
+    (heading) =>
+      (heading.number === start && startMatches.length > 1) ||
+      (heading.number === end && endMatches.length > 1),
+  );
+  if (ambiguousCandidates.length > 0) {
+    return {
+      ...emptyGroup(query, "section-number-range", "ambiguous"),
+      candidates: ambiguousCandidates,
+    };
+  }
+  if (startMatches.length === 0 || endMatches.length === 0) {
     return emptyGroup(query, "section-number-range", "not-found");
   }
-
-  const startLine = startMatches[0].line;
-  const endLine = endMatches[0].line;
-  if (startLine > endLine) {
+  if (compareSectionNumbers(start, end) > 0) {
     return emptyGroup(query, "section-number-range", "invalid-range");
   }
 
@@ -287,8 +300,8 @@ function readSectionNumberRangeGroup(
         (heading) =>
           heading.number &&
           mainSectionNumber(heading.number) === mainSectionNumber(start) &&
-          heading.line >= startLine &&
-          heading.line <= endLine,
+          compareSectionNumbers(heading.number, start) >= 0 &&
+          compareSectionNumbers(heading.number, end) <= 0,
       )
       .map((heading) => sectionMatchForHeading(lines, headings, heading)),
   );
@@ -377,6 +390,50 @@ function extractHeadingNumber(title: string): string | undefined {
  */
 function mainSectionNumber(value: string): string {
   return value.split(".")[0].toUpperCase();
+}
+
+/**
+ * 按章节号 token 比较两个章节号，避免字符串或行号排序误判。
+ */
+function compareSectionNumbers(left: string, right: string): number {
+  const leftTokens = sectionNumberTokens(left);
+  const rightTokens = sectionNumberTokens(right);
+  const length = Math.max(leftTokens.length, rightTokens.length);
+  for (let index = 0; index < length; index++) {
+    const leftToken = leftTokens[index];
+    const rightToken = rightTokens[index];
+    if (leftToken === undefined) {
+      return -1;
+    }
+    if (rightToken === undefined) {
+      return 1;
+    }
+    const comparison = compareSectionNumberToken(leftToken, rightToken);
+    if (comparison !== 0) {
+      return comparison;
+    }
+  }
+  return 0;
+}
+
+/**
+ * 将章节号拆为逐级比较的 token。
+ */
+function sectionNumberTokens(value: string): string[] {
+  return value
+    .split(".")
+    .map((token) => token.trim().toUpperCase())
+    .filter(Boolean);
+}
+
+/**
+ * 比较单个章节号 token，纯数字 token 使用数值顺序。
+ */
+function compareSectionNumberToken(left: string, right: string): number {
+  if (/^\d+$/.test(left) && /^\d+$/.test(right)) {
+    return Number(left) - Number(right);
+  }
+  return left.localeCompare(right);
 }
 
 /**
