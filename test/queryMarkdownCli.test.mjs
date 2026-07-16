@@ -439,6 +439,51 @@ test("writes multi-image json responses under the requested output directory", a
   }
 });
 
+test("rejects multi-image requests that use --output without --output-dir", async () => {
+  const root = await mkdtemp(join(tmpdir(), "mineru-cli-image-"));
+  const outputPath = join(root, "figure.png");
+
+  try {
+    await withServer(
+      {
+        status: 200,
+        body: {
+          images: [
+            {
+              path: "images/figures/one.png",
+              status: "ok",
+              mime: "image/png",
+              dataURL: "data:image/png;base64,AQIDBA==",
+            },
+          ],
+        },
+      },
+      async ({ port, requests }) => {
+        const result = await runCli([
+          "image",
+          "--port",
+          String(port),
+          "--library-id",
+          "1",
+          "--key",
+          "ABCD1234",
+          "--path",
+          "images/figures/one.png,images/two.jpg",
+          "--output",
+          outputPath,
+        ]);
+
+        assert.equal(result.code, 2);
+        assert.equal(result.stdout, "");
+        assert.match(result.stderr, /--output-dir/);
+        assert.equal(requests.length, 0);
+      },
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("formats api errors as json and exits with code 1", async () => {
   await withServer(
     {

@@ -154,6 +154,11 @@ function parseCommand(argv) {
         "Image command requires --output or --output-dir.",
       );
     }
+    if (isMultiImagePath(path) && output && !outputDir) {
+      throw new CliArgumentError(
+        "Multi-image paths require --output-dir. Use --output only for a single image path.",
+      );
+    }
     const params = { libraryID, key, path };
     addOptionalParam(
       params,
@@ -811,6 +816,18 @@ function getRequiredFlag(flags, name) {
     throw new CliArgumentError(`Missing required option: ${name}`);
   }
   return value;
+}
+
+/**
+ * Returns true when an image path argument contains multiple comma-separated paths.
+ */
+function isMultiImagePath(path) {
+  return (
+    String(path)
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean).length > 1
+  );
 }
 
 /**

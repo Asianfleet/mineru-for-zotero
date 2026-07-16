@@ -85,7 +85,7 @@ Main capabilities:
 - Pass `attachmentKey` to select a specific PDF when a regular item has multiple PDF attachments.
 - Return precise Markdown first; if precise output is unavailable but lite output exists, return lite Markdown and mark it in `result.mode`.
 
-Compatibility note: `granularity=section` now returns grouped results under `groups`. Use `sectionNumber` for numbered headings and fuzzy `sectionPath` for partial heading/path matching. Tables are available from `/mineru-for-zotero/tables`; images referenced as `images/...` are available from `/mineru-for-zotero/image`.
+Compatibility note: `granularity=section` now returns grouped results under `groups`. Use `sectionNumber` for numbered headings and fuzzy `sectionPath` for partial heading/path matching. Tables are available from `/mineru-for-zotero/tables`; images referenced as `images/...` are available from `/mineru-for-zotero/image`. The `/image` endpoint returns raw bytes for a single image path and JSON `images` statuses for multiple comma-separated paths.
 
 ### Configuration
 
@@ -168,6 +168,8 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/image" \
   --output a.jpg
 ```
 
+When `/image` receives one `path`, it returns image bytes directly. When it receives multiple comma-separated paths, it returns JSON statuses per image instead of a binary body.
+
 Common parameters:
 
 | Parameter           | Endpoint                                | Description                                                          |
@@ -212,7 +214,7 @@ node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --
 
 The CLI tries to read Zotero's local HTTP server port from the default Zotero profile. If it cannot, it uses `23119`. Add `--port <number>` to set the port manually. The default output is `--format text`, which is easier for agents to read directly. Use `--format json` for scripts and pipelines.
 
-For `image`, always pass `--output <file>` or `--output-dir <dir>` so returned image bytes are written to disk.
+For `image`, use `--output <file>` for a single path. For multiple comma-separated paths, use `--output-dir <dir>` so each image is written under that directory.
 
 ## Troubleshooting
 

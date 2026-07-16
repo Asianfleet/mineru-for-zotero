@@ -66,8 +66,8 @@ node scripts/query-markdown.mjs <command> [options]
 ### Image options
 
 - `--path <paths>` — Required image path or comma-separated paths from Markdown output
-- `--output <file>` — Save a single image response to a file; required unless `--output-dir` is set
-- `--output-dir <dir>` — Save image responses under a directory; required unless `--output` is set
+- `--output <file>` — Save a single image response to a file; use only for one image path
+- `--output-dir <dir>` — Save image responses under a directory; required for comma-separated multi-image paths
 
 ## Workflows
 
@@ -149,7 +149,7 @@ Use this when section output contains `![](images/...)` and the image is needed.
 node scripts/query-markdown.mjs image --library-id 1 --key ABCD1234 --path "images/a.jpg" --output a.jpg
 ```
 
-Image commands must provide `--output` or `--output-dir`; the CLI will not discard image bytes to stdout.
+Image commands must provide `--output` or `--output-dir`; use `--output` for one image path and `--output-dir` for comma-separated multi-image paths.
 
 ## Error Handling
 

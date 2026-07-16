@@ -85,7 +85,7 @@ API Key 只保存在本机 Zotero 首选项中。
 - 普通条目下有多个 PDF attachment 时，可用 `attachmentKey` 精确选择目标附件。
 - 优先返回精准解析 Markdown；没有精准结果但有轻量解析结果时，返回轻量 Markdown，并在响应里标记 `result.mode`。
 
-兼容性提示：`granularity=section` 现在会在 `groups` 下返回分组结果。使用 `sectionNumber` 查询带编号的标题，使用模糊 `sectionPath` 做部分标题或路径匹配。表格可通过 `/mineru-for-zotero/tables` 读取；Markdown 中引用的 `images/...` 图片可通过 `/mineru-for-zotero/image` 读取。
+兼容性提示：`granularity=section` 现在会在 `groups` 下返回分组结果。使用 `sectionNumber` 查询带编号的标题，使用模糊 `sectionPath` 做部分标题或路径匹配。表格可通过 `/mineru-for-zotero/tables` 读取；Markdown 中引用的 `images/...` 图片可通过 `/mineru-for-zotero/image` 读取。`/image` 在单图路径时直接返回图片 bytes，在逗号分隔的多图路径时返回包含各图片状态的 JSON。
 
 ### 配置
 
@@ -164,9 +164,11 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/image" \
   --data-urlencode "libraryID=1" \
   --data-urlencode "key=ABCD1234" \
   --data-urlencode "path=images/a.jpg" \
-  -H "Authorization: Bearer <token>" \
+ -H "Authorization: Bearer <token>" \
   --output a.jpg
 ```
+
+`/image` 在只传一个 `path` 时直接返回图片字节流；传入多个逗号分隔路径时，会改为返回每张图片状态的 JSON，而不是二进制响应体。
 
 常用参数：
 
@@ -212,7 +214,7 @@ node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --
 
 CLI 默认会尝试从 Zotero 默认 profile 读取本地 HTTP server 端口，读不到时使用 `23119`。如果需要手动指定端口，添加 `--port <number>`。默认输出 `--format text`，适合 agent 直接阅读；需要脚本处理时使用 `--format json`。
 
-使用 `image` 时必须传入 `--output <file>` 或 `--output-dir <dir>`，确保返回的图片字节会写入磁盘。
+使用 `image` 时，单图路径用 `--output <file>`；多图逗号分隔路径必须用 `--output-dir <dir>`，让每张图片都写入目标目录。
 
 ## 常见问题
 
