@@ -527,6 +527,10 @@ test("prints parameter errors to stderr and exits with code 2", async () => {
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /Missing required option: --key/);
   assert.match(result.stderr, /Usage:/);
+  assert.match(
+    result.stderr,
+    /node mineru-for-zotero-cli\/scripts\/query-markdown\.mjs markdown/,
+  );
 });
 
 test("discovers the listen port from the default Zotero profile", async () => {

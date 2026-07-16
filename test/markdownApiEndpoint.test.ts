@@ -470,6 +470,26 @@ describe("markdownApiEndpoint", function () {
     assert.notInclude(String(response[2]), "bytes");
   });
 
+  it("rejects empty multi-image query strings as invalid requests", async function () {
+    setMarkdownApiEnabled(true);
+    setMarkdownApiRequireToken(false);
+    const endpoint = createMarkdownQueryEndpoint(fakeService());
+
+    const response = await endpoint.init(
+      request("/mineru-for-zotero/image", {
+        query: {
+          libraryID: "1",
+          key: "PDF1",
+          path: ",,,",
+        },
+      }),
+    );
+    const payload = JSON.parse(String(response[2])) as { error: string };
+
+    assert.equal(response[0], 400);
+    assert.equal(payload.error, "invalid-request");
+  });
+
   it("registers the expected endpoint paths", function () {
     assert.deepEqual(MARKDOWN_ENDPOINT_PATHS, [
       "/mineru-for-zotero/search",

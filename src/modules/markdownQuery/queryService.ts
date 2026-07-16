@@ -258,10 +258,16 @@ export function createMarkdownQueryService(deps: {
         libraryID: resolved.attachment.libraryID,
         key: resolved.attachment.key,
       };
+      const paths = splitCsv(input.path);
+      if (paths.length === 0) {
+        throw new MarkdownQueryError(
+          "invalid-request",
+          400,
+          "Missing image path",
+        );
+      }
       const images = await Promise.all(
-        splitCsv(input.path).map((path) =>
-          readImageResult(deps.storage, ref, path),
-        ),
+        paths.map((path) => readImageResult(deps.storage, ref, path)),
       );
       return { images };
     },

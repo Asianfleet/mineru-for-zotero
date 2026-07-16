@@ -761,10 +761,10 @@ function writeArgumentError(error) {
 function helpText() {
   return [
     "Usage:",
-    "  node skill/scripts/query-markdown.mjs search --library-id <id> --title <text> [--format text|json]",
-    "  node skill/scripts/query-markdown.mjs markdown --library-id <id> --key <key> [--granularity full|headings|section|search] [--format text|json]",
-    "  node skill/scripts/query-markdown.mjs table --library-id <id> --key <key> --query <text> [--match caption|content|both] [--table-format html|markdown|tsv|latex|json]",
-    "  node skill/scripts/query-markdown.mjs image --library-id <id> --key <key> --path <images/...> (--output <file>|--output-dir <dir>)",
+    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs search --library-id <id> --title <text> [--format text|json]",
+    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id <id> --key <key> [--granularity full|headings|section|search] [--format text|json]",
+    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs table --library-id <id> --key <key> --query <text> [--match caption|content|both] [--table-format html|markdown|tsv|latex|json]",
+    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs image --library-id <id> --key <key> --path <images/...> (--output <file>|--output-dir <dir>)",
     "",
     "Common options:",
     "  --port <number>              Zotero local server port. Default: auto-detect from Zotero profile, then 23119",

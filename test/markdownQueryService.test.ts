@@ -519,6 +519,24 @@ describe("markdownQueryService", function () {
     );
   });
 
+  it("rejects empty image path lists", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc",
+      }),
+    );
+
+    await assertRejectsCode(
+      () =>
+        service.readImages({
+          libraryID: 1,
+          key: "PDF1",
+          path: ",,,",
+        }),
+      "invalid-request",
+    );
+  });
+
   it("maps missing markdown to parse-result-not-found", async function () {
     const service = createMarkdownQueryService(
       fakeDeps({

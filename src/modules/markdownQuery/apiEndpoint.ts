@@ -96,7 +96,7 @@ export function createMarkdownQueryEndpoint(service: MarkdownQueryService) {
               libraryID: requireInteger(query.libraryID, "libraryID"),
               key: requireString(query.key, "key"),
               attachmentKey: optionalString(query.attachmentKey),
-              path: requireString(query.path, "path"),
+              path: requireImagePath(query.path),
             }),
           );
         }
@@ -318,6 +318,18 @@ function parseTableFormat(value: string | undefined) {
     return text as "html" | "markdown" | "tsv" | "latex" | "json";
   }
   throw new MarkdownQueryError("invalid-request", 400, "Invalid table format");
+}
+
+/**
+ * 读取图片路径参数，并拒绝只包含逗号或空白的空列表。
+ */
+function requireImagePath(value: string | undefined): string {
+  const text = requireString(value, "path");
+  const hasAnyPath = text.split(",").some((part) => part.trim().length > 0);
+  if (!hasAnyPath) {
+    throw new MarkdownQueryError("invalid-request", 400, "Missing image path");
+  }
+  return text;
 }
 
 /**
