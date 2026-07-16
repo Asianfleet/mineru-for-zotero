@@ -1,4 +1,5 @@
 import { assert } from "chai";
+import type { NormalizedBox } from "../src/modules/domain";
 import { createMarkdownQueryService } from "../src/modules/markdownQuery/queryService";
 import {
   MarkdownQueryError,
@@ -248,6 +249,46 @@ describe("markdownQueryService", function () {
     assert.nestedPropertyVal(response, "matches[0].after[0]", "Tail");
   });
 
+  it("queries tables by caption or content", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown:
+          "# Doc\n\nTable 2: Dataset statistics\n\n<table><tr><td>WikiTable</td></tr></table>",
+        boxes: [
+          {
+            rawIndex: 7,
+            page: 3,
+            type: "table",
+            bbox: { x: 0, y: 0, width: 10, height: 10 },
+            markdown: "",
+            formula: null,
+            tableFormats: {
+              html: "<table><tr><td>WikiTable</td></tr></table>",
+            },
+          },
+        ],
+      }),
+    );
+
+    const response = await (
+      service as MarkdownQueryServiceWithTables
+    ).queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "WikiTable",
+      match: "both",
+      tableFormat: "markdown",
+    });
+
+    assert.nestedPropertyVal(response, "tables[0].rawIndex", 7);
+    assert.include(
+      String(
+        (response as { tables: Array<{ content: string }> }).tables[0].content,
+      ),
+      "WikiTable",
+    );
+  });
+
   it("maps missing markdown to parse-result-not-found", async function () {
     const service = createMarkdownQueryService(
       fakeDeps({
@@ -346,6 +387,7 @@ describe("markdownQueryService", function () {
 
 function fakeDeps(input: {
   markdown: string;
+  boxes?: NormalizedBox[];
   items?: ZoteroItemLike[];
   parseStatus?: {
     preciseReady: boolean;
@@ -374,19 +416,24 @@ function fakeDeps(input: {
     liteReady: true,
   };
 
+  const storage = {
+    async readPreferredMarkdown(ref: { libraryID: number; key: string }) {
+      if (input.readPreferredMarkdown) {
+        return input.readPreferredMarkdown(ref);
+      }
+      return input.markdown;
+    },
+    async readParseStatus() {
+      return parseStatus;
+    },
+    async readBoxes() {
+      return input.boxes ?? [];
+    },
+  };
+
   return {
     items: fakeItems(items),
-    storage: {
-      async readPreferredMarkdown(ref: { libraryID: number; key: string }) {
-        if (input.readPreferredMarkdown) {
-          return input.readPreferredMarkdown(ref);
-        }
-        return input.markdown;
-      },
-      async readParseStatus() {
-        return parseStatus;
-      },
-    },
+    storage,
     async searchItemsByTitle(searchInput: {
       libraryID: number;
       title: string;
@@ -397,6 +444,16 @@ function fakeDeps(input: {
       return [pdf];
     },
   };
+}
+
+interface MarkdownQueryServiceWithTables {
+  queryTables(input: {
+    libraryID: number;
+    key: string;
+    q: string;
+    match: "caption" | "content" | "both";
+    tableFormat: "markdown";
+  }): Promise<unknown>;
 }
 
 function fakeItem(input: {

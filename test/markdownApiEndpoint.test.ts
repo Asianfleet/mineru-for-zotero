@@ -123,6 +123,9 @@ describe("markdownApiEndpoint", function () {
         received = input;
         return { granularity: "section", groups: [] };
       },
+      async queryTables() {
+        return { tables: [] };
+      },
     });
 
     const response = await endpoint.init(
@@ -164,6 +167,9 @@ describe("markdownApiEndpoint", function () {
             },
           ],
         };
+      },
+      async queryTables() {
+        return { tables: [] };
       },
     });
 
@@ -207,6 +213,9 @@ describe("markdownApiEndpoint", function () {
       async queryMarkdown() {
         throw new Error("database path C:\\Users\\secret\\profile.sqlite");
       },
+      async queryTables() {
+        return { tables: [] };
+      },
     });
 
     const response = await endpoint.init(
@@ -228,8 +237,13 @@ describe("markdownApiEndpoint", function () {
   it("registers the expected endpoint paths", function () {
     assert.deepEqual(MARKDOWN_ENDPOINT_PATHS, [
       "/mineru-for-zotero/search",
+      "/mineru-for-zotero/tables",
       "/mineru-for-zotero/markdown",
     ]);
+  });
+
+  it("registers the tables endpoint path", function () {
+    assert.include(MARKDOWN_ENDPOINT_PATHS, "/mineru-for-zotero/tables");
   });
 });
 
@@ -240,6 +254,9 @@ function fakeService() {
     },
     async queryMarkdown() {
       return { granularity: "full", content: "# Body" };
+    },
+    async queryTables() {
+      return { tables: [] };
     },
   };
 }

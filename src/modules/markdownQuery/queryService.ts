@@ -1,5 +1,8 @@
+import { formatTableBoxForCopy } from "../copyFormatter";
+import type { NormalizedBox } from "../domain";
 import { resolveAttachment } from "./attachmentResolver";
 import {
+  extractMarkdownTables,
   extractMarkdownImageLinks,
   parseHeadings,
   readSection,
@@ -11,6 +14,8 @@ import {
   ItemSummary,
   MarkdownGranularity,
   MarkdownQueryError,
+  MarkdownTableFormat,
+  MarkdownTableMatchMode,
   MarkdownSectionGroup,
   ParseStatusReader,
   ZoteroItemsGateway,
@@ -25,6 +30,7 @@ export interface PreferredMarkdownReader extends ParseStatusReader {
     libraryID: number;
     key: string;
   }): Promise<string>;
+  readBoxes(ref: { libraryID: number; key: string }): Promise<NormalizedBox[]>;
 }
 
 /**
@@ -41,6 +47,14 @@ export interface MarkdownQueryService {
     sectionNumber?: string;
     q?: string;
     contextParagraphs?: number;
+  }): Promise<unknown>;
+  queryTables(input: {
+    libraryID: number;
+    key: string;
+    attachmentKey?: string;
+    q: string;
+    match?: MarkdownTableMatchMode;
+    tableFormat?: MarkdownTableFormat;
   }): Promise<unknown>;
 }
 
@@ -169,7 +183,164 @@ export function createMarkdownQueryService(deps: {
         "Invalid granularity",
       );
     },
+
+    async queryTables(input) {
+      const resolved = await resolveAttachment({
+        libraryID: input.libraryID,
+        key: input.key,
+        attachmentKey: input.attachmentKey,
+        items: deps.items,
+        storage: deps.storage,
+      });
+      const query = input.q.trim();
+      if (!query) {
+        throw new MarkdownQueryError("missing-query", 400, "missing-query");
+      }
+
+      const parseStatus = await deps.storage.readParseStatus({
+        libraryID: resolved.attachment.libraryID,
+        key: resolved.attachment.key,
+      });
+      const markdown = await deps.storage.readPreferredMarkdown({
+        libraryID: resolved.attachment.libraryID,
+        key: resolved.attachment.key,
+      });
+      const boxes = await readBoxesOrEmpty(deps.storage, resolved.attachment);
+      const tableFormat = input.tableFormat ?? "html";
+      const match = input.match ?? "both";
+      const tables = buildTableResults({
+        boxes,
+        markdown,
+        query,
+        match,
+        tableFormat,
+      });
+
+      return {
+        item: summarizeItem(resolved.item),
+        attachment: summarizeAttachmentPayload(
+          resolved.attachment,
+          parseStatus,
+        ),
+        result: {
+          mode: parseStatus.preciseReady ? "precise" : ("lite" as const),
+          source: "preferred" as const,
+        },
+        query,
+        match,
+        tableFormat,
+        tables,
+      };
+    },
   };
+}
+
+interface TableQueryResult {
+  rawIndex?: number;
+  page?: number;
+  caption?: string;
+  content: unknown;
+  formats?: Partial<Record<Exclude<MarkdownTableFormat, "json">, string>>;
+}
+
+/**
+ * 读取 normalized boxes，读取失败时降级为空数组以保留 Markdown 表格查询能力。
+ */
+async function readBoxesOrEmpty(
+  storage: PreferredMarkdownReader,
+  attachment: ZoteroItemLike,
+): Promise<NormalizedBox[]> {
+  try {
+    return await storage.readBoxes({
+      libraryID: attachment.libraryID,
+      key: attachment.key,
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 从 precise boxes 与 Markdown HTML tables 构造统一的表格查询结果。
+ */
+function buildTableResults(input: {
+  boxes: NormalizedBox[];
+  markdown: string;
+  query: string;
+  match: MarkdownTableMatchMode;
+  tableFormat: MarkdownTableFormat;
+}): TableQueryResult[] {
+  const normalizedQuery = normalizeTableSearchText(input.query);
+  const boxTables = input.boxes
+    .filter((box) => ["table", "table_body"].includes(box.type.toLowerCase()))
+    .map((box) => tableResultFromBox(box, input.tableFormat));
+  const markdownTables = extractMarkdownTables(input.markdown).map((table) => ({
+    rawIndex: table.rawIndex,
+    page: table.page,
+    caption: table.caption,
+    content: table.html ?? table.text,
+    formats: { html: table.html },
+  }));
+
+  return [...boxTables, ...markdownTables].filter((table) =>
+    tableMatches(table, normalizedQuery, input.match),
+  );
+}
+
+/**
+ * 将 normalized table box 转换为 API 表格结果，文本格式复用复制格式化逻辑。
+ */
+function tableResultFromBox(
+  box: NormalizedBox,
+  tableFormat: MarkdownTableFormat,
+): TableQueryResult {
+  return {
+    rawIndex: box.rawIndex,
+    page: box.page,
+    content:
+      tableFormat === "json" ? box : formatTableBoxForCopy(box, tableFormat),
+    formats: box.tableFormats,
+  };
+}
+
+/**
+ * 将表格搜索文本标准化为大小写无关、空白稳定的比较文本。
+ */
+function normalizeTableSearchText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}/.]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * 判断表格结果是否命中指定的标题、内容或混合匹配策略。
+ */
+function tableMatches(
+  table: TableQueryResult,
+  normalizedQuery: string,
+  match: MarkdownTableMatchMode,
+): boolean {
+  const caption = normalizeTableSearchText(table.caption ?? "");
+  const content = normalizeTableSearchText(tableContentForSearch(table));
+  if (match === "caption") {
+    return caption.includes(normalizedQuery);
+  }
+  if (match === "content") {
+    return content.includes(normalizedQuery);
+  }
+  return caption.includes(normalizedQuery) || content.includes(normalizedQuery);
+}
+
+/**
+ * 提取用于搜索的表格正文，JSON 内容会序列化后参与匹配。
+ */
+function tableContentForSearch(table: TableQueryResult): string {
+  if (typeof table.content === "string") {
+    return table.content;
+  }
+  return JSON.stringify(table.content);
 }
 
 /**
@@ -277,6 +448,23 @@ async function summarizeAttachment(
     key: attachment.key,
   });
 
+  return {
+    itemID: attachment.id,
+    libraryID: attachment.libraryID,
+    key: attachment.key,
+    fileName: attachment.attachmentFilename || attachment.getDisplayTitle(),
+    preciseReady: status.preciseReady,
+    liteReady: status.liteReady,
+  };
+}
+
+/**
+ * 为查询结果生成附件摘要，复用已读取的解析状态避免重复访问存储。
+ */
+function summarizeAttachmentPayload(
+  attachment: ZoteroItemLike,
+  status: { preciseReady: boolean; liteReady: boolean },
+): AttachmentSummary {
   return {
     itemID: attachment.id,
     libraryID: attachment.libraryID,

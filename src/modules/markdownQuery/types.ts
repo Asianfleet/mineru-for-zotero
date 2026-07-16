@@ -1,3 +1,5 @@
+import type { TableCopyTextFormat } from "../domain";
+
 /**
  * Markdown Query API 使用的标准错误码集合。
  */
@@ -98,6 +100,16 @@ export interface MarkdownTableSource {
   latex?: string;
   text: string;
 }
+
+/**
+ * 表示表格查询匹配标题、内容或两者。
+ */
+export type MarkdownTableMatchMode = "caption" | "content" | "both";
+
+/**
+ * 表示表格查询返回内容时使用的格式。
+ */
+export type MarkdownTableFormat = TableCopyTextFormat | "json";
 
 /**
  * 表示一个带前后文的 Markdown 段落搜索命中。

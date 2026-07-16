@@ -22,6 +22,7 @@ interface MarkdownEndpointRequest {
 
 export const MARKDOWN_ENDPOINT_PATHS = [
   "/mineru-for-zotero/search",
+  "/mineru-for-zotero/tables",
   "/mineru-for-zotero/markdown",
 ] as const;
 
@@ -60,31 +61,48 @@ export function createMarkdownQueryEndpoint(service: MarkdownQueryService) {
       try {
         const query = getQuery(options);
         authorize(query, options.headers);
-        const payload =
-          options.pathname === "/mineru-for-zotero/search"
-            ? await service.searchByTitle({
-                libraryID: requireInteger(query.libraryID, "libraryID"),
-                title: requireString(query.title, "title"),
-              })
-            : await service.queryMarkdown({
-                libraryID: requireInteger(query.libraryID, "libraryID"),
-                key: requireString(query.key, "key"),
-                attachmentKey: optionalString(query.attachmentKey),
-                granularity: optionalString(query.granularity) as
-                  | "full"
-                  | "headings"
-                  | "section"
-                  | "search"
-                  | undefined,
-                sectionPath: parseSectionPath(query.sectionPath),
-                sectionNumber: optionalString(query.sectionNumber),
-                q: optionalString(query.q),
-                contextParagraphs: parseOptionalInteger(
-                  query.contextParagraphs,
-                ),
-              });
+        if (options.pathname === "/mineru-for-zotero/search") {
+          return json(
+            200,
+            await service.searchByTitle({
+              libraryID: requireInteger(query.libraryID, "libraryID"),
+              title: requireString(query.title, "title"),
+            }),
+          );
+        }
 
-        return json(200, payload);
+        if (options.pathname === "/mineru-for-zotero/tables") {
+          return json(
+            200,
+            await service.queryTables({
+              libraryID: requireInteger(query.libraryID, "libraryID"),
+              key: requireString(query.key, "key"),
+              attachmentKey: optionalString(query.attachmentKey),
+              q: requireString(query.q, "q"),
+              match: parseTableMatch(query.match),
+              tableFormat: parseTableFormat(query.tableFormat),
+            }),
+          );
+        }
+
+        return json(
+          200,
+          await service.queryMarkdown({
+            libraryID: requireInteger(query.libraryID, "libraryID"),
+            key: requireString(query.key, "key"),
+            attachmentKey: optionalString(query.attachmentKey),
+            granularity: optionalString(query.granularity) as
+              | "full"
+              | "headings"
+              | "section"
+              | "search"
+              | undefined,
+            sectionPath: parseSectionPath(query.sectionPath),
+            sectionNumber: optionalString(query.sectionNumber),
+            q: optionalString(query.q),
+            contextParagraphs: parseOptionalInteger(query.contextParagraphs),
+          }),
+        );
       } catch (error) {
         return jsonError(error);
       }
@@ -256,6 +274,34 @@ function parseSectionPath(
     .map((part) => part.trim())
     .filter(Boolean);
   return parts.length > 1 ? parts : text;
+}
+
+/**
+ * 解析表格查询的匹配范围，只接受稳定的枚举值。
+ */
+function parseTableMatch(value: string | undefined) {
+  const text = optionalString(value);
+  if (!text) {
+    return undefined;
+  }
+  if (["caption", "content", "both"].includes(text)) {
+    return text as "caption" | "content" | "both";
+  }
+  throw new MarkdownQueryError("invalid-request", 400, "Invalid table match");
+}
+
+/**
+ * 解析表格查询的输出格式，只接受复制格式和 JSON。
+ */
+function parseTableFormat(value: string | undefined) {
+  const text = optionalString(value);
+  if (!text) {
+    return undefined;
+  }
+  if (["html", "markdown", "tsv", "latex", "json"].includes(text)) {
+    return text as "html" | "markdown" | "tsv" | "latex" | "json";
+  }
+  throw new MarkdownQueryError("invalid-request", 400, "Invalid table format");
 }
 
 /**
