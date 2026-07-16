@@ -525,11 +525,30 @@ function splitCsv(value: string): string[] {
  * 判断图片路径是否限定在 MinerU Markdown 的 images/ 相对目录内。
  */
 function isMarkdownImagePath(path: string): boolean {
-  return (
-    /^images\/[^/][^\\]*$/i.test(path) &&
-    !path.includes("..") &&
-    !/^[a-z]+:\/\//i.test(path)
-  );
+  if (path.includes("\\") || /^[a-z][a-z0-9+.-]*:/i.test(path)) {
+    return false;
+  }
+
+  const withoutAnchor = path.split("#", 1)[0] ?? "";
+  const withoutQuery = withoutAnchor.split("?", 1)[0] ?? "";
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(withoutQuery);
+  } catch {
+    decoded = withoutQuery;
+  }
+
+  if (decoded.includes("\\") || /^[a-z][a-z0-9+.-]*:/i.test(decoded)) {
+    return false;
+  }
+
+  const normalized = decoded.replace(/\/+/g, "/").replace(/\/$/, "");
+  if (!normalized.startsWith("images/")) {
+    return false;
+  }
+
+  const parts = normalized.split("/");
+  return !parts.some((part) => !part || part === "." || part === "..");
 }
 
 /**

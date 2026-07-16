@@ -450,17 +450,22 @@ describe("markdownQueryService", function () {
     assert.equal(tables[0].rawIndex, 7);
   });
 
-  it("reads image bytes and reports invalid or missing image paths", async function () {
+  it("reads image bytes and reports invalid, missing, or nested image paths", async function () {
     const service = createMarkdownQueryService(
       fakeDeps({
         markdown: "# Doc",
         readImage: async (_ref, path) =>
-          path === "images/a.jpg"
+          ["images/a.jpg", "images/nested/b.jpg"].includes(path)
             ? {
                 path,
                 mime: "image/jpeg",
-                bytes: new Uint8Array([1, 2, 3]),
-                dataURL: "data:image/jpeg;base64,AQID",
+                bytes: new Uint8Array(
+                  path === "images/a.jpg" ? [1, 2, 3] : [4, 5, 6],
+                ),
+                dataURL:
+                  path === "images/a.jpg"
+                    ? "data:image/jpeg;base64,AQID"
+                    : "data:image/jpeg;base64,BAUG",
               }
             : null,
       }),
@@ -469,7 +474,7 @@ describe("markdownQueryService", function () {
     const response = await service.readImages({
       libraryID: 1,
       key: "PDF1",
-      path: "images/a.jpg, ../secret.png, images/missing.png",
+      path: "images/a.jpg, images/nested/b.jpg, ../secret.png, images/./bad.jpg, images/missing.png",
     });
 
     assert.deepEqual(
@@ -487,7 +492,19 @@ describe("markdownQueryService", function () {
           bytes: [1, 2, 3],
         },
         {
+          path: "images/nested/b.jpg",
+          status: "ok",
+          mime: "image/jpeg",
+          bytes: [4, 5, 6],
+        },
+        {
           path: "../secret.png",
+          status: "invalid-path",
+          mime: undefined,
+          bytes: undefined,
+        },
+        {
+          path: "images/./bad.jpg",
           status: "invalid-path",
           mime: undefined,
           bytes: undefined,

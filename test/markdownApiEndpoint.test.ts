@@ -356,6 +356,120 @@ describe("markdownApiEndpoint", function () {
     assert.deepEqual(Array.from(response[2] as Uint8Array), [1, 2, 3]);
   });
 
+  it("returns invalid-path for a single invalid image request", async function () {
+    setMarkdownApiEnabled(true);
+    setMarkdownApiRequireToken(false);
+    const endpoint = createMarkdownQueryEndpoint({
+      async searchByTitle() {
+        return { candidates: [] };
+      },
+      async queryMarkdown() {
+        return { granularity: "full", content: "" };
+      },
+      async queryTables() {
+        return { tables: [] };
+      },
+      async readImages() {
+        return {
+          images: [{ path: "../a.jpg", status: "invalid-path" }],
+        };
+      },
+    });
+
+    const response = await endpoint.init(
+      request("/mineru-for-zotero/image", {
+        query: { libraryID: "1", key: "PDF1", path: "../a.jpg" },
+      }),
+    );
+    const payload = JSON.parse(String(response[2])) as { error: string };
+
+    assert.equal(response[0], 400);
+    assert.equal(payload.error, "invalid-path");
+  });
+
+  it("returns image-not-found for a single missing image request", async function () {
+    setMarkdownApiEnabled(true);
+    setMarkdownApiRequireToken(false);
+    const endpoint = createMarkdownQueryEndpoint({
+      async searchByTitle() {
+        return { candidates: [] };
+      },
+      async queryMarkdown() {
+        return { granularity: "full", content: "" };
+      },
+      async queryTables() {
+        return { tables: [] };
+      },
+      async readImages() {
+        return {
+          images: [{ path: "images/missing.jpg", status: "not-found" }],
+        };
+      },
+    });
+
+    const response = await endpoint.init(
+      request("/mineru-for-zotero/image", {
+        query: { libraryID: "1", key: "PDF1", path: "images/missing.jpg" },
+      }),
+    );
+    const payload = JSON.parse(String(response[2])) as { error: string };
+
+    assert.equal(response[0], 404);
+    assert.equal(payload.error, "image-not-found");
+  });
+
+  it("returns metadata without bytes for multi-image requests", async function () {
+    setMarkdownApiEnabled(true);
+    setMarkdownApiRequireToken(false);
+    const endpoint = createMarkdownQueryEndpoint({
+      async searchByTitle() {
+        return { candidates: [] };
+      },
+      async queryMarkdown() {
+        return { granularity: "full", content: "" };
+      },
+      async queryTables() {
+        return { tables: [] };
+      },
+      async readImages() {
+        return {
+          images: [
+            {
+              path: "images/a.jpg",
+              status: "ok",
+              mime: "image/jpeg",
+              dataURL: "data:image/jpeg;base64,AQID",
+              bytes: new Uint8Array([1, 2, 3]),
+            },
+            {
+              path: "images/missing.jpg",
+              status: "not-found",
+            },
+          ],
+        };
+      },
+    });
+
+    const response = await endpoint.init(
+      request("/mineru-for-zotero/image", {
+        query: {
+          libraryID: "1",
+          key: "PDF1",
+          path: "images/a.jpg,images/missing.jpg",
+        },
+      }),
+    );
+    const payload = JSON.parse(String(response[2])) as {
+      images: Array<{ bytes?: unknown; path: string; status: string }>;
+    };
+
+    assert.equal(response[0], 200);
+    assert.equal(response[1], "application/json");
+    assert.lengthOf(payload.images, 2);
+    assert.notProperty(payload.images[0], "bytes");
+    assert.notInclude(String(response[2]), "bytes");
+  });
+
   it("registers the expected endpoint paths", function () {
     assert.deepEqual(MARKDOWN_ENDPOINT_PATHS, [
       "/mineru-for-zotero/search",
