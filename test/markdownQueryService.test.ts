@@ -141,6 +141,64 @@ describe("markdownQueryService", function () {
     );
   });
 
+  it("returns not-found group status for missing legacy sectionPath arrays", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc\n\n## Methods\n\nAlpha",
+      }),
+    );
+
+    const response = await service.queryMarkdown({
+      libraryID: 1,
+      key: "PDF1",
+      granularity: "section",
+      sectionPath: ["Doc", "Discussion"],
+    });
+
+    assert.deepInclude(response, { granularity: "section" });
+    assert.nestedPropertyVal(response, "groups[0].query", "Doc / Discussion");
+    assert.nestedPropertyVal(response, "groups[0].kind", "section-path");
+    assert.nestedPropertyVal(response, "groups[0].status", "not-found");
+    assert.deepEqual(
+      ((response as { groups: unknown[] }).groups[0] as { matches: unknown[] })
+        .matches,
+      [],
+    );
+  });
+
+  it("returns ambiguous group status for duplicate legacy sectionPath arrays", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc\n\n## Methods\n\nAlpha\n\n# Doc\n\n## Methods\n\nBeta",
+      }),
+    );
+
+    const response = await service.queryMarkdown({
+      libraryID: 1,
+      key: "PDF1",
+      granularity: "section",
+      sectionPath: ["Doc", "Methods"],
+    });
+
+    assert.deepInclude(response, { granularity: "section" });
+    assert.nestedPropertyVal(response, "groups[0].query", "Doc / Methods");
+    assert.nestedPropertyVal(response, "groups[0].kind", "section-path");
+    assert.nestedPropertyVal(response, "groups[0].status", "ambiguous");
+    assert.deepEqual(
+      ((response as { groups: unknown[] }).groups[0] as { matches: unknown[] })
+        .matches,
+      [],
+    );
+    assert.lengthOf(
+      (
+        (response as { groups: unknown[] }).groups[0] as {
+          candidates: unknown[];
+        }
+      ).candidates,
+      2,
+    );
+  });
+
   it("returns grouped section results", async function () {
     const service = createMarkdownQueryService(
       fakeDeps({

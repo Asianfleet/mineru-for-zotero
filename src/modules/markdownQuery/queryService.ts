@@ -188,23 +188,51 @@ function readExactSectionPathGroup(
     );
   }
 
-  const section = readSection(markdown, sectionPath);
   const query = sectionPath
     .map((part) => part.trim())
     .filter(Boolean)
     .join(" / ");
-  return {
-    query,
-    kind: "section-path",
-    status: "ok",
-    matches: [
-      {
-        ...section,
-        images: extractMarkdownImageLinks(section.content),
-      },
-    ],
-    warnings: [],
-  };
+  try {
+    const section = readSection(markdown, sectionPath);
+    return {
+      query,
+      kind: "section-path",
+      status: "ok",
+      matches: [
+        {
+          ...section,
+          images: extractMarkdownImageLinks(section.content),
+        },
+      ],
+      warnings: [],
+    };
+  } catch (error) {
+    if (error instanceof MarkdownQueryError) {
+      if (error.code === "section-not-found") {
+        return {
+          query,
+          kind: "section-path",
+          status: "not-found",
+          matches: [],
+          warnings: [],
+        };
+      }
+      if (error.code === "ambiguous-section") {
+        return {
+          query,
+          kind: "section-path",
+          status: "ambiguous",
+          matches: [],
+          candidates: (
+            error.details as { candidates?: MarkdownSectionGroup["candidates"] }
+          )?.candidates,
+          warnings: [],
+        };
+      }
+    }
+
+    throw error;
+  }
 }
 
 /**
