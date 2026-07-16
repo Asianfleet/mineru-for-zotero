@@ -38,6 +38,7 @@ export interface MarkdownHeading {
   title: string;
   path: string[];
   line: number;
+  number?: string;
 }
 
 /**
@@ -46,6 +47,56 @@ export interface MarkdownHeading {
 export interface MarkdownSectionResult {
   heading: MarkdownHeading;
   content: string;
+}
+
+/**
+ * 表示章节分组查询的输入类型。
+ */
+export type MarkdownSectionQueryKind =
+  | "section-number"
+  | "section-number-range"
+  | "section-path";
+
+/**
+ * 表示章节分组查询的匹配状态。
+ */
+export type MarkdownSectionGroupStatus =
+  | "ok"
+  | "not-found"
+  | "ambiguous"
+  | "invalid-range";
+
+/**
+ * 表示章节分组查询中命中的单个章节及其图片引用。
+ */
+export interface MarkdownSectionMatch extends MarkdownSectionResult {
+  images: string[];
+}
+
+/**
+ * 表示按章节号、章节号范围或模糊路径分组后的查询结果。
+ */
+export interface MarkdownSectionGroup {
+  query: string;
+  kind: MarkdownSectionQueryKind;
+  status: MarkdownSectionGroupStatus;
+  matches: MarkdownSectionMatch[];
+  candidates?: MarkdownHeading[];
+  warnings?: string[];
+}
+
+/**
+ * 表示从 Markdown 中提取出的表格来源。
+ */
+export interface MarkdownTableSource {
+  rawIndex?: number;
+  page?: number;
+  caption?: string;
+  html?: string;
+  markdown?: string;
+  tsv?: string;
+  latex?: string;
+  text: string;
 }
 
 /**
