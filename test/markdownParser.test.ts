@@ -161,7 +161,12 @@ describe("markdownParser", function () {
   });
 
   it("rejects empty grouped section queries", function () {
-    for (const input of [{}, { sectionNumber: "   ", sectionPath: "\t" }]) {
+    for (const input of [
+      {},
+      { sectionNumber: "   ", sectionPath: "\t" },
+      { sectionNumber: "," },
+      { sectionPath: " , " },
+    ]) {
       const error = assert.throws(
         () => readSectionGroups(markdown, input),
         MarkdownQueryError,

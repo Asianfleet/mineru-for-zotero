@@ -107,13 +107,19 @@ export function readSectionGroups(
   const lines = markdown.split(/\r?\n/);
   const headings = parseHeadings(markdown);
   if (sectionNumber) {
-    return splitQueryGroups(sectionNumber).map((query) =>
+    const groups = splitQueryGroups(sectionNumber);
+    if (groups.length === 0) {
+      throw new MarkdownQueryError("missing-query", 400, "missing-query");
+    }
+    return groups.map((query) =>
       readSectionNumberGroup(lines, headings, query),
     );
   }
-  return splitQueryGroups(sectionPath).map((query) =>
-    readSectionPathGroup(lines, headings, query),
-  );
+  const groups = splitQueryGroups(sectionPath);
+  if (groups.length === 0) {
+    throw new MarkdownQueryError("missing-query", 400, "missing-query");
+  }
+  return groups.map((query) => readSectionPathGroup(lines, headings, query));
 }
 
 /**
