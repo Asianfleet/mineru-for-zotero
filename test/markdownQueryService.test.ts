@@ -348,10 +348,69 @@ describe("markdownQueryService", function () {
       }
     ).tables[0];
 
-    assert.equal(table.content, "name wikitable");
+    assert.include(table.content, "Name");
+    assert.include(table.content, "WikiTable");
+    assert.notEqual(table.content, "name wikitable");
     assert.deepEqual(Object.keys(table.formats).sort(), ["html", "markdown"]);
     assert.include(table.formats.html, "<table>");
-    assert.equal(table.formats.markdown, "name wikitable");
+    assert.include(table.formats.markdown, "Name");
+    assert.include(table.formats.markdown, "WikiTable");
+  });
+
+  it("matches fallback HTML table captions with caption-only queries", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown:
+          "# Doc\n\n<table><caption>Dataset Summary</caption><tr><td>WikiTable</td></tr></table>",
+        boxes: [],
+      }),
+    );
+
+    const response = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "Dataset Summary",
+      match: "caption",
+      tableFormat: "markdown",
+    });
+
+    assert.nestedPropertyVal(response, "tables[0].caption", "Dataset Summary");
+    assert.nestedPropertyVal(response, "tables[0].rawIndex", 0);
+  });
+
+  it("does not duplicate markdown fallback tables when box tables are available", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown:
+          "# Doc\n\n<table><caption>Dataset Summary</caption><tr><td>WikiTable</td></tr></table>",
+        boxes: [
+          {
+            rawIndex: 7,
+            page: 3,
+            type: "table",
+            bbox: { x: 0, y: 0, width: 10, height: 10 },
+            markdown: "",
+            formula: null,
+            tableFormats: {
+              html: "<table><caption>Dataset Summary</caption><tr><td>WikiTable</td></tr></table>",
+            },
+          },
+        ],
+      }),
+    );
+
+    const response = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "WikiTable",
+      match: "both",
+      tableFormat: "markdown",
+    });
+    const tables = (response as { tables: Array<{ rawIndex?: number }> })
+      .tables;
+
+    assert.lengthOf(tables, 1);
+    assert.equal(tables[0].rawIndex, 7);
   });
 
   it("maps missing markdown to parse-result-not-found", async function () {

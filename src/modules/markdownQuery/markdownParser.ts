@@ -144,12 +144,17 @@ export function extractMarkdownImageLinks(markdown: string): string[] {
  */
 export function extractMarkdownTables(markdown: string): MarkdownTableSource[] {
   return [...markdown.matchAll(/<table\b[\s\S]*?<\/table>/gi)].map(
-    (match, index) => ({
-      rawIndex: index,
-      caption: findPrecedingTableCaption(markdown, match.index ?? 0),
-      html: match[0],
-      text: normalizeSearchText(stripHtmlTags(match[0])),
-    }),
+    (match, index) => {
+      const html = match[0];
+      return {
+        rawIndex: index,
+        caption:
+          extractHtmlCaption(html) ??
+          findPrecedingTableCaption(markdown, match.index ?? 0),
+        html,
+        text: htmlTableToReadableText(html),
+      };
+    },
   );
 }
 
@@ -234,12 +239,42 @@ function findPrecedingTableCaption(
 }
 
 /**
- * 将 HTML 表格压缩为可读文本，供 Markdown fallback 搜索和降级输出使用。
+ * 从 HTML table 的 caption 元素提取标题文本。
+ */
+function extractHtmlCaption(value: string): string | undefined {
+  const match = /<caption\b[^>]*>([\s\S]*?)<\/caption>/i.exec(value);
+  return match ? stripHtmlTags(match[1]) : undefined;
+}
+
+/**
+ * 将 HTML 表格转为保留单元格边界的可读文本。
+ */
+function htmlTableToReadableText(value: string): string {
+  const rows = [...value.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
+    .map((row) =>
+      [...row[1].matchAll(/<t[hd]\b[^>]*>([\s\S]*?)<\/t[hd]>/gi)]
+        .map((cell) => stripHtmlTags(cell[1]))
+        .filter(Boolean)
+        .join(" | "),
+    )
+    .filter(Boolean);
+
+  return rows.length > 0 ? rows.join("\n") : stripHtmlTags(value);
+}
+
+/**
+ * 将 HTML 片段压缩为可读文本，保留原始大小写与标点。
  */
 function stripHtmlTags(value: string): string {
   return value
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'")
     .replace(/\s+/g, " ")
     .trim();
 }

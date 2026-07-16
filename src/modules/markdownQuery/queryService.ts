@@ -278,8 +278,9 @@ function buildTableResults(input: {
   const markdownTables = extractMarkdownTables(input.markdown).map((table) => ({
     ...tableResultFromMarkdown(table, input.tableFormat),
   }));
+  const candidateTables = boxTables.length > 0 ? boxTables : markdownTables;
 
-  return [...boxTables, ...markdownTables].filter((table) =>
+  return candidateTables.filter((table) =>
     tableMatches(table, normalizedQuery, input.match),
   );
 }
