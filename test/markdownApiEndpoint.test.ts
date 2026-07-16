@@ -142,6 +142,61 @@ describe("markdownApiEndpoint", function () {
     });
   });
 
+  it("returns grouped not-found results for legacy JSON array sectionPath", async function () {
+    setMarkdownApiEnabled(true);
+    setMarkdownApiRequireToken(false);
+    let received: unknown;
+    const endpoint = createMarkdownQueryEndpoint({
+      async searchByTitle() {
+        return { candidates: [] };
+      },
+      async queryMarkdown(input) {
+        received = input;
+        return {
+          granularity: "section",
+          groups: [
+            {
+              query: "Doc / Missing",
+              kind: "section-path",
+              status: "not-found",
+              matches: [],
+              warnings: [],
+            },
+          ],
+        };
+      },
+    });
+
+    const response = await endpoint.init(
+      request("/mineru-for-zotero/markdown", {
+        query: {
+          libraryID: "1",
+          key: "PDF1",
+          granularity: "section",
+          sectionPath: '["Doc","Missing"]',
+        },
+      }),
+    );
+
+    assert.equal(response[0], 200);
+    assert.deepEqual((received as { sectionPath?: unknown }).sectionPath, [
+      "Doc",
+      "Missing",
+    ]);
+    assert.deepEqual(JSON.parse(String(response[2])), {
+      granularity: "section",
+      groups: [
+        {
+          query: "Doc / Missing",
+          kind: "section-path",
+          status: "not-found",
+          matches: [],
+          warnings: [],
+        },
+      ],
+    });
+  });
+
   it("uses a generic internal-error message for unexpected errors", async function () {
     setMarkdownApiEnabled(true);
     setMarkdownApiRequireToken(false);
