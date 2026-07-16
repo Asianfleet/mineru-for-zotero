@@ -9,7 +9,11 @@ import {
   createMarkdownQueryService,
   MarkdownQueryService,
 } from "./queryService";
-import { MarkdownQueryError, ZoteroItemLike } from "./types";
+import {
+  MarkdownImageResult,
+  MarkdownQueryError,
+  ZoteroItemLike,
+} from "./types";
 
 interface MarkdownEndpointRequest {
   method: "GET" | "POST";
@@ -23,6 +27,7 @@ interface MarkdownEndpointRequest {
 export const MARKDOWN_ENDPOINT_PATHS = [
   "/mineru-for-zotero/search",
   "/mineru-for-zotero/tables",
+  "/mineru-for-zotero/image",
   "/mineru-for-zotero/markdown",
 ] as const;
 
@@ -81,6 +86,17 @@ export function createMarkdownQueryEndpoint(service: MarkdownQueryService) {
               q: requireString(query.q, "q"),
               match: parseTableMatch(query.match),
               tableFormat: parseTableFormat(query.tableFormat),
+            }),
+          );
+        }
+
+        if (options.pathname === "/mineru-for-zotero/image") {
+          return imageResponse(
+            await service.readImages({
+              libraryID: requireInteger(query.libraryID, "libraryID"),
+              key: requireString(query.key, "key"),
+              attachmentKey: optionalString(query.attachmentKey),
+              path: requireString(query.path, "path"),
             }),
           );
         }
@@ -309,6 +325,32 @@ function parseTableFormat(value: string | undefined) {
  */
 function json(code: number, payload: unknown) {
   return [code, "application/json", JSON.stringify(payload)] as const;
+}
+
+/**
+ * 生成图片 endpoint 响应；单图成功返回原始字节，多图返回 JSON 元数据。
+ */
+function imageResponse(payload: { images: MarkdownImageResult[] }) {
+  if (payload.images.length === 1) {
+    const image = payload.images[0];
+    if (image.status === "ok" && image.bytes && image.mime) {
+      return [200, image.mime, image.bytes] as const;
+    }
+    if (image.status === "invalid-path") {
+      return json(400, {
+        error: "invalid-path",
+        message: "Invalid image path",
+      });
+    }
+    return json(404, {
+      error: "image-not-found",
+      message: "Image not found",
+    });
+  }
+
+  return json(200, {
+    images: payload.images.map(({ bytes: _bytes, ...image }) => image),
+  });
 }
 
 /**

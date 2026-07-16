@@ -450,6 +450,58 @@ describe("markdownQueryService", function () {
     assert.equal(tables[0].rawIndex, 7);
   });
 
+  it("reads image bytes and reports invalid or missing image paths", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc",
+        readImage: async (_ref, path) =>
+          path === "images/a.jpg"
+            ? {
+                path,
+                mime: "image/jpeg",
+                bytes: new Uint8Array([1, 2, 3]),
+                dataURL: "data:image/jpeg;base64,AQID",
+              }
+            : null,
+      }),
+    );
+
+    const response = await service.readImages({
+      libraryID: 1,
+      key: "PDF1",
+      path: "images/a.jpg, ../secret.png, images/missing.png",
+    });
+
+    assert.deepEqual(
+      response.images.map((image) => ({
+        path: image.path,
+        status: image.status,
+        mime: image.mime,
+        bytes: image.bytes ? Array.from(image.bytes) : undefined,
+      })),
+      [
+        {
+          path: "images/a.jpg",
+          status: "ok",
+          mime: "image/jpeg",
+          bytes: [1, 2, 3],
+        },
+        {
+          path: "../secret.png",
+          status: "invalid-path",
+          mime: undefined,
+          bytes: undefined,
+        },
+        {
+          path: "images/missing.png",
+          status: "not-found",
+          mime: undefined,
+          bytes: undefined,
+        },
+      ],
+    );
+  });
+
   it("maps missing markdown to parse-result-not-found", async function () {
     const service = createMarkdownQueryService(
       fakeDeps({
@@ -558,6 +610,15 @@ function fakeDeps(input: {
     libraryID: number;
     key: string;
   }) => Promise<string>;
+  readImage?: (
+    ref: { libraryID: number; key: string },
+    path: string,
+  ) => Promise<{
+    path: string;
+    mime: string;
+    bytes: Uint8Array;
+    dataURL: string;
+  } | null>;
   searchItemsByTitle?: (input: {
     libraryID: number;
     title: string;
@@ -589,6 +650,9 @@ function fakeDeps(input: {
     },
     async readBoxes() {
       return input.boxes ?? [];
+    },
+    async readImage(ref: { libraryID: number; key: string }, path: string) {
+      return input.readImage?.(ref, path) ?? null;
     },
   };
 

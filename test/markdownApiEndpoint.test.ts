@@ -318,10 +318,49 @@ describe("markdownApiEndpoint", function () {
     assert.equal(payload.error, "invalid-request");
   });
 
+  it("returns image bytes for a single image request", async function () {
+    setMarkdownApiEnabled(true);
+    setMarkdownApiRequireToken(false);
+    const endpoint = createMarkdownQueryEndpoint({
+      async searchByTitle() {
+        return { candidates: [] };
+      },
+      async queryMarkdown() {
+        return { granularity: "full", content: "" };
+      },
+      async queryTables() {
+        return { tables: [] };
+      },
+      async readImages() {
+        return {
+          images: [
+            {
+              path: "images/a.jpg",
+              status: "ok",
+              mime: "image/jpeg",
+              bytes: new Uint8Array([1, 2, 3]),
+            },
+          ],
+        };
+      },
+    });
+
+    const response = await endpoint.init(
+      request("/mineru-for-zotero/image", {
+        query: { libraryID: "1", key: "PDF1", path: "images/a.jpg" },
+      }),
+    );
+
+    assert.equal(response[0], 200);
+    assert.equal(response[1], "image/jpeg");
+    assert.deepEqual(Array.from(response[2] as Uint8Array), [1, 2, 3]);
+  });
+
   it("registers the expected endpoint paths", function () {
     assert.deepEqual(MARKDOWN_ENDPOINT_PATHS, [
       "/mineru-for-zotero/search",
       "/mineru-for-zotero/tables",
+      "/mineru-for-zotero/image",
       "/mineru-for-zotero/markdown",
     ]);
   });
@@ -341,6 +380,9 @@ function fakeService() {
     },
     async queryTables() {
       return { tables: [] };
+    },
+    async readImages() {
+      return { images: [] };
     },
   };
 }

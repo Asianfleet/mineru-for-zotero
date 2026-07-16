@@ -102,6 +102,29 @@ export interface MarkdownTableSource {
 }
 
 /**
+ * 表示单个 Markdown 图片读取请求的状态。
+ */
+export type MarkdownImageStatus = "ok" | "not-found" | "invalid-path";
+
+/**
+ * 表示 Markdown Query API 返回的单个图片读取结果。
+ */
+export interface MarkdownImageResult {
+  path: string;
+  status: MarkdownImageStatus;
+  mime?: string;
+  dataURL?: string;
+  bytes?: Uint8Array;
+}
+
+/**
+ * 表示 Markdown Query API 图片读取响应。
+ */
+export interface MarkdownImageQueryResult {
+  images: MarkdownImageResult[];
+}
+
+/**
  * 表示表格查询匹配标题、内容或两者。
  */
 export type MarkdownTableMatchMode = "caption" | "content" | "both";

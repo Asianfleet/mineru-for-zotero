@@ -1,5 +1,5 @@
 import { formatTableBoxForCopy } from "../copyFormatter";
-import type { NormalizedBox } from "../domain";
+import type { MinerUImageReadResult, NormalizedBox } from "../domain";
 import { resolveAttachment } from "./attachmentResolver";
 import {
   extractMarkdownTables,
@@ -13,6 +13,8 @@ import {
   AttachmentSummary,
   ItemSummary,
   MarkdownGranularity,
+  MarkdownImageQueryResult,
+  MarkdownImageResult,
   MarkdownQueryError,
   MarkdownTableSource,
   MarkdownTableFormat,
@@ -32,6 +34,10 @@ export interface PreferredMarkdownReader extends ParseStatusReader {
     key: string;
   }): Promise<string>;
   readBoxes(ref: { libraryID: number; key: string }): Promise<NormalizedBox[]>;
+  readImage(
+    ref: { libraryID: number; key: string },
+    path: string,
+  ): Promise<MinerUImageReadResult | null>;
 }
 
 /**
@@ -57,6 +63,12 @@ export interface MarkdownQueryService {
     match?: MarkdownTableMatchMode;
     tableFormat?: MarkdownTableFormat;
   }): Promise<unknown>;
+  readImages(input: {
+    libraryID: number;
+    key: string;
+    attachmentKey?: string;
+    path: string;
+  }): Promise<MarkdownImageQueryResult>;
 }
 
 /**
@@ -233,6 +245,52 @@ export function createMarkdownQueryService(deps: {
         tables,
       };
     },
+
+    async readImages(input) {
+      const resolved = await resolveAttachment({
+        libraryID: input.libraryID,
+        key: input.key,
+        attachmentKey: input.attachmentKey,
+        items: deps.items,
+        storage: deps.storage,
+      });
+      const ref = {
+        libraryID: resolved.attachment.libraryID,
+        key: resolved.attachment.key,
+      };
+      const images = await Promise.all(
+        splitCsv(input.path).map((path) =>
+          readImageResult(deps.storage, ref, path),
+        ),
+      );
+      return { images };
+    },
+  };
+}
+
+/**
+ * 读取单个图片并转换为 Markdown Query API 的状态结果。
+ */
+async function readImageResult(
+  storage: PreferredMarkdownReader,
+  ref: { libraryID: number; key: string },
+  path: string,
+): Promise<MarkdownImageResult> {
+  if (!isMarkdownImagePath(path)) {
+    return { path, status: "invalid-path" };
+  }
+
+  const image = await storage.readImage(ref, path);
+  if (!image) {
+    return { path, status: "not-found" };
+  }
+
+  return {
+    path,
+    status: "ok",
+    mime: image.mime,
+    dataURL: image.dataURL,
+    bytes: image.bytes,
   };
 }
 
@@ -451,6 +509,27 @@ function tableContentForSearch(table: TableQueryResult): string {
     return table.content;
   }
   return JSON.stringify(table.content);
+}
+
+/**
+ * 将逗号分隔参数拆为非空查询项。
+ */
+function splitCsv(value: string): string[] {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+/**
+ * 判断图片路径是否限定在 MinerU Markdown 的 images/ 相对目录内。
+ */
+function isMarkdownImagePath(path: string): boolean {
+  return (
+    /^images\/[^/][^\\]*$/i.test(path) &&
+    !path.includes("..") &&
+    !/^[a-z]+:\/\//i.test(path)
+  );
 }
 
 /**
