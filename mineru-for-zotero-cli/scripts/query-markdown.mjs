@@ -147,6 +147,13 @@ function parseCommand(argv) {
   if (command === "image") {
     const key = getRequiredFlag(flags, "--key");
     const path = getRequiredFlag(flags, "--path");
+    const output = getFlag(flags, "--output");
+    const outputDir = getFlag(flags, "--output-dir");
+    if (!output && !outputDir) {
+      throw new CliArgumentError(
+        "Image command requires --output or --output-dir.",
+      );
+    }
     const params = { libraryID, key, path };
     addOptionalParam(
       params,
@@ -161,8 +168,8 @@ function parseCommand(argv) {
       format,
       timeoutMs,
       token,
-      output: getFlag(flags, "--output"),
-      outputDir: getFlag(flags, "--output-dir"),
+      output,
+      outputDir,
       params,
     };
   }
@@ -752,7 +759,7 @@ function helpText() {
     "  node skill/scripts/query-markdown.mjs search --library-id <id> --title <text> [--format text|json]",
     "  node skill/scripts/query-markdown.mjs markdown --library-id <id> --key <key> [--granularity full|headings|section|search] [--format text|json]",
     "  node skill/scripts/query-markdown.mjs table --library-id <id> --key <key> --query <text> [--match caption|content|both] [--table-format html|markdown|tsv|latex|json]",
-    "  node skill/scripts/query-markdown.mjs image --library-id <id> --key <key> --path <images/...> [--output <file>|--output-dir <dir>]",
+    "  node skill/scripts/query-markdown.mjs image --library-id <id> --key <key> --path <images/...> (--output <file>|--output-dir <dir>)",
     "",
     "Common options:",
     "  --port <number>              Zotero local server port. Default: auto-detect from Zotero profile, then 23119",
@@ -774,8 +781,8 @@ function helpText() {
     "",
     "Image options:",
     "  --path <paths>               Required image path or comma-separated paths.",
-    "  --output <file>              Save a single image response to a file.",
-    "  --output-dir <dir>           Save image responses under a directory.",
+    "  --output <file>              Save a single image response to a file. Required unless --output-dir is set.",
+    "  --output-dir <dir>           Save image responses under a directory. Required unless --output is set.",
   ].join("\n");
 }
 

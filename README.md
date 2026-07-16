@@ -212,6 +212,8 @@ node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --
 
 The CLI tries to read Zotero's local HTTP server port from the default Zotero profile. If it cannot, it uses `23119`. Add `--port <number>` to set the port manually. The default output is `--format text`, which is easier for agents to read directly. Use `--format json` for scripts and pipelines.
 
+For `image`, always pass `--output <file>` or `--output-dir <dir>` so returned image bytes are written to disk.
+
 ## Troubleshooting
 
 ### API Key Not Configured

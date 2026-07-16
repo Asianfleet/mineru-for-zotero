@@ -212,6 +212,8 @@ node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --
 
 CLI 默认会尝试从 Zotero 默认 profile 读取本地 HTTP server 端口，读不到时使用 `23119`。如果需要手动指定端口，添加 `--port <number>`。默认输出 `--format text`，适合 agent 直接阅读；需要脚本处理时使用 `--format json`。
 
+使用 `image` 时必须传入 `--output <file>` 或 `--output-dir <dir>`，确保返回的图片字节会写入磁盘。
+
 ## 常见问题
 
 ### 提示未配置 API Key

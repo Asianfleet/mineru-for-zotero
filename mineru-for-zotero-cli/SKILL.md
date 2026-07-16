@@ -38,7 +38,7 @@ node scripts/query-markdown.mjs <command> [options]
 
 ### Common Options
 
-- `--library-id <id>` — Zotero library ID; required for both `search` and `markdown`
+- `--library-id <id>` — Zotero library ID; required for `search`, `markdown`, `table`, and `image`
 - `--port <number>` — Zotero local server port; default is auto-detected from the Zotero profile, then 23119
 - `--token <token>` — API token, sent as Authorization: Bearer
 - `--format <text|json>` — Output format; default is text, use `--format text` for agent-readable text. use `--format json` when another script or pipeline needs structured output.
@@ -66,8 +66,8 @@ node scripts/query-markdown.mjs <command> [options]
 ### Image options
 
 - `--path <paths>` — Required image path or comma-separated paths from Markdown output
-- `--output <file>` — Save a single image response to a file
-- `--output-dir <dir>` — Save image responses under a directory
+- `--output <file>` — Save a single image response to a file; required unless `--output-dir` is set
+- `--output-dir <dir>` — Save image responses under a directory; required unless `--output` is set
 
 ## Workflows
 
@@ -148,6 +148,8 @@ Use this when section output contains `![](images/...)` and the image is needed.
 ```powershell
 node scripts/query-markdown.mjs image --library-id 1 --key ABCD1234 --path "images/a.jpg" --output a.jpg
 ```
+
+Image commands must provide `--output` or `--output-dir`; the CLI will not discard image bytes to stdout.
 
 ## Error Handling
 
