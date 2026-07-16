@@ -1,5 +1,9 @@
 import { resolveAttachment } from "./attachmentResolver";
-import { parseHeadings, readSection, searchMarkdown } from "./markdownParser";
+import {
+  parseHeadings,
+  readSectionGroups,
+  searchMarkdown,
+} from "./markdownParser";
 import {
   AttachmentSummary,
   ItemSummary,
@@ -31,6 +35,7 @@ export interface MarkdownQueryService {
     attachmentKey?: string;
     granularity?: MarkdownGranularity;
     sectionPath?: string[] | string;
+    sectionNumber?: string;
     q?: string;
     contextParagraphs?: number;
   }): Promise<unknown>;
@@ -127,8 +132,11 @@ export function createMarkdownQueryService(deps: {
         return { ...base, granularity, headings: parseHeadings(markdown) };
       }
       if (granularity === "section") {
-        const section = readSection(markdown, input.sectionPath ?? []);
-        return { ...base, granularity, ...section };
+        const groups = readSectionGroups(markdown, {
+          sectionNumber: input.sectionNumber,
+          sectionPath: normalizeGroupedSectionPath(input.sectionPath),
+        });
+        return { ...base, granularity, groups };
       }
       if (granularity === "search") {
         return {
@@ -150,6 +158,15 @@ export function createMarkdownQueryService(deps: {
       );
     },
   };
+}
+
+/**
+ * 将旧 endpoint 可传入的 sectionPath 数组兼容为分组查询字符串。
+ */
+function normalizeGroupedSectionPath(
+  sectionPath: string[] | string | undefined,
+): string | undefined {
+  return Array.isArray(sectionPath) ? sectionPath.join(" / ") : sectionPath;
 }
 
 /**

@@ -77,6 +77,7 @@ export function createMarkdownQueryEndpoint(service: MarkdownQueryService) {
                   | "search"
                   | undefined,
                 sectionPath: parseSectionPath(query.sectionPath),
+                sectionNumber: optionalString(query.sectionNumber),
                 q: optionalString(query.q),
                 contextParagraphs: parseOptionalInteger(
                   query.contextParagraphs,

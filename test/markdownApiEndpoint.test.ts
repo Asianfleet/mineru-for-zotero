@@ -111,6 +111,37 @@ describe("markdownApiEndpoint", function () {
     assert.include(String(response[2]), '"candidates":[]');
   });
 
+  it("passes sectionNumber to markdown queries", async function () {
+    setMarkdownApiEnabled(true);
+    setMarkdownApiRequireToken(false);
+    let received: unknown;
+    const endpoint = createMarkdownQueryEndpoint({
+      async searchByTitle() {
+        return { candidates: [] };
+      },
+      async queryMarkdown(input) {
+        received = input;
+        return { granularity: "section", groups: [] };
+      },
+    });
+
+    const response = await endpoint.init(
+      request("/mineru-for-zotero/markdown", {
+        query: {
+          libraryID: "1",
+          key: "PDF1",
+          granularity: "section",
+          sectionNumber: "5.1,5.2",
+        },
+      }),
+    );
+
+    assert.equal(response[0], 200);
+    assert.deepInclude(received as Record<string, unknown>, {
+      sectionNumber: "5.1,5.2",
+    });
+  });
+
   it("uses a generic internal-error message for unexpected errors", async function () {
     setMarkdownApiEnabled(true);
     setMarkdownApiRequireToken(false);

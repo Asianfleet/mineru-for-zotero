@@ -92,8 +92,41 @@ describe("markdownQueryService", function () {
     });
 
     assert.deepInclude(response, { granularity: "section" });
-    assert.nestedPropertyVal(response, "heading.title", "Methods");
-    assert.propertyVal(response, "content", "## Methods\n\nAlpha");
+    assert.nestedPropertyVal(response, "groups[0].query", "Doc / Methods");
+    assert.nestedPropertyVal(
+      response,
+      "groups[0].matches[0].heading.title",
+      "Methods",
+    );
+    assert.nestedPropertyVal(
+      response,
+      "groups[0].matches[0].content",
+      "## Methods\n\nAlpha",
+    );
+  });
+
+  it("returns grouped section results", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc\n\n## 5.1 Setup\n\nAlpha\n\n## 5.2 Results\n\nBeta",
+      }),
+    );
+
+    const response = await service.queryMarkdown({
+      libraryID: 1,
+      key: "PDF1",
+      granularity: "section",
+      sectionNumber: "5.1,5.2",
+    });
+
+    assert.deepInclude(response, { granularity: "section" });
+    assert.nestedPropertyVal(response, "groups[0].query", "5.1");
+    assert.nestedPropertyVal(
+      response,
+      "groups[0].matches[0].heading.title",
+      "5.1 Setup",
+    );
+    assert.nestedPropertyVal(response, "groups[1].query", "5.2");
   });
 
   it("returns search granularity", async function () {
