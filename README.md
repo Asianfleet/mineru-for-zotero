@@ -81,8 +81,11 @@ Main capabilities:
 - Search candidate Zotero items and PDF attachments by title keywords.
 - Read Markdown for a regular Zotero item or PDF attachment with `libraryID + key`.
 - Query at `full`, `headings`, `section`, or `search` granularity, so external agents can inspect structure before reading a section or keyword context.
+- Read numbered or fuzzy-matched sections, query tables by caption or content, and fetch saved images referenced as `images/...`.
 - Pass `attachmentKey` to select a specific PDF when a regular item has multiple PDF attachments.
 - Return precise Markdown first; if precise output is unavailable but lite output exists, return lite Markdown and mark it in `result.mode`.
+
+Compatibility note: `granularity=section` now returns grouped results under `groups`. Use `sectionNumber` for numbered headings and fuzzy `sectionPath` for partial heading/path matching. Tables are available from `/mineru-for-zotero/tables`; images referenced as `images/...` are available from `/mineru-for-zotero/image`.
 
 ### Configuration
 
@@ -126,7 +129,7 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
   --data-urlencode "libraryID=1" \
   --data-urlencode "key=ABCD1234" \
   --data-urlencode "granularity=section" \
-  --data-urlencode "sectionPath=Introduction/Background" \
+  --data-urlencode "sectionNumber=5.1,5.3-5.5" \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -142,18 +145,45 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
   -H "Authorization: Bearer <token>"
 ```
 
+Find tables by caption or cell content:
+
+```shell
+curl --get "http://127.0.0.1:23119/mineru-for-zotero/tables" \
+  --data-urlencode "libraryID=1" \
+  --data-urlencode "key=ABCD1234" \
+  --data-urlencode "q=Table 2" \
+  --data-urlencode "match=both" \
+  --data-urlencode "tableFormat=markdown" \
+  -H "Authorization: Bearer <token>"
+```
+
+Fetch a saved image referenced by Markdown:
+
+```shell
+curl --get "http://127.0.0.1:23119/mineru-for-zotero/image" \
+  --data-urlencode "libraryID=1" \
+  --data-urlencode "key=ABCD1234" \
+  --data-urlencode "path=images/a.jpg" \
+  -H "Authorization: Bearer <token>" \
+  --output a.jpg
+```
+
 Common parameters:
 
-| Parameter           | Endpoint             | Description                                                                |
-| ------------------- | -------------------- | -------------------------------------------------------------------------- |
-| `libraryID`         | `search`, `markdown` | Zotero library ID. Personal libraries are usually `1`.                     |
-| `title`             | `search`             | Title keyword used to find candidate Zotero items.                         |
-| `key`               | `markdown`           | Zotero regular item key or PDF attachment key.                             |
-| `attachmentKey`     | `markdown`           | Selects the target PDF attachment when a regular item contains PDFs.       |
-| `granularity`       | `markdown`           | `full`, `headings`, `section`, or `search`. Defaults to `full`.            |
-| `sectionPath`       | `markdown`           | Heading path for `section` queries, for example `Introduction/Background`. |
-| `q`                 | `markdown`           | Keyword used by `search` queries.                                          |
-| `contextParagraphs` | `markdown`           | Number of context paragraphs around each `search` match.                   |
+| Parameter           | Endpoint                                | Description                                                          |
+| ------------------- | --------------------------------------- | -------------------------------------------------------------------- |
+| `libraryID`         | `search`, `markdown`, `tables`, `image` | Zotero library ID. Personal libraries are usually `1`.               |
+| `title`             | `search`                                | Title keyword used to find candidate Zotero items.                   |
+| `key`               | `markdown`, `tables`, `image`           | Zotero regular item key or PDF attachment key.                       |
+| `attachmentKey`     | `markdown`, `tables`, `image`           | Selects the target PDF attachment when a regular item contains PDFs. |
+| `granularity`       | `markdown`                              | `full`, `headings`, `section`, or `search`. Defaults to `full`.      |
+| `sectionNumber`     | `markdown`                              | Numbered section query for `section`, for example `5.1,5.3-5.5`.     |
+| `sectionPath`       | `markdown`                              | Fuzzy heading or path fragments for `section` queries.               |
+| `q`                 | `markdown`, `tables`                    | Keyword used by Markdown search or table queries.                    |
+| `contextParagraphs` | `markdown`                              | Number of context paragraphs around each `search` match.             |
+| `match`             | `tables`                                | Table matching mode: `caption`, `content`, or `both`.                |
+| `tableFormat`       | `tables`                                | Table output format: `html`, `markdown`, `tsv`, `latex`, or `json`.  |
+| `path`              | `image`                                 | Image path such as `images/a.jpg`, or comma-separated image paths.   |
 
 Common error codes:
 
@@ -173,8 +203,10 @@ Run the CLI from the repository root:
 ```shell
 node mineru-for-zotero-cli/scripts/query-markdown.mjs search --library-id 1 --title "paper title" --token "<token>"
 node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity headings --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity section --section-path "Introduction/Background" --token "<token>"
+node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity section --section-number "5.1,5.3-5.5" --token "<token>"
 node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity search --query "retrieval" --context-paragraphs 2 --token "<token>"
+node mineru-for-zotero-cli/scripts/query-markdown.mjs table --library-id 1 --key ABCD1234 --query "Table 2" --match both --table-format markdown --token "<token>"
+node mineru-for-zotero-cli/scripts/query-markdown.mjs image --library-id 1 --key ABCD1234 --path "images/a.jpg" --output a.jpg --token "<token>"
 node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity full --format json --token "<token>"
 ```
 

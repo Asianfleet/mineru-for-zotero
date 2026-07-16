@@ -81,8 +81,11 @@ API Key 只保存在本机 Zotero 首选项中。
 - 按 Zotero 标题关键词检索候选条目和 PDF attachment。
 - 通过 `libraryID + key` 读取普通条目或 PDF attachment 的 Markdown。
 - 支持 `full`、`headings`、`section`、`search` 四种查询粒度，便于外部 agent 先看目录、再读取章节或关键词上下文。
+- 支持按章节号或模糊路径读取章节、按标题或内容查询表格，并读取 Markdown 中引用的 `images/...` 图片。
 - 普通条目下有多个 PDF attachment 时，可用 `attachmentKey` 精确选择目标附件。
 - 优先返回精准解析 Markdown；没有精准结果但有轻量解析结果时，返回轻量 Markdown，并在响应里标记 `result.mode`。
+
+兼容性提示：`granularity=section` 现在会在 `groups` 下返回分组结果。使用 `sectionNumber` 查询带编号的标题，使用模糊 `sectionPath` 做部分标题或路径匹配。表格可通过 `/mineru-for-zotero/tables` 读取；Markdown 中引用的 `images/...` 图片可通过 `/mineru-for-zotero/image` 读取。
 
 ### 配置
 
@@ -126,7 +129,7 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
   --data-urlencode "libraryID=1" \
   --data-urlencode "key=ABCD1234" \
   --data-urlencode "granularity=section" \
-  --data-urlencode "sectionPath=Introduction/Background" \
+  --data-urlencode "sectionNumber=5.1,5.3-5.5" \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -142,18 +145,45 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
   -H "Authorization: Bearer <token>"
 ```
 
+按标题或单元格内容查询表格：
+
+```shell
+curl --get "http://127.0.0.1:23119/mineru-for-zotero/tables" \
+  --data-urlencode "libraryID=1" \
+  --data-urlencode "key=ABCD1234" \
+  --data-urlencode "q=Table 2" \
+  --data-urlencode "match=both" \
+  --data-urlencode "tableFormat=markdown" \
+  -H "Authorization: Bearer <token>"
+```
+
+读取 Markdown 中引用的已保存图片：
+
+```shell
+curl --get "http://127.0.0.1:23119/mineru-for-zotero/image" \
+  --data-urlencode "libraryID=1" \
+  --data-urlencode "key=ABCD1234" \
+  --data-urlencode "path=images/a.jpg" \
+  -H "Authorization: Bearer <token>" \
+  --output a.jpg
+```
+
 常用参数：
 
-| 参数                | 端点                 | 说明                                                           |
-| ------------------- | -------------------- | -------------------------------------------------------------- |
-| `libraryID`         | `search`、`markdown` | Zotero library ID，个人库通常是 `1`。                          |
-| `title`             | `search`             | 标题关键词，用于查找候选 Zotero 条目。                         |
-| `key`               | `markdown`           | Zotero 普通条目 key 或 PDF attachment key。                    |
-| `attachmentKey`     | `markdown`           | 普通条目包含多个 PDF 时指定目标 PDF attachment。               |
-| `granularity`       | `markdown`           | `full`、`headings`、`section` 或 `search`，默认 `full`。       |
-| `sectionPath`       | `markdown`           | `section` 查询使用的标题路径，例如 `Introduction/Background`。 |
-| `q`                 | `markdown`           | `search` 查询使用的关键词。                                    |
-| `contextParagraphs` | `markdown`           | `search` 命中前后的上下文段落数。                              |
+| 参数                | 端点                                    | 说明                                                         |
+| ------------------- | --------------------------------------- | ------------------------------------------------------------ |
+| `libraryID`         | `search`、`markdown`、`tables`、`image` | Zotero library ID，个人库通常是 `1`。                        |
+| `title`             | `search`                                | 标题关键词，用于查找候选 Zotero 条目。                       |
+| `key`               | `markdown`、`tables`、`image`           | Zotero 普通条目 key 或 PDF attachment key。                  |
+| `attachmentKey`     | `markdown`、`tables`、`image`           | 普通条目包含多个 PDF 时指定目标 PDF attachment。             |
+| `granularity`       | `markdown`                              | `full`、`headings`、`section` 或 `search`，默认 `full`。     |
+| `sectionNumber`     | `markdown`                              | `section` 查询使用的章节号，例如 `5.1,5.3-5.5`。             |
+| `sectionPath`       | `markdown`                              | `section` 查询使用的模糊标题或路径片段。                     |
+| `q`                 | `markdown`、`tables`                    | Markdown 搜索或表格查询使用的关键词。                        |
+| `contextParagraphs` | `markdown`                              | `search` 命中前后的上下文段落数。                            |
+| `match`             | `tables`                                | 表格匹配范围：`caption`、`content` 或 `both`。               |
+| `tableFormat`       | `tables`                                | 表格输出格式：`html`、`markdown`、`tsv`、`latex` 或 `json`。 |
+| `path`              | `image`                                 | 图片路径，例如 `images/a.jpg`，也可传入逗号分隔的多个路径。  |
 
 常见错误码：
 
@@ -173,8 +203,10 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
 ```shell
 node mineru-for-zotero-cli/scripts/query-markdown.mjs search --library-id 1 --title "paper title" --token "<token>"
 node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity headings --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity section --section-path "Introduction/Background" --token "<token>"
+node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity section --section-number "5.1,5.3-5.5" --token "<token>"
 node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity search --query "retrieval" --context-paragraphs 2 --token "<token>"
+node mineru-for-zotero-cli/scripts/query-markdown.mjs table --library-id 1 --key ABCD1234 --query "Table 2" --match both --table-format markdown --token "<token>"
+node mineru-for-zotero-cli/scripts/query-markdown.mjs image --library-id 1 --key ABCD1234 --path "images/a.jpg" --output a.jpg --token "<token>"
 node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity full --format json --token "<token>"
 ```
 

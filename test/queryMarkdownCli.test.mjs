@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -204,6 +204,138 @@ test("formats markdown search matches as text", async () => {
   );
 });
 
+test("passes section-number and formats grouped section text", async () => {
+  await withServer(
+    {
+      status: 200,
+      body: {
+        item: { key: "ABCD1234", title: "Paper" },
+        attachment: { key: "PDFKEY01", fileName: "paper.pdf" },
+        result: { mode: "precise", source: "preferred" },
+        granularity: "section",
+        groups: [
+          {
+            query: "5.1",
+            kind: "section-number",
+            status: "ok",
+            matches: [
+              {
+                heading: {
+                  title: "5.1 Setup",
+                  path: ["Paper", "5.1 Setup"],
+                  line: 10,
+                },
+                content: "## 5.1 Setup\n\nBody",
+                images: [],
+              },
+            ],
+          },
+        ],
+      },
+    },
+    async ({ port, requests }) => {
+      const result = await runCli([
+        "markdown",
+        "--port",
+        String(port),
+        "--library-id",
+        "1",
+        "--key",
+        "ABCD1234",
+        "--granularity",
+        "section",
+        "--section-number",
+        "5.1",
+      ]);
+
+      assert.equal(result.code, 0);
+      assert.match(result.stdout, /\[Group 1] 5\.1/);
+      assert.equal(requests[0].searchParams.sectionNumber, "5.1");
+    },
+  );
+});
+
+test("queries tables with table-format", async () => {
+  await withServer(
+    {
+      status: 200,
+      body: {
+        query: "Table 2",
+        match: "both",
+        tableFormat: "markdown",
+        tables: [
+          { caption: "Table 2", page: 3, rawIndex: 7, content: "| A |" },
+        ],
+      },
+    },
+    async ({ port, requests }) => {
+      const result = await runCli([
+        "table",
+        "--port",
+        String(port),
+        "--library-id",
+        "1",
+        "--key",
+        "ABCD1234",
+        "--query",
+        "Table 2",
+        "--table-format",
+        "markdown",
+      ]);
+
+      assert.equal(result.code, 0);
+      assert.match(result.stdout, /Table 2/);
+      assert.equal(requests[0].pathname, "/mineru-for-zotero/tables");
+      assert.equal(requests[0].searchParams.tableFormat, "markdown");
+    },
+  );
+});
+
+test("writes image binary responses to the requested output file", async () => {
+  const root = await mkdtemp(join(tmpdir(), "mineru-cli-image-"));
+  const outputPath = join(root, "figure.png");
+  const imageBytes = Uint8Array.from([137, 80, 78, 71]);
+
+  try {
+    await withServer(
+      {
+        status: 200,
+        headers: {
+          "content-type": "image/png",
+        },
+        rawBody: imageBytes,
+      },
+      async ({ port, requests }) => {
+        const result = await runCli([
+          "image",
+          "--port",
+          String(port),
+          "--library-id",
+          "1",
+          "--key",
+          "ABCD1234",
+          "--path",
+          "images/figure.png",
+          "--output",
+          outputPath,
+        ]);
+
+        assert.equal(result.code, 0);
+        assert.match(result.stdout, /Image saved/);
+        assert.equal(result.stderr, "");
+        assert.equal(requests[0].pathname, "/mineru-for-zotero/image");
+        assert.equal(requests[0].searchParams.path, "images/figure.png");
+        assert.deepEqual(
+          new Uint8Array(await readFile(outputPath)),
+          imageBytes,
+        );
+      },
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("formats api errors as json and exits with code 1", async () => {
   await withServer(
     {
@@ -297,8 +429,9 @@ async function withServer(response, run) {
     });
     res.writeHead(response.status, {
       "content-type": "application/json",
+      ...(response.headers ?? {}),
     });
-    res.end(JSON.stringify(response.body));
+    res.end(response.rawBody ?? JSON.stringify(response.body));
   });
 
   await new Promise((resolve) => {
