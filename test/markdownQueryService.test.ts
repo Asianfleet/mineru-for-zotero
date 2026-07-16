@@ -105,6 +105,42 @@ describe("markdownQueryService", function () {
     );
   });
 
+  it("keeps legacy sectionPath arrays as exact section queries", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown:
+          "# Doc\n\n## Methods\n\nAlpha\n\n### Setup\n\nBeta\n\n## Results\n\nGamma",
+      }),
+    );
+
+    const response = await service.queryMarkdown({
+      libraryID: 1,
+      key: "PDF1",
+      granularity: "section",
+      sectionPath: ["Doc", "Methods"],
+    });
+
+    assert.deepInclude(response, { granularity: "section" });
+    assert.nestedPropertyVal(response, "groups[0].query", "Doc / Methods");
+    assert.nestedPropertyVal(response, "groups[0].kind", "section-path");
+    assert.nestedPropertyVal(response, "groups[0].status", "ok");
+    assert.lengthOf(
+      ((response as { groups: unknown[] }).groups[0] as { matches: unknown[] })
+        .matches,
+      1,
+    );
+    assert.nestedPropertyVal(
+      response,
+      "groups[0].matches[0].heading.title",
+      "Methods",
+    );
+    assert.nestedPropertyVal(
+      response,
+      "groups[0].matches[0].content",
+      "## Methods\n\nAlpha\n\n### Setup\n\nBeta",
+    );
+  });
+
   it("returns grouped section results", async function () {
     const service = createMarkdownQueryService(
       fakeDeps({

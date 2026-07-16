@@ -1,6 +1,8 @@
 import { resolveAttachment } from "./attachmentResolver";
 import {
+  extractMarkdownImageLinks,
   parseHeadings,
+  readSection,
   readSectionGroups,
   searchMarkdown,
 } from "./markdownParser";
@@ -9,6 +11,7 @@ import {
   ItemSummary,
   MarkdownGranularity,
   MarkdownQueryError,
+  MarkdownSectionGroup,
   ParseStatusReader,
   ZoteroItemsGateway,
   ZoteroItemLike,
@@ -132,9 +135,18 @@ export function createMarkdownQueryService(deps: {
         return { ...base, granularity, headings: parseHeadings(markdown) };
       }
       if (granularity === "section") {
+        if (Array.isArray(input.sectionPath)) {
+          const group = readExactSectionPathGroup(
+            markdown,
+            input.sectionPath,
+            input.sectionNumber,
+          );
+          return { ...base, granularity, groups: [group] };
+        }
+
         const groups = readSectionGroups(markdown, {
           sectionNumber: input.sectionNumber,
-          sectionPath: normalizeGroupedSectionPath(input.sectionPath),
+          sectionPath: input.sectionPath,
         });
         return { ...base, granularity, groups };
       }
@@ -161,12 +173,38 @@ export function createMarkdownQueryService(deps: {
 }
 
 /**
- * 将旧 endpoint 可传入的 sectionPath 数组兼容为分组查询字符串。
+ * 用旧 sectionPath 数组语义精确读取一个章节，并包装为分组结果。
  */
-function normalizeGroupedSectionPath(
-  sectionPath: string[] | string | undefined,
-): string | undefined {
-  return Array.isArray(sectionPath) ? sectionPath.join(" / ") : sectionPath;
+function readExactSectionPathGroup(
+  markdown: string,
+  sectionPath: string[],
+  sectionNumber?: string,
+): MarkdownSectionGroup {
+  if (sectionNumber?.trim()) {
+    throw new MarkdownQueryError(
+      "invalid-request",
+      400,
+      "sectionNumber and sectionPath cannot be used together",
+    );
+  }
+
+  const section = readSection(markdown, sectionPath);
+  const query = sectionPath
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(" / ");
+  return {
+    query,
+    kind: "section-path",
+    status: "ok",
+    matches: [
+      {
+        ...section,
+        images: extractMarkdownImageLinks(section.content),
+      },
+    ],
+    warnings: [],
+  };
 }
 
 /**
