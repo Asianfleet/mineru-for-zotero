@@ -14,6 +14,7 @@ import {
   ItemSummary,
   MarkdownGranularity,
   MarkdownQueryError,
+  MarkdownTableSource,
   MarkdownTableFormat,
   MarkdownTableMatchMode,
   MarkdownSectionGroup,
@@ -275,11 +276,7 @@ function buildTableResults(input: {
     .filter((box) => ["table", "table_body"].includes(box.type.toLowerCase()))
     .map((box) => tableResultFromBox(box, input.tableFormat));
   const markdownTables = extractMarkdownTables(input.markdown).map((table) => ({
-    rawIndex: table.rawIndex,
-    page: table.page,
-    caption: table.caption,
-    content: table.html ?? table.text,
-    formats: { html: table.html },
+    ...tableResultFromMarkdown(table, input.tableFormat),
   }));
 
   return [...boxTables, ...markdownTables].filter((table) =>
@@ -297,10 +294,107 @@ function tableResultFromBox(
   return {
     rawIndex: box.rawIndex,
     page: box.page,
+    caption: extractTableCaption(box),
     content:
       tableFormat === "json" ? box : formatTableBoxForCopy(box, tableFormat),
     formats: box.tableFormats,
   };
+}
+
+/**
+ * 将 Markdown fallback table 转换为 API 表格结果，并按请求格式降级输出。
+ */
+function tableResultFromMarkdown(
+  table: MarkdownTableSource,
+  tableFormat: MarkdownTableFormat,
+): TableQueryResult {
+  const formats = tableFormatsFromMarkdown(table);
+  return {
+    rawIndex: table.rawIndex,
+    page: table.page,
+    caption: table.caption,
+    content: markdownTableContent(table, tableFormat, formats),
+    formats,
+  };
+}
+
+/**
+ * 为 Markdown fallback table 声明实际可用的格式。
+ */
+function tableFormatsFromMarkdown(
+  table: MarkdownTableSource,
+): Partial<Record<Exclude<MarkdownTableFormat, "json">, string>> {
+  const formats: Partial<Record<Exclude<MarkdownTableFormat, "json">, string>> =
+    {};
+  if (table.html) {
+    formats.html = table.html;
+  }
+  if (table.markdown?.trim()) {
+    formats.markdown = table.markdown.trim();
+  } else if (table.text) {
+    formats.markdown = table.text;
+  }
+  return formats;
+}
+
+/**
+ * 选择 Markdown fallback table 的返回正文，不能推导的格式退回可读文本。
+ */
+function markdownTableContent(
+  table: MarkdownTableSource,
+  tableFormat: MarkdownTableFormat,
+  formats: Partial<Record<Exclude<MarkdownTableFormat, "json">, string>>,
+): unknown {
+  if (tableFormat === "json") {
+    return {
+      rawIndex: table.rawIndex,
+      page: table.page,
+      caption: table.caption,
+      html: table.html,
+      markdown: formats.markdown,
+      text: table.text,
+    };
+  }
+  if (tableFormat === "html") {
+    return formats.html ?? formats.markdown ?? table.text;
+  }
+  return formats[tableFormat] ?? formats.markdown ?? table.text;
+}
+
+/**
+ * 从 normalized table box 的 Markdown 或表格格式中提取表格标题。
+ */
+function extractTableCaption(box: NormalizedBox): string | undefined {
+  const candidates = [
+    box.markdown,
+    box.tableFormats?.markdown,
+    box.tableFormats?.html,
+  ];
+  for (const candidate of candidates) {
+    const caption = extractCaptionLine(candidate ?? "");
+    if (caption) {
+      return caption;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * 从表格文本中提取第一条 Markdown 或 HTML caption。
+ */
+function extractCaptionLine(value: string): string | undefined {
+  const htmlCaption = /<caption\b[^>]*>([\s\S]*?)<\/caption>/i.exec(value);
+  if (htmlCaption) {
+    return htmlCaption[1]
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  return value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => /^Table\b.+$/i.test(line));
 }
 
 /**

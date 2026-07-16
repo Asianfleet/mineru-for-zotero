@@ -10,6 +10,7 @@ import {
 
 const ATX_HEADING = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
 const TOP_LEVEL_TITLE = /^#\s+.+$/;
+const TABLE_CAPTION_LINE = /^Table\b.+$/i;
 
 /**
  * 解析 Markdown ATX 标题，并为每个标题生成层级路径。
@@ -145,8 +146,9 @@ export function extractMarkdownTables(markdown: string): MarkdownTableSource[] {
   return [...markdown.matchAll(/<table\b[\s\S]*?<\/table>/gi)].map(
     (match, index) => ({
       rawIndex: index,
+      caption: findPrecedingTableCaption(markdown, match.index ?? 0),
       html: match[0],
-      text: normalizeSearchText(match[0]),
+      text: normalizeSearchText(stripHtmlTags(match[0])),
     }),
   );
 }
@@ -211,6 +213,35 @@ function normalizeSectionPath(path: string[] | string): string[] {
     .split("/")
     .map((part) => part.trim())
     .filter(Boolean);
+}
+
+/**
+ * 从 HTML table 前方最近的非空 Markdown 行提取表格标题。
+ */
+function findPrecedingTableCaption(
+  markdown: string,
+  tableStartIndex: number,
+): string | undefined {
+  const precedingLines = markdown.slice(0, tableStartIndex).split(/\r?\n/);
+  for (let index = precedingLines.length - 1; index >= 0; index--) {
+    const line = precedingLines[index].trim();
+    if (!line) {
+      continue;
+    }
+    return TABLE_CAPTION_LINE.test(line) ? line : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * 将 HTML 表格压缩为可读文本，供 Markdown fallback 搜索和降级输出使用。
+ */
+function stripHtmlTags(value: string): string {
+  return value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**

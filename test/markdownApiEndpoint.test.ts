@@ -234,6 +234,90 @@ describe("markdownApiEndpoint", function () {
     assert.notInclude(String(response[2]), "profile.sqlite");
   });
 
+  it("routes table queries with match and format parameters", async function () {
+    setMarkdownApiEnabled(true);
+    setMarkdownApiRequireToken(false);
+    let received: unknown;
+    const endpoint = createMarkdownQueryEndpoint({
+      async searchByTitle() {
+        return { candidates: [] };
+      },
+      async queryMarkdown() {
+        return { granularity: "full", content: "# Body" };
+      },
+      async queryTables(input) {
+        received = input;
+        return { tables: [{ content: "result" }] };
+      },
+    });
+
+    const response = await endpoint.init(
+      request("/mineru-for-zotero/tables", {
+        query: {
+          libraryID: "1",
+          key: "PDF1",
+          attachmentKey: "ATT1",
+          q: "Dataset",
+          match: "caption",
+          tableFormat: "markdown",
+        },
+      }),
+    );
+
+    assert.equal(response[0], 200);
+    assert.deepEqual(received, {
+      libraryID: 1,
+      key: "PDF1",
+      attachmentKey: "ATT1",
+      q: "Dataset",
+      match: "caption",
+      tableFormat: "markdown",
+    });
+    assert.include(String(response[2]), '"tables"');
+  });
+
+  it("rejects invalid table match values", async function () {
+    setMarkdownApiEnabled(true);
+    setMarkdownApiRequireToken(false);
+    const endpoint = createMarkdownQueryEndpoint(fakeService());
+
+    const response = await endpoint.init(
+      request("/mineru-for-zotero/tables", {
+        query: {
+          libraryID: "1",
+          key: "PDF1",
+          q: "Dataset",
+          match: "summary",
+        },
+      }),
+    );
+    const payload = JSON.parse(String(response[2])) as { error: string };
+
+    assert.equal(response[0], 400);
+    assert.equal(payload.error, "invalid-request");
+  });
+
+  it("rejects invalid table format values", async function () {
+    setMarkdownApiEnabled(true);
+    setMarkdownApiRequireToken(false);
+    const endpoint = createMarkdownQueryEndpoint(fakeService());
+
+    const response = await endpoint.init(
+      request("/mineru-for-zotero/tables", {
+        query: {
+          libraryID: "1",
+          key: "PDF1",
+          q: "Dataset",
+          tableFormat: "csv",
+        },
+      }),
+    );
+    const payload = JSON.parse(String(response[2])) as { error: string };
+
+    assert.equal(response[0], 400);
+    assert.equal(payload.error, "invalid-request");
+  });
+
   it("registers the expected endpoint paths", function () {
     assert.deepEqual(MARKDOWN_ENDPOINT_PATHS, [
       "/mineru-for-zotero/search",

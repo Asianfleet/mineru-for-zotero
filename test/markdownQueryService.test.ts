@@ -289,6 +289,71 @@ describe("markdownQueryService", function () {
     );
   });
 
+  it("matches precise table boxes by captions in box markdown", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc",
+        boxes: [
+          {
+            rawIndex: 8,
+            page: 4,
+            type: "table",
+            bbox: { x: 0, y: 0, width: 10, height: 10 },
+            markdown:
+              "Table 4: Ablation results\n\n<table><tr><td>Score</td></tr></table>",
+            formula: null,
+            tableFormats: {
+              html: "<table><tr><td>Score</td></tr></table>",
+            },
+          },
+        ],
+      }),
+    );
+
+    const response = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "Ablation results",
+      match: "caption",
+      tableFormat: "html",
+    });
+
+    assert.nestedPropertyVal(
+      response,
+      "tables[0].caption",
+      "Table 4: Ablation results",
+    );
+    assert.nestedPropertyVal(response, "tables[0].rawIndex", 8);
+  });
+
+  it("uses nearby Markdown captions and requested format for fallback tables", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown:
+          "# Doc\n\nTable 5: Dataset statistics\n<table><tr><th>Name</th></tr><tr><td>WikiTable</td></tr></table>",
+        boxes: [],
+      }),
+    );
+
+    const response = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "Dataset statistics",
+      match: "caption",
+      tableFormat: "markdown",
+    });
+    const table = (
+      response as {
+        tables: Array<{ content: string; formats: Record<string, string> }>;
+      }
+    ).tables[0];
+
+    assert.equal(table.content, "name wikitable");
+    assert.deepEqual(Object.keys(table.formats).sort(), ["html", "markdown"]);
+    assert.include(table.formats.html, "<table>");
+    assert.equal(table.formats.markdown, "name wikitable");
+  });
+
   it("maps missing markdown to parse-result-not-found", async function () {
     const service = createMarkdownQueryService(
       fakeDeps({
