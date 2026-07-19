@@ -363,6 +363,182 @@ describe("markdownQueryService", function () {
     assert.nestedPropertyVal(response, "tables[0].rawIndex", 9);
   });
 
+  it("matches adjacent standalone table_caption boxes as table captions", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc",
+        boxes: [
+          {
+            rawIndex: 107,
+            page: 8,
+            type: "table",
+            bbox: { x: 0, y: 20, width: 10, height: 10 },
+            markdown: "",
+            formula: null,
+            tableFormats: {
+              html: "<table><tr><td>Accuracy</td></tr></table>",
+            },
+          },
+          {
+            rawIndex: 108,
+            page: 8,
+            type: "table_caption",
+            bbox: { x: 0, y: 32, width: 10, height: 3 },
+            markdown: "Table 1: Model accuracy summary",
+            formula: null,
+          },
+          {
+            rawIndex: 109,
+            page: 8,
+            type: "table",
+            bbox: { x: 0, y: 50, width: 10, height: 10 },
+            markdown: "",
+            formula: null,
+            tableFormats: {
+              html: "<table><tr><td>Latency</td></tr></table>",
+            },
+          },
+        ],
+      }),
+    );
+
+    const response = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "Table 1",
+      match: "caption",
+      tableFormat: "html",
+    });
+
+    assert.nestedPropertyVal(
+      response,
+      "tables[0].caption",
+      "Table 1: Model accuracy summary",
+    );
+    assert.nestedPropertyVal(response, "tables[0].rawIndex", 107);
+    assert.lengthOf((response as { tables: unknown[] }).tables, 1);
+  });
+
+  it("keeps table search matches independent from requested table format", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc",
+        boxes: [
+          {
+            rawIndex: 20,
+            page: 2,
+            type: "table",
+            bbox: { x: 0, y: 0, width: 10, height: 10 },
+            markdown: "Table 6: Stable caption",
+            formula: null,
+            tableFormats: {
+              html: "<table><tr><td>AlphaMetric</td></tr></table>",
+              markdown: "| Metric |\n| --- |\n| AlphaMetric |",
+              latex: "\\begin{tabular}{c} LatexOnlyNeedle \\end{tabular}",
+            },
+          },
+        ],
+      }),
+    );
+
+    const [
+      htmlCaptionResponse,
+      latexCaptionResponse,
+      htmlContentResponse,
+      latexContentResponse,
+      htmlBothResponse,
+      latexBothResponse,
+    ] = await Promise.all([
+      service.queryTables({
+        libraryID: 1,
+        key: "PDF1",
+        q: "Stable caption",
+        match: "caption",
+        tableFormat: "html",
+      }),
+      service.queryTables({
+        libraryID: 1,
+        key: "PDF1",
+        q: "Stable caption",
+        match: "caption",
+        tableFormat: "latex",
+      }),
+      service.queryTables({
+        libraryID: 1,
+        key: "PDF1",
+        q: "AlphaMetric",
+        match: "content",
+        tableFormat: "html",
+      }),
+      service.queryTables({
+        libraryID: 1,
+        key: "PDF1",
+        q: "AlphaMetric",
+        match: "content",
+        tableFormat: "latex",
+      }),
+      service.queryTables({
+        libraryID: 1,
+        key: "PDF1",
+        q: "AlphaMetric",
+        match: "both",
+        tableFormat: "html",
+      }),
+      service.queryTables({
+        libraryID: 1,
+        key: "PDF1",
+        q: "AlphaMetric",
+        match: "both",
+        tableFormat: "latex",
+      }),
+    ]);
+    const latexOnlyResponse = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "LatexOnlyNeedle",
+      match: "both",
+      tableFormat: "latex",
+    });
+
+    assert.deepEqual(
+      (
+        htmlCaptionResponse as { tables: Array<{ rawIndex?: number }> }
+      ).tables.map((table) => table.rawIndex),
+      [20],
+    );
+    assert.deepEqual(
+      (
+        latexCaptionResponse as { tables: Array<{ rawIndex?: number }> }
+      ).tables.map((table) => table.rawIndex),
+      [20],
+    );
+    assert.deepEqual(
+      (
+        htmlContentResponse as { tables: Array<{ rawIndex?: number }> }
+      ).tables.map((table) => table.rawIndex),
+      [20],
+    );
+    assert.deepEqual(
+      (
+        latexContentResponse as { tables: Array<{ rawIndex?: number }> }
+      ).tables.map((table) => table.rawIndex),
+      [20],
+    );
+    assert.deepEqual(
+      (htmlBothResponse as { tables: Array<{ rawIndex?: number }> }).tables.map(
+        (table) => table.rawIndex,
+      ),
+      [20],
+    );
+    assert.deepEqual(
+      (
+        latexBothResponse as { tables: Array<{ rawIndex?: number }> }
+      ).tables.map((table) => table.rawIndex),
+      [20],
+    );
+    assert.deepEqual((latexOnlyResponse as { tables: unknown[] }).tables, []);
+  });
+
   it("uses nearby Markdown captions and requested format for fallback tables", async function () {
     const service = createMarkdownQueryService(
       fakeDeps({

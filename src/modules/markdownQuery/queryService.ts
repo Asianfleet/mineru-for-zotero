@@ -308,6 +308,10 @@ interface TableQueryResult {
   formats?: Partial<Record<Exclude<MarkdownTableFormat, "json">, string>>;
 }
 
+interface TableQueryCandidate extends TableQueryResult {
+  searchContent: string;
+}
+
 /**
  * 读取 normalized boxes，读取失败时降级为空数组以保留 Markdown 表格查询能力。
  */
@@ -336,17 +340,47 @@ function buildTableResults(input: {
   tableFormat: MarkdownTableFormat;
 }): TableQueryResult[] {
   const normalizedQuery = normalizeTableSearchText(input.query);
-  const boxTables = input.boxes
-    .filter((box) => ["table", "table_body"].includes(box.type.toLowerCase()))
-    .map((box) => tableResultFromBox(box, input.tableFormat));
+  const boxTables = tableResultsFromBoxes(input.boxes, input.tableFormat);
   const markdownTables = extractMarkdownTables(input.markdown).map((table) => ({
     ...tableResultFromMarkdown(table, input.tableFormat),
   }));
   const candidateTables = boxTables.length > 0 ? boxTables : markdownTables;
 
-  return candidateTables.filter((table) =>
-    tableMatches(table, normalizedQuery, input.match),
-  );
+  return candidateTables
+    .filter((table) => tableMatches(table, normalizedQuery, input.match))
+    .map(stripTableSearchFields);
+}
+
+/**
+ * 从 normalized boxes 构造表格候选，并绑定同页相邻的独立表格标题。
+ */
+function tableResultsFromBoxes(
+  boxes: NormalizedBox[],
+  tableFormat: MarkdownTableFormat,
+): TableQueryCandidate[] {
+  const usedCaptionBoxes = new Set<NormalizedBox>();
+  return boxes
+    .map((box, index) => {
+      if (!isTableBox(box)) {
+        return null;
+      }
+
+      const explicitCaption = extractTableCaption(box);
+      const adjacentCaption = explicitCaption
+        ? undefined
+        : findAdjacentTableCaption(boxes, index, usedCaptionBoxes);
+      if (adjacentCaption) {
+        usedCaptionBoxes.add(adjacentCaption);
+      }
+
+      return tableResultFromBox(
+        box,
+        tableFormat,
+        explicitCaption ??
+          (adjacentCaption ? extractTableCaption(adjacentCaption) : undefined),
+      );
+    })
+    .filter((table): table is TableQueryCandidate => table !== null);
 }
 
 /**
@@ -355,14 +389,16 @@ function buildTableResults(input: {
 function tableResultFromBox(
   box: NormalizedBox,
   tableFormat: MarkdownTableFormat,
-): TableQueryResult {
+  caption?: string,
+): TableQueryCandidate {
   return {
     rawIndex: box.rawIndex,
     page: box.page,
-    caption: extractTableCaption(box),
+    caption: caption ?? extractTableCaption(box),
     content:
       tableFormat === "json" ? box : formatTableBoxForCopy(box, tableFormat),
     formats: box.tableFormats,
+    searchContent: tableBoxSearchContent(box),
   };
 }
 
@@ -372,7 +408,7 @@ function tableResultFromBox(
 function tableResultFromMarkdown(
   table: MarkdownTableSource,
   tableFormat: MarkdownTableFormat,
-): TableQueryResult {
+): TableQueryCandidate {
   const formats = tableFormatsFromMarkdown(table);
   return {
     rawIndex: table.rawIndex,
@@ -380,7 +416,87 @@ function tableResultFromMarkdown(
     caption: table.caption,
     content: markdownTableContent(table, tableFormat, formats),
     formats,
+    searchContent: [
+      table.text,
+      table.markdown,
+      table.html,
+      formats.markdown,
+      formats.html,
+    ].join("\n"),
   };
+}
+
+/**
+ * 判断 normalized box 是否表示可查询的表格主体。
+ */
+function isTableBox(box: NormalizedBox): boolean {
+  return ["table", "table_body"].includes(box.type.toLowerCase());
+}
+
+/**
+ * 判断 normalized box 是否表示独立表格标题。
+ */
+function isTableCaptionBox(box: NormalizedBox): boolean {
+  return box.type.toLowerCase() === "table_caption";
+}
+
+/**
+ * 查找同页相邻且尚未绑定的独立表格标题，优先绑定后置 caption。
+ */
+function findAdjacentTableCaption(
+  boxes: NormalizedBox[],
+  tableIndex: number,
+  usedCaptionBoxes: Set<NormalizedBox>,
+): NormalizedBox | undefined {
+  const table = boxes[tableIndex];
+  const next = boxes[tableIndex + 1];
+  if (isUsableAdjacentCaption(table, next, usedCaptionBoxes)) {
+    return next;
+  }
+
+  const previous = boxes[tableIndex - 1];
+  if (isUsableAdjacentCaption(table, previous, usedCaptionBoxes)) {
+    return previous;
+  }
+
+  return undefined;
+}
+
+/**
+ * 判断候选 box 是否可作为当前表格的同页相邻标题。
+ */
+function isUsableAdjacentCaption(
+  table: NormalizedBox,
+  candidate: NormalizedBox | undefined,
+  usedCaptionBoxes: Set<NormalizedBox>,
+): candidate is NormalizedBox {
+  return Boolean(
+    candidate &&
+    candidate.page === table.page &&
+    isTableCaptionBox(candidate) &&
+    !usedCaptionBoxes.has(candidate) &&
+    extractTableCaption(candidate),
+  );
+}
+
+/**
+ * 构造与返回格式无关的稳定表格正文搜索内容。
+ */
+function tableBoxSearchContent(box: NormalizedBox): string {
+  return [
+    box.markdown,
+    box.tableFormats?.markdown,
+    box.tableFormats?.html,
+    box.tableFormats?.tsv,
+  ].join("\n");
+}
+
+/**
+ * 移除仅供服务端匹配使用的内部搜索字段，避免污染 API 输出。
+ */
+function stripTableSearchFields(table: TableQueryCandidate): TableQueryResult {
+  const { searchContent: _searchContent, ...result } = table;
+  return result;
 }
 
 /**
@@ -492,12 +608,12 @@ function normalizeTableSearchText(value: string): string {
  * 判断表格结果是否命中指定的标题、内容或混合匹配策略。
  */
 function tableMatches(
-  table: TableQueryResult,
+  table: TableQueryCandidate,
   normalizedQuery: string,
   match: MarkdownTableMatchMode,
 ): boolean {
   const caption = normalizeTableSearchText(table.caption ?? "");
-  const content = normalizeTableSearchText(tableContentForSearch(table));
+  const content = normalizeTableSearchText(table.searchContent);
   if (match === "caption") {
     return caption.includes(normalizedQuery);
   }
@@ -505,16 +621,6 @@ function tableMatches(
     return content.includes(normalizedQuery);
   }
   return caption.includes(normalizedQuery) || content.includes(normalizedQuery);
-}
-
-/**
- * 提取用于搜索的表格正文，JSON 内容会序列化后参与匹配。
- */
-function tableContentForSearch(table: TableQueryResult): string {
-  if (typeof table.content === "string") {
-    return table.content;
-  }
-  return JSON.stringify(table.content);
 }
 
 /**
