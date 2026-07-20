@@ -300,8 +300,8 @@ function parseTableMatch(value: string | undefined) {
   if (!text) {
     return undefined;
   }
-  if (["caption", "content", "both"].includes(text)) {
-    return text as "caption" | "content" | "both";
+  if (["caption", "content", "both", "caption-exact"].includes(text)) {
+    return text as "caption" | "content" | "both" | "caption-exact";
   }
   throw new MarkdownQueryError("invalid-request", 400, "Invalid table match");
 }

@@ -125,9 +125,13 @@ export interface MarkdownImageQueryResult {
 }
 
 /**
- * 表示表格查询匹配标题、内容或两者。
+ * 表示表格查询匹配标题、内容、两者，或精确标题表号。
  */
-export type MarkdownTableMatchMode = "caption" | "content" | "both";
+export type MarkdownTableMatchMode =
+  | "caption"
+  | "content"
+  | "both"
+  | "caption-exact";
 
 /**
  * 表示表格查询返回内容时使用的格式。

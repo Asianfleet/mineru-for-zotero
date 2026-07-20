@@ -24,7 +24,12 @@ const VALID_TABLE_FORMATS = new Set([
   "latex",
   "json",
 ]);
-const VALID_TABLE_MATCHES = new Set(["caption", "content", "both"]);
+const VALID_TABLE_MATCHES = new Set([
+  "caption",
+  "content",
+  "both",
+  "caption-exact",
+]);
 
 /**
  * Runs the CLI entry point and maps failures to stable process output.
@@ -763,7 +768,7 @@ function helpText() {
     "Usage:",
     "  node mineru-for-zotero-cli/scripts/query-markdown.mjs search --library-id <id> --title <text> [--format text|json]",
     "  node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id <id> --key <key> [--granularity full|headings|section|search] [--format text|json]",
-    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs table --library-id <id> --key <key> --query <text> [--match caption|content|both] [--table-format html|markdown|tsv|latex|json]",
+    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs table --library-id <id> --key <key> --query <text> [--match caption|content|both|caption-exact] [--table-format html|markdown|tsv|latex|json]",
     "  node mineru-for-zotero-cli/scripts/query-markdown.mjs image --library-id <id> --key <key> --path <images/...> (--output <file>|--output-dir <dir>)",
     "",
     "Common options:",
@@ -781,7 +786,7 @@ function helpText() {
     "",
     "Table options:",
     "  --query <text>               Required table caption or content query.",
-    "  --match <kind>               caption, content, or both. Default: both",
+    "  --match <kind>               caption, content, both, or caption-exact. Default: both",
     "  --table-format <format>      html, markdown, tsv, latex, or json. Default: html",
     "",
     "Image options:",

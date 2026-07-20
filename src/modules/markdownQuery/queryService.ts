@@ -614,6 +614,9 @@ function tableMatches(
 ): boolean {
   const caption = normalizeTableSearchText(table.caption ?? "");
   const content = normalizeTableSearchText(table.searchContent);
+  if (match === "caption-exact") {
+    return tableCaptionNumberMatches(table.caption ?? "", normalizedQuery);
+  }
   if (match === "caption") {
     return caption.includes(normalizedQuery);
   }
@@ -621,6 +624,34 @@ function tableMatches(
     return content.includes(normalizedQuery);
   }
   return caption.includes(normalizedQuery) || content.includes(normalizedQuery);
+}
+
+/**
+ * 判断 caption 是否包含与查询完全一致的表号 token。
+ */
+function tableCaptionNumberMatches(
+  caption: string,
+  normalizedQuery: string,
+): boolean {
+  const tableNumber = extractNormalizedTableNumber(normalizedQuery);
+  if (!tableNumber) {
+    return false;
+  }
+
+  const normalizedCaption = normalizeTableSearchText(caption);
+  return normalizedCaption.split(" ").some((part, index, parts) => {
+    return part === "table" && parts[index + 1] === tableNumber;
+  });
+}
+
+/**
+ * 从已标准化的查询中提取单一表号，非表号查询不参与精确匹配。
+ */
+function extractNormalizedTableNumber(
+  normalizedQuery: string,
+): string | undefined {
+  const match = /^table ([\p{N}]+(?:[./][\p{N}]+)*)$/u.exec(normalizedQuery);
+  return match?.[1];
 }
 
 /**

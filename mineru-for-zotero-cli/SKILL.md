@@ -29,12 +29,12 @@ node scripts/query-markdown.mjs <command> [options]
 
 ### Commands
 
-| Command    | Description                                                               | Example                                                                                                         |
-| ---------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `search`   | Search Zotero items by title and return matching candidates.              | `node scripts/query-markdown.mjs search --library-id 1 --title "keyword" --format json`                         |
-| `markdown` | Query saved MinerU Markdown for an item key, with selectable granularity. | `node scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity headings --format text`   |
-| `table`    | Find tables by caption, content, or both and return the requested format. | `node scripts/query-markdown.mjs table --library-id 1 --key ABCD1234 --query "Table 2" --table-format markdown` |
-| `image`    | Fetch image files referenced as `images/...` in Markdown output.          | `node scripts/query-markdown.mjs image --library-id 1 --key ABCD1234 --path "images/a.jpg" --output a.jpg`      |
+| Command    | Description                                                                                     | Example                                                                                                         |
+| ---------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `search`   | Search Zotero items by title and return matching candidates.                                    | `node scripts/query-markdown.mjs search --library-id 1 --title "keyword" --format json`                         |
+| `markdown` | Query saved MinerU Markdown for an item key, with selectable granularity.                       | `node scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity headings --format text`   |
+| `table`    | Find tables by caption, exact caption number, content, or both and return the requested format. | `node scripts/query-markdown.mjs table --library-id 1 --key ABCD1234 --query "Table 2" --table-format markdown` |
+| `image`    | Fetch image files referenced as `images/...` in Markdown output.                                | `node scripts/query-markdown.mjs image --library-id 1 --key ABCD1234 --path "images/a.jpg" --output a.jpg`      |
 
 ### Common Options
 
@@ -60,7 +60,7 @@ node scripts/query-markdown.mjs <command> [options]
 ### Table options
 
 - `--query <text>` — Required table caption or cell-content query
-- `--match <kind>` — caption, content, or both; default is both
+- `--match <kind>` — caption, content, both, or caption-exact; default is both
 - `--table-format <format>` — html, markdown, tsv, latex, or json; default is html
 
 ### Image options
@@ -140,6 +140,8 @@ Use this when the user asks for a table by caption or cell content.
 ```powershell
 node scripts/query-markdown.mjs table --library-id 1 --key ABCD1234 --query "Table 2" --match both --table-format markdown
 ```
+
+Use `--match caption-exact` when the query is a table-number token such as `Table 2` and should not also match `Table 20`.
 
 ### Fetch images
 

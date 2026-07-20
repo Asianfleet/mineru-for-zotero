@@ -295,6 +295,40 @@ test("passes table match and table-format options", async () => {
   );
 });
 
+test("passes caption-exact table match option", async () => {
+  await withServer(
+    {
+      status: 200,
+      body: {
+        query: "Table 1",
+        match: "caption-exact",
+        tableFormat: "html",
+        tables: [{ caption: "Table 1", page: 1, rawIndex: 1, content: "" }],
+      },
+    },
+    async ({ port, requests }) => {
+      const result = await runCli([
+        "table",
+        "--port",
+        String(port),
+        "--library-id",
+        "1",
+        "--key",
+        "ABCD1234",
+        "--query",
+        "Table 1",
+        "--match",
+        "caption-exact",
+      ]);
+
+      assert.equal(result.code, 0);
+      assert.equal(result.stderr, "");
+      assert.equal(requests[0].pathname, "/mineru-for-zotero/tables");
+      assert.equal(requests[0].searchParams.match, "caption-exact");
+    },
+  );
+});
+
 test("writes image binary responses to the requested output file", async () => {
   const root = await mkdtemp(join(tmpdir(), "mineru-cli-image-"));
   const outputPath = join(root, "figure.png");

@@ -276,6 +276,40 @@ describe("markdownApiEndpoint", function () {
     assert.include(String(response[2]), '"tables"');
   });
 
+  it("routes caption-exact table match parameters", async function () {
+    setMarkdownApiEnabled(true);
+    setMarkdownApiRequireToken(false);
+    let received: unknown;
+    const endpoint = createMarkdownQueryEndpoint({
+      async searchByTitle() {
+        return { candidates: [] };
+      },
+      async queryMarkdown() {
+        return { granularity: "full", content: "# Body" };
+      },
+      async queryTables(input) {
+        received = input;
+        return { tables: [{ content: "result" }] };
+      },
+    });
+
+    const response = await endpoint.init(
+      request("/mineru-for-zotero/tables", {
+        query: {
+          libraryID: "1",
+          key: "PDF1",
+          q: "Table 1",
+          match: "caption-exact",
+        },
+      }),
+    );
+
+    assert.equal(response[0], 200);
+    assert.deepInclude(received as Record<string, unknown>, {
+      match: "caption-exact",
+    });
+  });
+
   it("rejects invalid table match values", async function () {
     setMarkdownApiEnabled(true);
     setMarkdownApiRequireToken(false);

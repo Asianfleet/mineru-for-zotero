@@ -419,6 +419,65 @@ describe("markdownQueryService", function () {
     assert.lengthOf((response as { tables: unknown[] }).tables, 1);
   });
 
+  it("matches caption-exact table number queries without matching longer table numbers", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc",
+        boxes: [
+          tableBox(1, "Table 1: Main results", "Alpha"),
+          tableBox(10, "Table 10: Extended results", "Beta"),
+        ],
+      }),
+    );
+
+    const response = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "Table 1",
+      match: "caption-exact",
+      tableFormat: "html",
+    });
+
+    assert.deepEqual(
+      (response as { tables: Array<{ rawIndex?: number }> }).tables.map(
+        (table) => table.rawIndex,
+      ),
+      [1],
+    );
+    assert.nestedPropertyVal(
+      response,
+      "tables[0].caption",
+      "Table 1: Main results",
+    );
+  });
+
+  it("keeps caption table number queries as substring matches", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc",
+        boxes: [
+          tableBox(1, "Table 1: Main results", "Alpha"),
+          tableBox(10, "Table 10: Extended results", "Beta"),
+        ],
+      }),
+    );
+
+    const response = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "Table 1",
+      match: "caption",
+      tableFormat: "html",
+    });
+
+    assert.deepEqual(
+      (response as { tables: Array<{ rawIndex?: number }> }).tables.map(
+        (table) => table.rawIndex,
+      ),
+      [1, 10],
+    );
+  });
+
   it("keeps table search matches independent from requested table format", async function () {
     const service = createMarkdownQueryService(
       fakeDeps({
@@ -882,12 +941,33 @@ function fakeDeps(input: {
   };
 }
 
+/**
+ * 构造带 caption 和单元格文本的 normalized table 测试夹具。
+ */
+function tableBox(
+  rawIndex: number,
+  caption: string,
+  cellText: string,
+): NormalizedBox {
+  return {
+    rawIndex,
+    page: 1,
+    type: "table",
+    bbox: { x: 0, y: rawIndex, width: 10, height: 10 },
+    markdown: `${caption}\n\n<table><tr><td>${cellText}</td></tr></table>`,
+    formula: null,
+    tableFormats: {
+      html: `<table><tr><td>${cellText}</td></tr></table>`,
+    },
+  };
+}
+
 interface MarkdownQueryServiceWithTables {
   queryTables(input: {
     libraryID: number;
     key: string;
     q: string;
-    match: "caption" | "content" | "both";
+    match: "caption" | "content" | "both" | "caption-exact";
     tableFormat: "markdown";
   }): Promise<unknown>;
 }
