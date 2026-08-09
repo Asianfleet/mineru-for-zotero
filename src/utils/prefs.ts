@@ -5,6 +5,8 @@ type PluginPrefsMap = _ZoteroTypes.Prefs["PluginPrefsMap"];
 const PREFS_PREFIX = config.prefsPrefix;
 const DEFAULT_LOCAL_API_BASE_URL = "http://127.0.0.1:8000";
 const DEFAULT_LOCAL_API_TIMEOUT_MINUTES = 30;
+const DEFAULT_SYNC_FOLDER = "";
+const DEFAULT_AUTO_PARSE_PAGE_LIMIT = 0;
 
 export type ParseSource = "online" | "local";
 export type ParseMode = "precise" | "lite";
@@ -178,6 +180,26 @@ export function getSaveImages(): boolean {
 
 export function setSaveImages(value: boolean) {
   return setPref("saveImages", value);
+}
+
+export function getSyncFolder(): string {
+  const value = getPref("syncFolder" as keyof PluginPrefsMap);
+  return typeof value === "string" ? value : DEFAULT_SYNC_FOLDER;
+}
+
+export function setSyncFolder(value: string) {
+  return setPref("syncFolder" as keyof PluginPrefsMap, value);
+}
+
+export function getAutoParsePageLimit(): number {
+  const value = getPref("autoParsePageLimit" as keyof PluginPrefsMap);
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : DEFAULT_AUTO_PARSE_PAGE_LIMIT;
+}
+
+export function setAutoParsePageLimit(value: number) {
+  return setPref("autoParsePageLimit" as keyof PluginPrefsMap, value);
 }
 
 /**

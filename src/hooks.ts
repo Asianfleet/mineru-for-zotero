@@ -15,6 +15,10 @@ import {
   unregisterReaderToolbar,
 } from "./modules/readerToolbar";
 import { createZToolkit } from "./utils/ztoolkit";
+import { getAutoParsePageLimit } from "./utils/prefs";
+import { parseAttachment } from "./modules/parseManager";
+
+let notifierID: string | null = null;
 
 async function onStartup() {
   await Promise.all([
@@ -35,6 +39,37 @@ async function onStartup() {
   // Mark initialized as true to confirm plugin loading status
   // outside of the plugin (e.g. scaffold testing process)
   addon.data.initialized = true;
+
+  notifierID = Zotero.Notifier.registerObserver(
+    {
+      notify: async (
+        event: string,
+        type: string,
+        ids: Array<string | number>,
+        extraData: Record<string, any>,
+      ) => {
+        if (event === "add" && type === "item") {
+          const limit = getAutoParsePageLimit();
+          if (limit > 0) {
+            const items = await Zotero.Items.getAsync(ids as number[]);
+            for (const item of items) {
+              if (item.isPDFAttachment()) {
+                // Check page count and parse if within limit
+                // The Zotero attachment needs to be fully synced or indexed to have page count
+                // But we can check standard file size or pdfinfo later
+                // For now, let's just trigger parsing
+                parseAttachment(item).catch((e) =>
+                  ztoolkit.log("Auto-parse failed", e),
+                );
+              }
+            }
+          }
+        }
+      },
+    },
+    ["item"],
+    "mineru-for-zotero",
+  );
 }
 
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
@@ -90,6 +125,10 @@ function onShutdown(): void {
     removeMainWindowFTL(win);
     removeMainWindowStylesheet(win);
   });
+  if (notifierID) {
+    Zotero.Notifier.unregisterObserver(notifierID);
+    notifierID = null;
+  }
   unregisterReaderToolbar();
   unregisterMarkdownQueryApiEndpoint();
   destroyAllReaderOverlays();

@@ -223,13 +223,9 @@ export function decodeText(bytes: Uint8Array): string {
  */
 async function createTemporaryPath(fileName: string): Promise<string> {
   const baseDir =
-    typeof PathUtils !== "undefined"
-      ? PathUtils.tempDir
-      : OS.Constants.Path.tmpDir;
+    PathUtils.tempDir;
   const name = `${Date.now()}-${Math.random().toString(16).slice(2)}-${fileName}`;
-  return typeof PathUtils !== "undefined"
-    ? PathUtils.join(baseDir, name)
-    : OS.Path.join(baseDir, name);
+  return PathUtils.join(baseDir, name);
 }
 
 /**
@@ -239,11 +235,7 @@ async function writeTemporaryZip(
   path: string,
   bytes: Uint8Array,
 ): Promise<void> {
-  if (typeof IOUtils !== "undefined") {
-    await IOUtils.write(path, bytes, { tmpPath: `${path}.tmp` });
-    return;
-  }
-  await OS.File.writeAtomic(path, bytes, { tmpPath: `${path}.tmp` });
+  await IOUtils.write(path, bytes, { tmpPath: `${path}.tmp` });
 }
 
 /**
@@ -251,11 +243,7 @@ async function writeTemporaryZip(
  */
 async function removeTemporaryZip(path: string): Promise<void> {
   try {
-    if (typeof IOUtils !== "undefined") {
-      await IOUtils.remove(path, { ignoreAbsent: true });
-      return;
-    }
-    await OS.File.remove(path, { ignoreAbsent: true });
+    await IOUtils.remove(path, { ignoreAbsent: true });
   } catch {
     // 临时文件清理失败不应覆盖 ZIP 解析结果或原始错误。
   }

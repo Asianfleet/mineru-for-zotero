@@ -68,7 +68,7 @@ export function createStorage(rootDir: string): StorageAdapter {
 
   return {
     getAttachmentDir(ref) {
-      return getAttachmentDir(root, ref);
+      return getAttachmentDir(fsRoot, ref);
     },
 
     async hasReadyResult(ref) {

@@ -1,7 +1,7 @@
 {
   "name": "mineru-for-zotero",
   "type": "module",
-  "version": "0.9.0",
+  "version": "1.0.3",
   "description": "Parse PDFs with MinerU, show MinerU layout boxes on PDFs, and copy structured content from Zotero Reader",
   "config": {
     "addonName": "MinerU for Zotero",
@@ -32,6 +32,7 @@
     "update-deps": "npm update --save"
   },
   "dependencies": {
+    "pdf-lib": "^1.17.1",
     "zotero-plugin-toolkit": "^5.1.0-beta.13"
   },
   "devDependencies": {

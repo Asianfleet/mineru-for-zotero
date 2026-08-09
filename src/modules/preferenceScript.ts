@@ -17,6 +17,10 @@ import {
   setParseMode,
   setParseSource,
   setSaveImages,
+  getSyncFolder,
+  setSyncFolder,
+  getAutoParsePageLimit,
+  setAutoParsePageLimit,
   type ParseMode,
   type ParseSource,
 } from "../utils/prefs";
@@ -57,12 +61,161 @@ export async function registerPrefsScripts(_window: Window) {
     ?.addEventListener("click", () => {
       void storage.openDataFolder();
     });
+
+  const backupBtn = document.getElementById(`${config.addonRef}-backup-data`);
+  if (backupBtn) {
+    backupBtn.addEventListener("click", async () => {
+      const targetZipFile = await pickFileAsync(_window, "Save Backup ZIP", "modeSave");
+      if (targetZipFile) {
+        backupBtn.setAttribute("disabled", "true");
+        backupBtn.textContent = "Backing up...";
+        try {
+          const PathUtils = (globalThis as any).PathUtils;
+          const sourceDir = PathUtils.join(PathUtils.profileDir, "mineru-copy");
+          const taskFile = (Zotero as any).DataDirectory.dir + "/mineru_tasks.json";
+          
+          let copiedSomething = false;
+          const stagingDir = PathUtils.join(PathUtils.tempDir, `mineru_backup_staging_${Date.now()}`);
+          await IOUtils.makeDirectory(stagingDir, { createAncestors: true, ignoreExisting: true });
+
+          try {
+            if (typeof IOUtils !== "undefined") {
+              if (await IOUtils.exists(sourceDir)) {
+                await copyDirRecursive(sourceDir, stagingDir + "/mineru-copy");
+                copiedSomething = true;
+              }
+              if (await IOUtils.exists(taskFile)) {
+                await IOUtils.copy(taskFile, stagingDir + "/mineru_tasks.json");
+                copiedSomething = true;
+              }
+            }
+
+            if (copiedSomething) {
+              await (Zotero as any).File.zipDirectory(stagingDir, targetZipFile, null);
+              backupBtn.textContent = "Backup Complete";
+              _window.alert(`Data successfully backed up to ZIP:\n${targetZipFile}`);
+            } else {
+              backupBtn.textContent = "Nothing to Backup";
+              _window.alert("No parsed data or tasks found to backup. Finish a task first.");
+            }
+          } finally {
+            await IOUtils.remove(stagingDir, { recursive: true, ignoreAbsent: true });
+          }
+        } catch (e: any) {
+          ztoolkit.log("Backup failed", e);
+          backupBtn.textContent = "Failed: " + String(e.message || e).substring(0, 20);
+        }
+        setTimeout(() => {
+          backupBtn.removeAttribute("disabled");
+          backupBtn.textContent = "Backup Data";
+        }, 3000);
+      }
+    });
+  }
+
+  const restoreBtn = document.getElementById(`${config.addonRef}-restore-data`);
+  if (restoreBtn) {
+    restoreBtn.addEventListener("click", async () => {
+      const sourceZip = await pickFileAsync(_window, "Select Backup ZIP", "modeOpen");
+      if (sourceZip) {
+        restoreBtn.setAttribute("disabled", "true");
+        restoreBtn.textContent = "Restoring...";
+        try {
+          const PathUtils = (globalThis as any).PathUtils;
+          const targetDir = PathUtils.join(PathUtils.profileDir, "mineru-copy");
+          const taskFile = (Zotero as any).DataDirectory.dir + "/mineru_tasks.json";
+          
+          if (typeof IOUtils !== "undefined") {
+            const stagingDir = PathUtils.join(PathUtils.tempDir, `mineru_restore_staging_${Date.now()}`);
+            await IOUtils.makeDirectory(stagingDir, { createAncestors: true, ignoreExisting: true });
+
+            try {
+              extractZipToDir(sourceZip, stagingDir);
+
+              const children = await IOUtils.getChildren(stagingDir);
+              for (const child of children) {
+                const name = child.replace(/\\/g, "/").split("/").pop()!;
+                if (name === "mineru_tasks.json") {
+                  await IOUtils.copy(child, taskFile);
+                } else if (name === "mineru-copy") {
+                  const subChildren = await IOUtils.getChildren(child);
+                  for (const subChild of subChildren) {
+                    const subName = subChild.replace(/\\/g, "/").split("/").pop()!;
+                    const destChild = targetDir + "/" + subName;
+                    const stat = await IOUtils.stat(subChild);
+                    if (stat.type === "directory") {
+                      await copyDirRecursive(subChild, destChild);
+                    } else {
+                      if (!(await IOUtils.exists(targetDir))) {
+                        await IOUtils.makeDirectory(targetDir, { createAncestors: true, ignoreExisting: true });
+                      }
+                      await IOUtils.copy(subChild, destChild);
+                    }
+                  }
+                }
+              }
+            } finally {
+              await IOUtils.remove(stagingDir, { recursive: true, ignoreAbsent: true });
+            }
+          }
+          
+          restoreBtn.textContent = "Restore Complete";
+          void updateParsedCount(_window, storage);
+          _window.alert("Data restored successfully. Please restart Zotero or reload the Task Manager if necessary.");
+        } catch (e: any) {
+          ztoolkit.log("Restore failed", e);
+          restoreBtn.textContent = "Failed: " + String(e.message || e).substring(0, 20);
+        }
+        setTimeout(() => {
+          restoreBtn.removeAttribute("disabled");
+          restoreBtn.textContent = "Restore Data";
+        }, 3000);
+      }
+    });
+  }
+
+  document
+    .getElementById(`${config.addonRef}-open-task-manager`)
+    ?.addEventListener("click", () => {
+       const addonObj = (Zotero as any).MinerUForZotero;
+       if (addonObj?.api?.openTaskManagerWindow) {
+          addonObj.api.openTaskManagerWindow();
+       }
+    });
+
   document
     .getElementById(`${config.addonRef}-api-regenerate-token`)
     ?.addEventListener("click", () => {
       setMarkdownApiToken(generateMarkdownApiToken());
       void updateMarkdownApiTokenStatus(_window);
     });
+
+  const syncAllButton = document.getElementById(`${config.addonRef}-sync-all`);
+  if (syncAllButton) {
+    syncAllButton.addEventListener("click", async () => {
+      syncAllButton.setAttribute("disabled", "true");
+      syncAllButton.textContent = "Syncing...";
+      try {
+        const addonObj = (Zotero as any).MinerUForZotero;
+        if (addonObj?.api?.syncAllToAgentFolder) {
+          const syncedCount = await addonObj.api.syncAllToAgentFolder(
+            storage,
+            (synced: number, total: number) => {
+              syncAllButton.textContent = `Syncing... (${synced}/${total})`;
+            }
+          );
+          syncAllButton.textContent = `Done (${syncedCount})`;
+        }
+      } catch (e) {
+        syncAllButton.textContent = "Error";
+      }
+      setTimeout(() => {
+        syncAllButton.removeAttribute("disabled");
+        // Reset label to l10n default will require reloading the pane or just hardcoding it
+        // We can just leave it as Done
+      }, 3000);
+    });
+  }
 
   registerExternalLink(
     document,
@@ -74,6 +227,108 @@ export async function registerPrefsScripts(_window: Window) {
     `${config.addonRef}-mineru-link`,
     "https://mineru.net/",
   );
+}
+
+function pickDirectoryAsync(window: Window, title: string): Promise<string | null> {
+  return new Promise(resolve => {
+    try {
+      const Components = (window as any).Components;
+      const nsIFilePicker = Components.interfaces.nsIFilePicker;
+      const fp = Components.classes["@mozilla.org/filepicker;1"].createInstance(nsIFilePicker);
+      fp.init((window as any).browsingContext || window, title, nsIFilePicker.modeGetFolder);
+      fp.open((result: number) => {
+        if (result === nsIFilePicker.returnOK && fp.file) {
+          resolve(fp.file.path);
+        } else {
+          resolve(null);
+        }
+      });
+    } catch (e) {
+      ztoolkit.log("Failed to open file picker", e);
+      resolve(null);
+    }
+  });
+}
+
+function pickFileAsync(window: Window, title: string, mode: "modeSave" | "modeOpen"): Promise<string | null> {
+  return new Promise(resolve => {
+    try {
+      const Components = (window as any).Components;
+      const nsIFilePicker = Components.interfaces.nsIFilePicker;
+      const fp = Components.classes["@mozilla.org/filepicker;1"].createInstance(nsIFilePicker);
+      fp.init((window as any).browsingContext || window, title, nsIFilePicker[mode]);
+      fp.appendFilter("ZIP Archive", "*.zip");
+      if (mode === "modeSave") {
+        fp.defaultString = "mineru_backup.zip";
+      }
+      fp.open((result: number) => {
+        if ((result === nsIFilePicker.returnOK || result === nsIFilePicker.returnReplace) && fp.file) {
+          let path = fp.file.path;
+          if (mode === "modeSave" && !path.toLowerCase().endsWith(".zip")) {
+             path += ".zip";
+          }
+          resolve(path);
+        } else {
+          resolve(null);
+        }
+      });
+    } catch (e) {
+      ztoolkit.log("Failed to open file picker", e);
+      resolve(null);
+    }
+  });
+}
+
+function extractZipToDir(zipFilePath: string, destDir: string) {
+  const Components = (globalThis as any).Components;
+  const reader = Components.classes["@mozilla.org/libjar/zip-reader;1"].createInstance(Components.interfaces.nsIZipReader);
+  const zipFile = Components.classes["@mozilla.org/file/local;1"].createInstance(Components.interfaces.nsIFile);
+  zipFile.initWithPath(zipFilePath);
+  
+  reader.open(zipFile);
+  try {
+    const entries = reader.findEntries("*");
+    while (entries.hasMore()) {
+      const name = entries.getNext();
+      const destFile = Components.classes["@mozilla.org/file/local;1"].createInstance(Components.interfaces.nsIFile);
+      destFile.initWithPath(destDir);
+      name.split("/").forEach((part: string) => destFile.append(part));
+      
+      const entry = reader.getEntry(name);
+      if (entry.isDirectory) {
+        if (!destFile.exists()) {
+          destFile.create(Components.interfaces.nsIFile.DIRECTORY_TYPE, 0o755);
+        }
+      } else {
+        const parent = destFile.parent;
+        if (!parent.exists()) {
+          parent.create(Components.interfaces.nsIFile.DIRECTORY_TYPE, 0o755);
+        }
+        reader.extract(name, destFile);
+      }
+    }
+  } finally {
+    reader.close();
+  }
+}
+
+async function copyDirRecursive(src: string, dest: string) {
+  if (typeof IOUtils === "undefined") return;
+  if (!(await IOUtils.exists(src))) return;
+  if (!(await IOUtils.exists(dest))) {
+    await IOUtils.makeDirectory(dest, { createAncestors: true, ignoreExisting: true });
+  }
+  const children = await IOUtils.getChildren(src);
+  for (const child of children) {
+    const name = child.replace(/\\/g, "/").split("/").pop()!;
+    const destChild = dest + "/" + name;
+    const stat = await IOUtils.stat(child);
+    if (stat.type === "directory") {
+      await copyDirRecursive(child, destChild);
+    } else {
+      await IOUtils.copy(child, destChild);
+    }
+  }
 }
 
 export function getMinerUStorageRoot(): string {
@@ -131,6 +386,17 @@ export function registerPreferenceValueSync(document: Document): void {
     `zotero-prefpane-${config.addonRef}-save-images`,
     getSaveImages,
     setSaveImages,
+  );
+  registerTextPreferenceSync(
+    document,
+    `zotero-prefpane-${config.addonRef}-sync-folder`,
+    setSyncFolder,
+  );
+  registerNumberPreferenceSync(
+    document,
+    `zotero-prefpane-${config.addonRef}-auto-parse-page-limit`,
+    getAutoParsePageLimit,
+    setAutoParsePageLimit,
   );
 }
 

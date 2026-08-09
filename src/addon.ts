@@ -8,6 +8,8 @@ import type {
 } from "./modules/readerOverlay";
 import type { ReaderToolbarRegistration } from "./modules/readerToolbar";
 import { createZToolkit } from "./utils/ztoolkit";
+import { taskStore, openTaskManagerWindow } from "./modules/taskStore";
+import { syncAllToAgentFolder } from "./modules/agentSync";
 
 class Addon {
   public data: {
@@ -44,7 +46,7 @@ class Addon {
       ztoolkit: createZToolkit(),
     };
     this.hooks = hooks;
-    this.api = {};
+    this.api = { taskStore, openTaskManagerWindow, syncAllToAgentFolder };
   }
 }
 

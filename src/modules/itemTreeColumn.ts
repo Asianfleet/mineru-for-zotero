@@ -61,9 +61,10 @@ export function getMinerUParseColumnToken(
     }),
   );
   if (!status) {
-    return "";
+    return "unparsed";
   }
-  return createTokenParts(status).join("|");
+  const parts = createTokenParts(status);
+  return parts.length > 0 ? parts.join("|") : "unparsed";
 }
 
 export function createMinerUParseColumnRegistration(input: {
@@ -285,6 +286,12 @@ function createBadge(
 ): HTMLElement {
   const badge = doc.createElement("span");
   badge.className = "mineru-parse-column-badge";
+  if (token === "unparsed") {
+    badge.classList.add("mineru-parse-column-badge-unparsed");
+    // We cast to any because "item-tree-column-mineru-parse-unparsed" isn't in FluentMessageId type yet
+    badge.textContent = resolveString("item-tree-column-mineru-parse-unparsed" as any) || "Unparsed";
+    return badge;
+  }
   if (token.endsWith("-running")) {
     const mode = token.slice(0, -"-running".length);
     badge.classList.add(`mineru-parse-column-badge-${mode}`);

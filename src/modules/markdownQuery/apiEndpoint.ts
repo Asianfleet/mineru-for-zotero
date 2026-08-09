@@ -23,6 +23,8 @@ interface MarkdownEndpointRequest {
 export const MARKDOWN_ENDPOINT_PATHS = [
   "/mineru-for-zotero/search",
   "/mineru-for-zotero/markdown",
+  "/mineru-for-zotero/parse",
+  "/mineru-for-zotero/tasks",
 ] as const;
 
 /**
@@ -55,33 +57,45 @@ export function unregisterMarkdownQueryApiEndpoint(): void {
  */
 export function createMarkdownQueryEndpoint(service: MarkdownQueryService) {
   return {
-    supportedMethods: ["GET"],
+    supportedMethods: ["GET", "POST"],
     async init(options: MarkdownEndpointRequest) {
       try {
         const query = getQuery(options);
         authorize(query, options.headers);
-        const payload =
-          options.pathname === "/mineru-for-zotero/search"
-            ? await service.searchByTitle({
-                libraryID: requireInteger(query.libraryID, "libraryID"),
-                title: requireString(query.title, "title"),
-              })
-            : await service.queryMarkdown({
-                libraryID: requireInteger(query.libraryID, "libraryID"),
-                key: requireString(query.key, "key"),
-                attachmentKey: optionalString(query.attachmentKey),
-                granularity: optionalString(query.granularity) as
-                  | "full"
-                  | "headings"
-                  | "section"
-                  | "search"
-                  | undefined,
-                sectionPath: parseSectionPath(query.sectionPath),
-                q: optionalString(query.q),
-                contextParagraphs: parseOptionalInteger(
-                  query.contextParagraphs,
-                ),
-              });
+        let payload;
+        if (options.pathname === "/mineru-for-zotero/search") {
+          payload = await service.searchByTitle({
+            libraryID: requireInteger(query.libraryID, "libraryID"),
+            title: requireString(query.title, "title"),
+            tag: optionalString(query.tag),
+          });
+        } else if (options.pathname === "/mineru-for-zotero/parse") {
+          if (options.method !== "POST") throw new MarkdownQueryError("invalid-request", 405, "Method not allowed");
+          payload = await service.triggerParse({
+            libraryID: requireInteger(query.libraryID, "libraryID"),
+            key: requireString(query.key, "key"),
+            attachmentKey: optionalString(query.attachmentKey),
+          });
+        } else if (options.pathname === "/mineru-for-zotero/tasks") {
+          payload = await service.getTasks();
+        } else {
+          payload = await service.queryMarkdown({
+            libraryID: requireInteger(query.libraryID, "libraryID"),
+            key: requireString(query.key, "key"),
+            attachmentKey: optionalString(query.attachmentKey),
+            granularity: optionalString(query.granularity) as
+              | "full"
+              | "headings"
+              | "section"
+              | "search"
+              | undefined,
+            sectionPath: parseSectionPath(query.sectionPath),
+            q: optionalString(query.q),
+            contextParagraphs: parseOptionalInteger(
+              query.contextParagraphs,
+            ),
+          });
+        }
 
         return json(200, payload);
       } catch (error) {
@@ -126,9 +140,13 @@ function toZoteroEndpoint(
 async function searchItemsByTitle(input: {
   libraryID: number;
   title: string;
+  tag?: string;
 }): Promise<ZoteroItemLike[]> {
   const search = new Zotero.Search({ libraryID: input.libraryID });
   search.addCondition("title", "contains", input.title);
+  if (input.tag) {
+    search.addCondition("tag", "is", input.tag);
+  }
   const ids = await search.search();
   return Zotero.Items.getAsync(ids);
 }

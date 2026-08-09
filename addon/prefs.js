@@ -7,3 +7,5 @@ pref("apiEnabled", false);
 pref("apiRequireToken", true);
 pref("apiToken", "");
 pref("saveImages", true);
+pref("syncFolder", "");
+pref("autoParsePageLimit", 0);

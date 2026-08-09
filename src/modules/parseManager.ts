@@ -21,6 +21,9 @@ import {
   markAttachmentParseReady,
   markAttachmentParseRunning,
 } from "./itemTreeColumn";
+import { syncResultToAgentFolder } from "./agentSync";
+import { taskStore, openTaskManagerWindow } from "./taskStore";
+import { getPdfPageCount, splitPdf } from "./pdfSplitter";
 import { createStorage, type StorageAdapter } from "./storage";
 import { getString } from "../utils/locale";
 import {
@@ -208,16 +211,40 @@ async function parseAttachmentsWithDependencies(
             total: attachmentsToParse.length,
           })
         : undefined;
-    await Promise.all(
-      attachmentsToParse.map((attachment) =>
-        parseAttachmentWithDependencies(
-          attachment,
-          options,
-          dependencies,
-          noticeContext,
-        ),
-      ),
-    );
+
+    // Limit concurrency to 3
+    const concurrency = 3;
+    let active = 0;
+    const queue = [...attachmentsToParse];
+
+    try {
+      openTaskManagerWindow();
+    } catch (e) {
+      ztoolkit.log("Failed to open Task Manager window", e);
+    }
+
+    await new Promise<void>((resolve) => {
+      const next = () => {
+        if (queue.length === 0 && active === 0) {
+          resolve();
+          return;
+        }
+        while (active < concurrency && queue.length > 0) {
+          const attachment = queue.shift()!;
+          active++;
+          parseAttachmentWithDependencies(
+            attachment,
+            options,
+            dependencies,
+            noticeContext,
+          ).finally(() => {
+            active--;
+            next();
+          });
+        }
+      };
+      next();
+    });
     return;
   }
 
@@ -241,6 +268,7 @@ async function parseAttachmentsWithDependencies(
     attachmentsToParse,
     dependencies,
   );
+
   if (attachmentsToParse.length === 0) {
     return;
   }
@@ -254,16 +282,40 @@ async function parseAttachmentsWithDependencies(
         })
       : undefined;
 
-  await Promise.all(
-    attachmentsToParse.map((attachment) =>
-      parseAttachmentWithDependencies(
-        attachment,
-        { ...options, force: true },
-        dependencies,
-        noticeContext,
-      ),
-    ),
-  );
+  // Limit concurrency to 3
+  const concurrency = 3;
+  let active = 0;
+  const queue = [...attachmentsToParse];
+
+  // Open the global Task Manager UI to view progress
+  try {
+    openTaskManagerWindow();
+  } catch (e) {
+    ztoolkit.log("Failed to open Task Manager window", e);
+  }
+
+  await new Promise<void>((resolve) => {
+    const next = () => {
+      if (queue.length === 0 && active === 0) {
+        resolve();
+        return;
+      }
+      while (active < concurrency && queue.length > 0) {
+        const attachment = queue.shift()!;
+        active++;
+        parseAttachmentWithDependencies(
+          attachment,
+          { ...options, force: true },
+          dependencies,
+          noticeContext,
+        ).finally(() => {
+          active--;
+          next();
+        });
+      }
+    };
+    next();
+  });
 }
 
 async function getSubmittableAttachments(
@@ -284,6 +336,26 @@ async function getSubmittableAttachments(
         logFileAccessFailure(attachment, filePath, dependencies);
         dependencies.showMessage("parse-error-file-access");
         return null;
+      }
+
+      // Check file size limit (200MB = 200 * 1024 * 1024 bytes)
+      try {
+        const stat = await OS.File.stat(filePath);
+        if (stat.size > 200 * 1024 * 1024) {
+          dependencies.log("File exceeds 200MB limit", filePath);
+          // Show error and tag
+          dependencies.showMessage("parse-error-empty-boxes"); // fallback message, ideally should have a dedicated one
+          try {
+            attachment.removeTag("MinerU: Processing ⏳");
+            attachment.addTag("MinerU: Failed ❌", 1);
+            await attachment.saveTx();
+          } catch (e) {
+            // Ignore tag update errors
+          }
+          return null;
+        }
+      } catch (e) {
+        dependencies.log("Failed to check file size", filePath, e);
       }
 
       return attachment;
@@ -386,24 +458,161 @@ async function parseAttachmentWithDependencies(
   );
   let parseColumnRunning = false;
   let phase: ParsePhase = "submit";
+  const attachmentTitle =
+    (await Zotero.Items.getAsync(attachment.id))?.parentItem?.getField(
+      "title",
+    ) ||
+    attachment.getField("title") ||
+    "PDF Document";
+
+  // Register in TaskStore
+  taskStore.upsertTask({
+    id: String(attachment.id),
+    attachment: attachmentRef,
+    title: attachmentTitle as string,
+    status: "running",
+    progress: 0,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  });
+
   try {
     await updateParseColumnStatus(dependencies, "running", attachmentRef, mode);
     parseColumnRunning = true;
     phase = "submit";
-    const { taskID } = await client.submitPdf(filePath);
-    phase = "poll";
-    showParseNotice(
-      dependencies,
-      createParseSubmittedNotice(currentNoticeContext),
-    );
-    await waitForTask(
-      client,
-      taskID,
-      dependencies.delay,
-      getPollTimeoutMs(source, dependencies),
-    );
-    phase = "download";
-    const result = await client.downloadResult(taskID);
+    const filePath =
+      (attachment as any)._mineruSplitPath || attachment.getFilePath()!;
+      
+    const pageCount = await getPdfPageCount(filePath);
+    let results: any[] = [];
+    let taskIDs: string[] = [];
+
+    if (pageCount > 200) {
+      const CHUNK_SIZE = 200;
+      const chunks = Math.ceil(pageCount / CHUNK_SIZE);
+      const tmpDir = Zotero.DataDirectory.dir;
+      
+      for (let i = 0; i < chunks; i++) {
+        const startPage = i * CHUNK_SIZE + 1;
+        const endPage = Math.min((i + 1) * CHUNK_SIZE, pageCount);
+        const targetPath = toNativePath(`${tmpDir}/mineru-part-${attachment.id}-${i}.pdf`);
+        
+        const success = await splitPdf(filePath, targetPath, startPage, endPage);
+        if (!success) {
+          throw new MinerUTaskError(`Failed to split PDF chunk ${i + 1}/${chunks}. pdftk may not be installed.`);
+        }
+        
+        taskStore.updateTaskStatus(
+          String(attachment.id),
+          "running",
+          undefined
+        );
+        taskStore.upsertTask({
+          ...taskStore.getTask(String(attachment.id))!,
+          detail: `[Auto-Split] Processing part ${i+1}/${chunks} (Pages ${startPage}-${endPage})`,
+        });
+        
+        const submitResult = await client.submitPdf(targetPath);
+        const taskID = submitResult.taskID;
+        taskIDs.push(taskID);
+        
+        await waitForTask(
+          client,
+          taskID,
+          dependencies.delay,
+          getPollTimeoutMs(source, dependencies),
+        );
+        
+        const res = await client.downloadResult(taskID);
+        (res as any)._chunkPageCount = endPage - startPage + 1;
+        results.push(res);
+        
+        try {
+          await IOUtils.remove(targetPath);
+        } catch (e) {}
+      }
+      
+      // Clear detail when done
+      taskStore.upsertTask({
+        ...taskStore.getTask(String(attachment.id))!,
+        detail: `[Auto-Split] Finished processing ${chunks} parts. Merging...`,
+      });
+
+    } else {
+      taskStore.upsertTask({
+        ...taskStore.getTask(String(attachment.id))!,
+        detail: `Uploading full document (${pageCount} pages)...`,
+      });
+      const submitResult = await client.submitPdf(filePath);
+      const taskID = submitResult.taskID;
+      taskIDs.push(taskID);
+      await waitForTask(
+        client,
+        taskID,
+        dependencies.delay,
+        getPollTimeoutMs(source, dependencies),
+      );
+      taskStore.upsertTask({
+        ...taskStore.getTask(String(attachment.id))!,
+        detail: `Downloading result...`,
+      });
+      phase = "download";
+      results.push(await client.downloadResult(taskID));
+    }
+
+    let mergedResult: any;
+    taskStore.upsertTask({
+      ...taskStore.getTask(String(attachment.id))!,
+      detail: undefined,
+    });
+    if (mode === "lite") {
+       mergedResult = {
+         kind: "lite",
+         markdown: results.map(r => r.markdown).join("\n\n---\n\n"),
+       };
+    } else {
+       let mergedMarkdown = "";
+       let mergedImages: any[] = [];
+       let rawResultsArr: any[] = [];
+       let mergedBoxes: any[] = [];
+       let pageOffset = 0;
+       
+       for (let i = 0; i < results.length; i++) {
+         const res = results[i];
+         rawResultsArr.push(res.rawResult);
+         
+         let md = res.markdown;
+         const images = res.images || [];
+         for (const img of images) {
+            const oldPath = img.path;
+            const newPath = `part${i}_${oldPath.replace("images/", "")}`;
+            img.path = `images/${newPath}`;
+            md = md.split(oldPath).join(img.path);
+         }
+         mergedImages.push(...images);
+         mergedMarkdown += md + (i < results.length - 1 ? "\n\n---\n\n" : "");
+         
+         const boxes = normalizeMinerUBoxes(res.rawResult);
+         for (const box of boxes) {
+            box.page += pageOffset;
+         }
+         mergedBoxes.push(...boxes);
+         
+         pageOffset += res._chunkPageCount || 200;
+       }
+       
+       mergedResult = {
+         kind: "precise",
+         rawResult: rawResultsArr,
+         markdown: mergedMarkdown,
+         images: mergedImages,
+         _mergedBoxes: mergedBoxes
+       };
+    }
+
+    const result = mergedResult;
+    const taskID = taskIDs.join(",");
+
     if (result.kind === "lite") {
       phase = "write";
       if (!result.markdown.trim()) {
@@ -431,14 +640,30 @@ async function parseAttachmentWithDependencies(
         attachmentRef,
         "lite",
       );
-      parseColumnRunning = false;
-      showParseNotice(
-        dependencies,
-        createParseFinishedNotice(currentNoticeContext),
+
+      // Update Tags
+      try {
+        attachment.removeTag("MinerU: Processing ⏳");
+        attachment.removeTag("MinerU: Failed ❌");
+        attachment.removeTag("MinerU: Precise ✅");
+        attachment.addTag("MinerU: Lite ✅", 1);
+        await attachment.saveTx();
+      } catch (e) {
+        dependencies.log("Failed to update Zotero tags", e);
+      }
+
+      // Sync to Agent folder
+      await syncResultToAgentFolder(
+        attachment,
+        storage.getAttachmentDir(attachmentRef),
       );
+
+      taskStore.updateTaskStatus(String(attachment.id), "succeeded");
+
+      parseColumnRunning = false;
       return;
     }
-    const boxes = normalizeMinerUBoxes(result.rawResult);
+    const boxes = result._mergedBoxes || normalizeMinerUBoxes(result.rawResult);
 
     if (boxes.length === 0) {
       phase = "write";
@@ -458,7 +683,15 @@ async function parseAttachmentWithDependencies(
         );
         parseColumnRunning = false;
       }
-      dependencies.showMessage("parse-error-empty-boxes");
+      try {
+        attachment.removeTag("MinerU: Processing ⏳");
+        attachment.removeTag("MinerU: Precise ✅");
+        attachment.removeTag("MinerU: Lite ✅");
+        attachment.addTag("MinerU: Failed ❌", 1);
+        await attachment.saveTx();
+      } catch (e) {
+        // Ignore tag update errors
+      }
       return;
     }
 
@@ -478,11 +711,27 @@ async function parseAttachmentWithDependencies(
       attachmentRef,
       "precise",
     );
-    parseColumnRunning = false;
-    showParseNotice(
-      dependencies,
-      createParseFinishedNotice(currentNoticeContext),
+
+    // Update Tags
+    try {
+      attachment.removeTag("MinerU: Processing ⏳");
+      attachment.removeTag("MinerU: Failed ❌");
+      attachment.removeTag("MinerU: Lite ✅");
+      attachment.addTag("MinerU: Precise ✅", 1);
+      await attachment.saveTx();
+    } catch (e) {
+      dependencies.log("Failed to update Zotero tags", e);
+    }
+
+    // Sync to Agent folder
+    await syncResultToAgentFolder(
+      attachment,
+      storage.getAttachmentDir(attachmentRef),
     );
+
+    taskStore.updateTaskStatus(String(attachment.id), "succeeded");
+
+    parseColumnRunning = false;
   } catch (error) {
     if (parseColumnRunning) {
       await updateParseColumnStatus(
@@ -500,12 +749,27 @@ async function parseAttachmentWithDependencies(
     }
 
     dependencies.log("MinerU parse failed", attachment.id, error);
+    try {
+      attachment.removeTag("MinerU: Processing ⏳");
+      attachment.removeTag("MinerU: Precise ✅");
+      attachment.removeTag("MinerU: Lite ✅");
+      attachment.addTag("MinerU: Failed ❌", 1);
+      await attachment.saveTx();
+    } catch (e) {
+      // Ignore tag update errors
+    }
+
     const failure = getParseFailureMessage(
       error,
       phase,
       mode === "precise" && hasExistingResult,
     );
-    dependencies.showMessage(failure.id, failure.args);
+
+    taskStore.updateTaskStatus(
+      String(attachment.id),
+      "failed",
+      failure.args?.error || String(error),
+    );
   }
 }
 
@@ -520,6 +784,16 @@ async function updateParseColumnStatus(
 ): Promise<void> {
   try {
     if (action === "running") {
+      try {
+        const item = await Zotero.Items.getAsync(attachment.id);
+        if (item) {
+          item.removeTag("MinerU: Failed ❌");
+          item.addTag("MinerU: Processing ⏳", 1);
+          await item.saveTx();
+        }
+      } catch (e) {
+        // Ignore tag update errors
+      }
       await dependencies.onParseColumnRunning?.(attachment, mode);
       return;
     }
@@ -667,22 +941,15 @@ export function resolveReparseChoiceFromPromptButton(
 
 function showMessage(id: FluentMessageId, args?: Record<string, string>): void {
   const lines = createProgressWindowTexts(id, args, getMessageText);
-  const lineOptions = createProgressWindowLineOptions(lines);
-  const detailLines = createProgressWindowDetailLines(lines);
-  const progressWindow = new ztoolkit.ProgressWindow(
-    addon.data.config.addonName,
-    {
-      closeTime: 4000,
-    },
-  );
-  for (const line of lineOptions) {
-    progressWindow.createLine(line);
+  const text = lines.map((l) => l.text).join("\n");
+  try {
+    const mainWin = Zotero.getMainWindow();
+    if (mainWin) {
+      mainWin.alert(text);
+    }
+  } catch (e) {
+    ztoolkit.log("Failed to show alert", e);
   }
-  for (const detailLine of detailLines) {
-    progressWindow.addDescription(detailLine);
-  }
-  progressWindow.show();
-  scheduleProgressWindowPresentation(progressWindow, detailLines);
 }
 
 export function normalizeProgressWindowText(text: string): string {

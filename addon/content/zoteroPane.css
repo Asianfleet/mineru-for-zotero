@@ -174,3 +174,9 @@
   border-style: dashed;
   color: #7a4b00;
 }
+
+.mineru-parse-column-badge-unparsed {
+  border-color: #d1d5db;
+  background: #f3f4f6;
+  color: #4b5563;
+}

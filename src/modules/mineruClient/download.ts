@@ -333,10 +333,7 @@ export async function findCurlPath(): Promise<string | null> {
  */
 export async function fileExists(path: string): Promise<boolean> {
   try {
-    if (typeof IOUtils !== "undefined") {
-      return IOUtils.exists(path);
-    }
-    return OS.File.exists(path);
+    return IOUtils.exists(path);
   } catch {
     return false;
   }
@@ -347,12 +344,8 @@ export async function fileExists(path: string): Promise<boolean> {
  */
 export async function fileSize(path: string): Promise<number> {
   try {
-    if (typeof IOUtils !== "undefined") {
-      const stat = await IOUtils.stat(path);
+    const stat = await IOUtils.stat(path);
       return stat.size ?? 0;
-    }
-    const stat = await OS.File.stat(path);
-    return stat.size ?? 0;
   } catch {
     return 0;
   }
@@ -363,13 +356,9 @@ export async function fileSize(path: string): Promise<number> {
  */
 export async function createTemporaryPath(fileName: string): Promise<string> {
   const baseDir =
-    typeof PathUtils !== "undefined"
-      ? PathUtils.tempDir
-      : OS.Constants.Path.tmpDir;
+    PathUtils.tempDir;
   const name = `${Date.now()}-${Math.random().toString(16).slice(2)}-${fileName}`;
-  return typeof PathUtils !== "undefined"
-    ? PathUtils.join(baseDir, name)
-    : OS.Path.join(baseDir, name);
+  return PathUtils.join(baseDir, name);
 }
 
 /**
@@ -377,11 +366,7 @@ export async function createTemporaryPath(fileName: string): Promise<string> {
  */
 export async function removeFileIfExists(path: string): Promise<void> {
   try {
-    if (typeof IOUtils !== "undefined") {
-      await IOUtils.remove(path, { ignoreAbsent: true });
-      return;
-    }
-    await OS.File.remove(path, { ignoreAbsent: true });
+    await IOUtils.remove(path, { ignoreAbsent: true });
   } catch {
     // Temporary-file cleanup failure should not hide the parse result.
   }
@@ -394,9 +379,5 @@ export async function writeDownloadedBytes(
   path: string,
   bytes: Uint8Array,
 ): Promise<void> {
-  if (typeof IOUtils !== "undefined") {
-    await IOUtils.write(path, bytes);
-    return;
-  }
-  await OS.File.writeAtomic(path, bytes);
+  await IOUtils.write(path, bytes);
 }

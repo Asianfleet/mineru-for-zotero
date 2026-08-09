@@ -9,6 +9,9 @@ import {
   ZoteroItemsGateway,
   ZoteroItemLike,
 } from "./types";
+import { parseAttachment } from "../parseManager";
+import { taskStore } from "../taskStore";
+import { exportBibTeX } from "../agentSync";
 
 /**
  * 表示可读取优先 Markdown 结果与解析状态的存储接口。
@@ -24,7 +27,7 @@ export interface PreferredMarkdownReader extends ParseStatusReader {
  * 表示 Markdown Query API 对外提供的服务接口。
  */
 export interface MarkdownQueryService {
-  searchByTitle(input: { libraryID: number; title: string }): Promise<unknown>;
+  searchByTitle(input: { libraryID: number; title: string; tag?: string }): Promise<unknown>;
   queryMarkdown(input: {
     libraryID: number;
     key: string;
@@ -34,6 +37,8 @@ export interface MarkdownQueryService {
     q?: string;
     contextParagraphs?: number;
   }): Promise<unknown>;
+  triggerParse(input: { libraryID: number; key: string; attachmentKey?: string }): Promise<unknown>;
+  getTasks(): Promise<unknown>;
 }
 
 /**
@@ -45,9 +50,29 @@ export function createMarkdownQueryService(deps: {
   searchItemsByTitle(input: {
     libraryID: number;
     title: string;
+    tag?: string;
   }): Promise<ZoteroItemLike[]>;
 }): MarkdownQueryService {
   return {
+    async getTasks() {
+      return { tasks: taskStore.getTasks() };
+    },
+    async triggerParse(input) {
+      const resolved = await resolveAttachment({
+        libraryID: input.libraryID,
+        key: input.key,
+        attachmentKey: input.attachmentKey,
+        items: deps.items,
+        storage: deps.storage,
+      });
+      // Try to parse using Zotero backend. This won't wait for it to finish.
+      // We don't await because it blocks the HTTP response.
+      const item = Zotero.Items.getByLibraryAndKey(input.libraryID, resolved.attachment.key);
+      if (item) {
+        parseAttachment(item).catch(e => ztoolkit.log("API Trigger Parse Error", e));
+      }
+      return { status: "submitted", itemID: resolved.attachment.id, key: resolved.attachment.key };
+    },
     async searchByTitle(input) {
       if (!input.title.trim()) {
         throw new MarkdownQueryError("invalid-request", 400, "Missing title");
@@ -118,6 +143,16 @@ export function createMarkdownQueryService(deps: {
           source: "preferred" as const,
         },
       };
+
+      try {
+        const item = Zotero.Items.getByLibraryAndKey(input.libraryID, resolved.item.key);
+        if (item) {
+          const bibtex = await exportBibTeX(item);
+          if (bibtex) {
+            (base as any).bibtex = bibtex;
+          }
+        }
+      } catch (e) {}
       const granularity = input.granularity ?? "full";
 
       if (granularity === "full") {

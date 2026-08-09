@@ -21,3 +21,10 @@ logs
 .claude
 .agent
 .superpowers
+
+# Packages and Patches
+*.patch
+*.xpi
+*.zip
+*.tar.gz
+dist/

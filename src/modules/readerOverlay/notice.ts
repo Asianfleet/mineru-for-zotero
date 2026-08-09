@@ -17,19 +17,13 @@ export function readerOverlayString(
   return fallback;
 }
 
-/** 在 reader 中弹出 overlay 提示，但提示失败不能影响主流程。 */
 export function showReaderOverlayNotice(id: FluentMessageId): void {
   const text = getReaderOverlayNoticeText(id);
   try {
-    new ztoolkit.ProgressWindow(addon.data.config.addonName, {
-      closeTime: 4000,
-    })
-      .createLine({
-        text,
-        type: "default",
-        progress: 100,
-      })
-      .show();
+    const mainWin = Zotero.getMainWindow();
+    if (mainWin) {
+      mainWin.alert(text);
+    }
   } catch {
     // 提示窗口不能影响 reader 交互。
   }

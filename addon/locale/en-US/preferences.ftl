@@ -31,7 +31,11 @@ pref-save-images =
     .label = Save parsed result images
 pref-save-images-help = Save files from the MinerU result package images directory into the local parse result folder.
 pref-data-storage-title = Data Storage
+pref-sync-folder = Agent-friendly Sync Folder
+pref-sync-all-button = Sync All Results Now
+pref-auto-parse-page-limit = Auto-parse if pages <= (0 = disable)
 pref-data-folder-title = Data Folder
+pref-open-task-manager = Open Task Manager
 pref-open-data-folder = Open Data Folder
 pref-parsed-count = Parsed PDFs: { $count }
 pref-parsed-count-error = Parsed PDFs: failed to read

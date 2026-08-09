@@ -76,6 +76,12 @@
         <html:div data-l10n-id="pref-parse-mode-help"></html:div>
       </vbox>
     </hbox>
+    <hbox align="top" style="gap: 6px; margin-top: 12px">
+      <html:button
+        id="__addonRef__-open-task-manager"
+        data-l10n-id="pref-open-task-manager"
+      ></html:button>
+    </hbox>
   </vbox>
   <vbox>
     <label>
@@ -131,12 +137,51 @@
       ></html:div>
     </vbox>
     <vbox>
+      <hbox align="center" style="gap: 6px; margin-top: 8px">
+        <label
+          for="zotero-prefpane-__addonRef__-sync-folder"
+          data-l10n-id="pref-sync-folder"
+        ></label>
+        <html:input
+          type="text"
+          id="zotero-prefpane-__addonRef__-sync-folder"
+          preference="syncFolder"
+          placeholder="/path/to/agent/workspace"
+          style="width: 250px"
+        >
+        </html:input>
+        <html:button
+          id="__addonRef__-sync-all"
+          data-l10n-id="pref-sync-all-button"
+        ></html:button>
+      </hbox>
+    </vbox>
+    <vbox>
+      <hbox align="center" style="gap: 6px; margin-top: 8px">
+        <label
+          for="zotero-prefpane-__addonRef__-auto-parse-page-limit"
+          data-l10n-id="pref-auto-parse-page-limit"
+        ></label>
+        <html:input
+          type="number"
+          min="0"
+          step="1"
+          id="zotero-prefpane-__addonRef__-auto-parse-page-limit"
+          preference="autoParsePageLimit"
+          style="width: 72px; text-align: left"
+        >
+        </html:input>
+      </hbox>
+    </vbox>
+    <vbox>
       <html:h2 data-l10n-id="pref-data-folder-title"></html:h2>
-      <hbox>
+      <hbox style="gap: 6px;">
         <html:button
           id="__addonRef__-open-data-folder"
           data-l10n-id="pref-open-data-folder"
         ></html:button>
+        <html:button id="__addonRef__-backup-data">Backup Data</html:button>
+        <html:button id="__addonRef__-restore-data">Restore Data</html:button>
       </hbox>
       <html:div id="__addonRef__-data-folder-path"></html:div>
       <html:div id="__addonRef__-parsed-count"></html:div>

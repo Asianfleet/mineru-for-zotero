@@ -7,15 +7,13 @@
     <img src="assets/cover.png" alt="cover" width=100%/>
 </p>
 
-[中文文档](README_zh.md)
-
-MinerU for Zotero helps you parse Zotero PDF attachments with MinerU and copy layout-aware content directly from the Zotero PDF Reader.
-
 ## What You Can Do
 
-<video src="assets/demo.mp4" controls></video>
-
 - Parse one or more selected PDF attachments from the Zotero item list.
+- Automatically handles PDFs over 200 pages by splitting, parsing, and seamlessly merging the results.
+- Tracks processing jobs in the persistent **MinerU Task Manager** with status grouping (Running, Succeeded, Failed) and history clearing.
+- Automatically adds Zotero tags (`MinerU: Precise ✅`, `MinerU: Lite ✅`, `MinerU: Failed ❌`, `MinerU: Processing ⏳`) based on parse status.
+- Export results to an **Agent-friendly Sync Folder**, which automatically generates structured Markdown, images, and standard BibTeX metadata (`metadata.bib`) for each parsed PDF for seamless integration with downstream AI agents.
 - Reuse an existing parse result, or reparse and replace it when needed.
 - Show MinerU boxes in the Zotero PDF Reader.
 - Switch between all boxes, hovered boxes, and off mode.
@@ -27,19 +25,24 @@ MinerU for Zotero helps you parse Zotero PDF attachments with MinerU and copy la
 ## Requirements
 
 - Zotero 8 or 9.
-- A MinerU API Key.
+- A [MinerU API Key](https://mineru.net/apiManage/token).
+- `pdftk` installed on your system (required for processing PDFs larger than 200 pages by auto-splitting and merging).
 - PDF attachments that are available on this computer.
 
 ## Setup
 
 1. Install the plugin in Zotero.
 2. Open `Edit` -> `Settings` -> `MinerU for Zotero`.
-3. Enter your MinerU API Key.
+3. Get your API Key from [MinerU API Token Management](https://mineru.net/apiManage/token) and enter it.
 4. Optional: enable `Save parsed result images` if you want images from MinerU results to be saved locally.
 
 The API Key is stored only in local Zotero preferences.
 
 ## Parse a PDF
+
+<p align="center">
+    <img src="assets/context-menu.png" alt="context menu" width=80%/>
+</p>
 
 1. In the Zotero item list, select one or more PDF attachments.
 2. Right-click the selection and choose `Parse PDF with MinerU`.
@@ -52,6 +55,10 @@ If a selected PDF already has a parse result, choose one of these options:
 - `Reparse and overwrite`: submit the PDF again and replace the result after parsing succeeds.
 
 If parsing fails during replacement, the existing usable result is kept.
+
+<p align="center">
+    <img src="assets/status.png" alt="status" width=80%/>
+</p>
 
 ## Copy in the Reader
 
@@ -66,11 +73,28 @@ If parsing fails during replacement, the existing usable result is kept.
 
 For multi-box copying, hold `Shift` or `Ctrl` while clicking boxes. Then use the toolbar menu to copy the selected content or clear the selection. If no boxes are selected, the same copy button copies the full parsed Markdown.
 
-## Local Results
+## Local Results & Task Manager
+
+<p align="center">
+    <img src="assets/task-manager.png" alt="task manager" width=80%/>
+</p>
 
 Open `Edit` -> `Settings` -> `MinerU for Zotero` and click `Open Data Folder` to view local parse results. The settings page also shows how many PDFs currently have usable results.
 
+You can also open the **MinerU Task Manager** from the settings page to view the real-time status of your parsing jobs, view error messages, and clear your history.
+
 The result folder contains the parsed Markdown, box data used by the reader, and optional images. External tools may read these files, but editing them is not recommended.
+
+### Agent-friendly Sync Folder
+
+<p align="center">
+    <img src="assets/settings-page.png" alt="settings page" width=80%/>
+</p>
+
+For AI workflows, you can configure an **Agent-friendly Sync Folder** in the settings. When enabled, MinerU for Zotero will automatically copy parsed results (Markdown + images) into a clean, flat directory structure named after the citation key and title (`[CitationKey] - Title/`). 
+It will also automatically generate a `metadata.bib` file containing the BibTeX metadata for each item. You can click `Sync All Results Now` in the settings to bulk-export all existing historical results to this folder.
+
+This enables you to use AI Agents (like Cursor, Claude Desktop, etc.) to read the high-quality Markdown output directly. You can even equip your agent with the included CLI script (see below) to dynamically search and read files directly from the Zotero database!
 
 ## Local Markdown Query API
 
@@ -164,21 +188,42 @@ Common error codes:
 - `section-not-found`: the section path does not match; run `granularity=headings` first to inspect exact paths.
 - `missing-query`: `granularity=search` was used without `q`.
 
-### Companion Skill and CLI
+### AI Agent Integration (Companion Skill)
 
-The repository includes a companion Skill in `mineru-for-zotero-cli/`. It is intended for Codex or other local agents and wraps HTTP parameters, token headers, port detection, error hints, and readable text formatting. It has the same preconditions as the HTTP API: Zotero is running and the plugin's local Markdown query API is enabled. If the settings page requires a token, pass `--token <token>`.
+The repository includes a companion Skill in the `mineru-for-zotero-cli/` folder, which is designed to teach AI Agents (like Cursor, Claude Desktop, or local LLMs) how to query your local Zotero database directly.
 
-Run the CLI from the repository root:
+To equip your Agent with this skill:
+1. Direct your Agent to read the `mineru-for-zotero-cli/SKILL.md` file. This file contains the complete system prompt, context, and command workflows the Agent needs to interact with the local API.
+2. The Agent can then use the bundled Node.js script (`query-markdown.mjs`) to autonomously execute commands (e.g., `search`, `headings`, `section`) directly against your running Zotero client.
 
-```shell
-node mineru-for-zotero-cli/scripts/query-markdown.mjs search --library-id 1 --title "paper title" --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity headings --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity section --section-path "Introduction/Background" --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity search --query "retrieval" --context-paragraphs 2 --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity full --format json --token "<token>"
-```
+This integration abstracts away HTTP parameters, port detection, and error handling, providing the Agent with a clean, text-optimized interface for traversing complex academic documents without overflowing its context window.
 
-The CLI tries to read Zotero's local HTTP server port from the default Zotero profile. If it cannot, it uses `23119`. Add `--port <number>` to set the port manually. The default output is `--format text`, which is easier for agents to read directly. Use `--format json` for scripts and pipelines.
+### Example Agent Workflow
+
+Because the CLI output is heavily optimized for LLM consumption, external agents can autonomously traverse complex academic documents. 
+
+For example, when an AI Agent is tasked to analyze the paper *Attention Is All You Need* using this CLI, it successfully executes the following steps completely autonomously:
+
+<details>
+<summary>Click to view the Agent's autonomous test report</summary>
+
+**✅ Step 1 — Search & Identify (`search --title`)**
+The agent queries the title, identifies the item `D634TSCH`, and confirms that the precise parse result exists.
+
+**✅ Step 2 — Structure Extraction (`markdown --granularity headings`)**
+The agent extracts the 25-node heading tree (Abstract → 1 Introduction → ... → 7 Conclusion) to understand the document's structure without loading the full text into context.
+
+**✅ Step 3 — Targeted Section Reading (`markdown --granularity section`)**
+The agent precisely targets `Attention Is All You Need / 3.2.1 Scaled Dot-Product Attention` and successfully extracts the exact LaTeX formula:
+`\operatorname{Attention}(Q, K, V) = \operatorname{softmax}\left(\frac{QK^{\mathsf{T}}}{\sqrt{d_k}}\right)V`
+
+**✅ Step 4 — Contextual Search (`markdown --granularity search`)**
+By searching for `"Table 1"` with `--context-paragraphs 2`, the agent accurately locates the layer complexity table and perfectly recreates it in Markdown format, pulling the exact explanation of why Self-Attention is faster ($O(1)$ sequential operations vs $O(n)$ for Recurrent).
+
+**✅ Step 5 — Full Document Fetching (`markdown --granularity full`)**
+The agent fetches the full Markdown and flawlessly lists all 8 authors and their affiliations from the header.
+
+</details>
 
 ## Troubleshooting
 
