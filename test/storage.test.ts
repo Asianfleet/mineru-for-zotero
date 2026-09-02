@@ -494,6 +494,34 @@ describe("storage", function () {
     assert.isNull(await storage.readImageDataURL(attachment, "../a.png"));
   });
 
+  it("reads MinerU image bytes with mime type", async function () {
+    const storage = createStorage(rootDir);
+    const attachment = {
+      id: 1,
+      key: "IMGBYTES",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+
+    await storage.writeResult({
+      attachment,
+      mineruTaskID: "task-image-bytes",
+      rawResult: {},
+      markdown: "![A](images/a.jpg)",
+      boxes: [],
+      images: [{ path: "a.jpg", bytes: new Uint8Array([1, 2, 3]) }],
+    });
+
+    const image = await storage.readImage(attachment, "images/a.jpg");
+
+    assert.deepEqual(Array.from(image?.bytes ?? []), [1, 2, 3]);
+    assert.equal(image?.mime, "image/jpeg");
+    assert.equal(image?.dataURL, "data:image/jpeg;base64,AQID");
+    assert.isNull(await storage.readImage(attachment, "../a.jpg"));
+  });
+
   it("reports missing or non-ready results as not ready", async function () {
     const storage = createStorage(rootDir);
 

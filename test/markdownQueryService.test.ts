@@ -1,4 +1,5 @@
 import { assert } from "chai";
+import type { NormalizedBox } from "../src/modules/domain";
 import { createMarkdownQueryService } from "../src/modules/markdownQuery/queryService";
 import {
   MarkdownQueryError,
@@ -92,8 +93,135 @@ describe("markdownQueryService", function () {
     });
 
     assert.deepInclude(response, { granularity: "section" });
-    assert.nestedPropertyVal(response, "heading.title", "Methods");
-    assert.propertyVal(response, "content", "## Methods\n\nAlpha");
+    assert.nestedPropertyVal(response, "groups[0].query", "Doc / Methods");
+    assert.nestedPropertyVal(
+      response,
+      "groups[0].matches[0].heading.title",
+      "Methods",
+    );
+    assert.nestedPropertyVal(
+      response,
+      "groups[0].matches[0].content",
+      "## Methods\n\nAlpha",
+    );
+  });
+
+  it("keeps legacy sectionPath arrays as exact section queries", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown:
+          "# Doc\n\n## Methods\n\nAlpha\n\n### Setup\n\nBeta\n\n## Results\n\nGamma",
+      }),
+    );
+
+    const response = await service.queryMarkdown({
+      libraryID: 1,
+      key: "PDF1",
+      granularity: "section",
+      sectionPath: ["Doc", "Methods"],
+    });
+
+    assert.deepInclude(response, { granularity: "section" });
+    assert.nestedPropertyVal(response, "groups[0].query", "Doc / Methods");
+    assert.nestedPropertyVal(response, "groups[0].kind", "section-path");
+    assert.nestedPropertyVal(response, "groups[0].status", "ok");
+    assert.lengthOf(
+      ((response as { groups: unknown[] }).groups[0] as { matches: unknown[] })
+        .matches,
+      1,
+    );
+    assert.nestedPropertyVal(
+      response,
+      "groups[0].matches[0].heading.title",
+      "Methods",
+    );
+    assert.nestedPropertyVal(
+      response,
+      "groups[0].matches[0].content",
+      "## Methods\n\nAlpha\n\n### Setup\n\nBeta",
+    );
+  });
+
+  it("returns not-found group status for missing legacy sectionPath arrays", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc\n\n## Methods\n\nAlpha",
+      }),
+    );
+
+    const response = await service.queryMarkdown({
+      libraryID: 1,
+      key: "PDF1",
+      granularity: "section",
+      sectionPath: ["Doc", "Discussion"],
+    });
+
+    assert.deepInclude(response, { granularity: "section" });
+    assert.nestedPropertyVal(response, "groups[0].query", "Doc / Discussion");
+    assert.nestedPropertyVal(response, "groups[0].kind", "section-path");
+    assert.nestedPropertyVal(response, "groups[0].status", "not-found");
+    assert.deepEqual(
+      ((response as { groups: unknown[] }).groups[0] as { matches: unknown[] })
+        .matches,
+      [],
+    );
+  });
+
+  it("returns ambiguous group status for duplicate legacy sectionPath arrays", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc\n\n## Methods\n\nAlpha\n\n# Doc\n\n## Methods\n\nBeta",
+      }),
+    );
+
+    const response = await service.queryMarkdown({
+      libraryID: 1,
+      key: "PDF1",
+      granularity: "section",
+      sectionPath: ["Doc", "Methods"],
+    });
+
+    assert.deepInclude(response, { granularity: "section" });
+    assert.nestedPropertyVal(response, "groups[0].query", "Doc / Methods");
+    assert.nestedPropertyVal(response, "groups[0].kind", "section-path");
+    assert.nestedPropertyVal(response, "groups[0].status", "ambiguous");
+    assert.deepEqual(
+      ((response as { groups: unknown[] }).groups[0] as { matches: unknown[] })
+        .matches,
+      [],
+    );
+    assert.lengthOf(
+      (
+        (response as { groups: unknown[] }).groups[0] as {
+          candidates: unknown[];
+        }
+      ).candidates,
+      2,
+    );
+  });
+
+  it("returns grouped section results", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc\n\n## 5.1 Setup\n\nAlpha\n\n## 5.2 Results\n\nBeta",
+      }),
+    );
+
+    const response = await service.queryMarkdown({
+      libraryID: 1,
+      key: "PDF1",
+      granularity: "section",
+      sectionNumber: "5.1,5.2",
+    });
+
+    assert.deepInclude(response, { granularity: "section" });
+    assert.nestedPropertyVal(response, "groups[0].query", "5.1");
+    assert.nestedPropertyVal(
+      response,
+      "groups[0].matches[0].heading.title",
+      "5.1 Setup",
+    );
+    assert.nestedPropertyVal(response, "groups[1].query", "5.2");
   });
 
   it("returns search granularity", async function () {
@@ -119,6 +247,529 @@ describe("markdownQueryService", function () {
     );
     assert.nestedPropertyVal(response, "matches[0].before[0]", "Intro");
     assert.nestedPropertyVal(response, "matches[0].after[0]", "Tail");
+  });
+
+  it("queries tables by caption or content", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown:
+          "# Doc\n\nTable 2: Dataset statistics\n\n<table><tr><td>WikiTable</td></tr></table>",
+        boxes: [
+          {
+            rawIndex: 7,
+            page: 3,
+            type: "table",
+            bbox: { x: 0, y: 0, width: 10, height: 10 },
+            markdown: "",
+            formula: null,
+            tableFormats: {
+              html: "<table><tr><td>WikiTable</td></tr></table>",
+            },
+          },
+        ],
+      }),
+    );
+
+    const response = await (
+      service as MarkdownQueryServiceWithTables
+    ).queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "WikiTable",
+      match: "both",
+      tableFormat: "markdown",
+    });
+
+    assert.nestedPropertyVal(response, "tables[0].rawIndex", 7);
+    assert.include(
+      String(
+        (response as { tables: Array<{ content: string }> }).tables[0].content,
+      ),
+      "WikiTable",
+    );
+  });
+
+  it("matches precise table boxes by captions in box markdown", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc",
+        boxes: [
+          {
+            rawIndex: 8,
+            page: 4,
+            type: "table",
+            bbox: { x: 0, y: 0, width: 10, height: 10 },
+            markdown:
+              "Table 4: Ablation results\n\n<table><tr><td>Score</td></tr></table>",
+            formula: null,
+            tableFormats: {
+              html: "<table><tr><td>Score</td></tr></table>",
+            },
+          },
+        ],
+      }),
+    );
+
+    const response = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "Ablation results",
+      match: "caption",
+      tableFormat: "html",
+    });
+
+    assert.nestedPropertyVal(
+      response,
+      "tables[0].caption",
+      "Table 4: Ablation results",
+    );
+    assert.nestedPropertyVal(response, "tables[0].rawIndex", 8);
+  });
+
+  it("matches precise table box HTML captions after decoding entities", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc",
+        boxes: [
+          {
+            rawIndex: 9,
+            page: 5,
+            type: "table",
+            bbox: { x: 0, y: 0, width: 10, height: 10 },
+            markdown: "",
+            formula: null,
+            tableFormats: {
+              html: [
+                "<table>",
+                "<caption>R&amp;D Results</caption>",
+                "<tr><td>Score</td></tr>",
+                "</table>",
+              ].join(""),
+            },
+          },
+        ],
+      }),
+    );
+
+    const response = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "R&D",
+      match: "caption",
+      tableFormat: "html",
+    });
+
+    assert.nestedPropertyVal(response, "tables[0].caption", "R&D Results");
+    assert.nestedPropertyVal(response, "tables[0].rawIndex", 9);
+  });
+
+  it("matches adjacent standalone table_caption boxes as table captions", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc",
+        boxes: [
+          {
+            rawIndex: 107,
+            page: 8,
+            type: "table",
+            bbox: { x: 0, y: 20, width: 10, height: 10 },
+            markdown: "",
+            formula: null,
+            tableFormats: {
+              html: "<table><tr><td>Accuracy</td></tr></table>",
+            },
+          },
+          {
+            rawIndex: 108,
+            page: 8,
+            type: "table_caption",
+            bbox: { x: 0, y: 32, width: 10, height: 3 },
+            markdown: "Table 1: Model accuracy summary",
+            formula: null,
+          },
+          {
+            rawIndex: 109,
+            page: 8,
+            type: "table",
+            bbox: { x: 0, y: 50, width: 10, height: 10 },
+            markdown: "",
+            formula: null,
+            tableFormats: {
+              html: "<table><tr><td>Latency</td></tr></table>",
+            },
+          },
+        ],
+      }),
+    );
+
+    const response = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "Table 1",
+      match: "caption",
+      tableFormat: "html",
+    });
+
+    assert.nestedPropertyVal(
+      response,
+      "tables[0].caption",
+      "Table 1: Model accuracy summary",
+    );
+    assert.nestedPropertyVal(response, "tables[0].rawIndex", 107);
+    assert.lengthOf((response as { tables: unknown[] }).tables, 1);
+  });
+
+  it("matches caption-exact table number queries without matching longer table numbers", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc",
+        boxes: [
+          tableBox(1, "Table 1: Main results", "Alpha"),
+          tableBox(10, "Table 10: Extended results", "Beta"),
+        ],
+      }),
+    );
+
+    const response = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "Table 1",
+      match: "caption-exact",
+      tableFormat: "html",
+    });
+
+    assert.deepEqual(
+      (response as { tables: Array<{ rawIndex?: number }> }).tables.map(
+        (table) => table.rawIndex,
+      ),
+      [1],
+    );
+    assert.nestedPropertyVal(
+      response,
+      "tables[0].caption",
+      "Table 1: Main results",
+    );
+  });
+
+  it("keeps caption table number queries as substring matches", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc",
+        boxes: [
+          tableBox(1, "Table 1: Main results", "Alpha"),
+          tableBox(10, "Table 10: Extended results", "Beta"),
+        ],
+      }),
+    );
+
+    const response = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "Table 1",
+      match: "caption",
+      tableFormat: "html",
+    });
+
+    assert.deepEqual(
+      (response as { tables: Array<{ rawIndex?: number }> }).tables.map(
+        (table) => table.rawIndex,
+      ),
+      [1, 10],
+    );
+  });
+
+  it("keeps table search matches independent from requested table format", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc",
+        boxes: [
+          {
+            rawIndex: 20,
+            page: 2,
+            type: "table",
+            bbox: { x: 0, y: 0, width: 10, height: 10 },
+            markdown: "Table 6: Stable caption",
+            formula: null,
+            tableFormats: {
+              html: "<table><tr><td>AlphaMetric</td></tr></table>",
+              markdown: "| Metric |\n| --- |\n| AlphaMetric |",
+              latex: "\\begin{tabular}{c} LatexOnlyNeedle \\end{tabular}",
+            },
+          },
+        ],
+      }),
+    );
+
+    const [
+      htmlCaptionResponse,
+      latexCaptionResponse,
+      htmlContentResponse,
+      latexContentResponse,
+      htmlBothResponse,
+      latexBothResponse,
+    ] = await Promise.all([
+      service.queryTables({
+        libraryID: 1,
+        key: "PDF1",
+        q: "Stable caption",
+        match: "caption",
+        tableFormat: "html",
+      }),
+      service.queryTables({
+        libraryID: 1,
+        key: "PDF1",
+        q: "Stable caption",
+        match: "caption",
+        tableFormat: "latex",
+      }),
+      service.queryTables({
+        libraryID: 1,
+        key: "PDF1",
+        q: "AlphaMetric",
+        match: "content",
+        tableFormat: "html",
+      }),
+      service.queryTables({
+        libraryID: 1,
+        key: "PDF1",
+        q: "AlphaMetric",
+        match: "content",
+        tableFormat: "latex",
+      }),
+      service.queryTables({
+        libraryID: 1,
+        key: "PDF1",
+        q: "AlphaMetric",
+        match: "both",
+        tableFormat: "html",
+      }),
+      service.queryTables({
+        libraryID: 1,
+        key: "PDF1",
+        q: "AlphaMetric",
+        match: "both",
+        tableFormat: "latex",
+      }),
+    ]);
+    const latexOnlyResponse = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "LatexOnlyNeedle",
+      match: "both",
+      tableFormat: "latex",
+    });
+
+    assert.deepEqual(
+      (
+        htmlCaptionResponse as { tables: Array<{ rawIndex?: number }> }
+      ).tables.map((table) => table.rawIndex),
+      [20],
+    );
+    assert.deepEqual(
+      (
+        latexCaptionResponse as { tables: Array<{ rawIndex?: number }> }
+      ).tables.map((table) => table.rawIndex),
+      [20],
+    );
+    assert.deepEqual(
+      (
+        htmlContentResponse as { tables: Array<{ rawIndex?: number }> }
+      ).tables.map((table) => table.rawIndex),
+      [20],
+    );
+    assert.deepEqual(
+      (
+        latexContentResponse as { tables: Array<{ rawIndex?: number }> }
+      ).tables.map((table) => table.rawIndex),
+      [20],
+    );
+    assert.deepEqual(
+      (htmlBothResponse as { tables: Array<{ rawIndex?: number }> }).tables.map(
+        (table) => table.rawIndex,
+      ),
+      [20],
+    );
+    assert.deepEqual(
+      (
+        latexBothResponse as { tables: Array<{ rawIndex?: number }> }
+      ).tables.map((table) => table.rawIndex),
+      [20],
+    );
+    assert.deepEqual((latexOnlyResponse as { tables: unknown[] }).tables, []);
+  });
+
+  it("uses nearby Markdown captions and requested format for fallback tables", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown:
+          "# Doc\n\nTable 5: Dataset statistics\n<table><tr><th>Name</th></tr><tr><td>WikiTable</td></tr></table>",
+        boxes: [],
+      }),
+    );
+
+    const response = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "Dataset statistics",
+      match: "caption",
+      tableFormat: "markdown",
+    });
+    const table = (
+      response as {
+        tables: Array<{ content: string; formats: Record<string, string> }>;
+      }
+    ).tables[0];
+
+    assert.include(table.content, "Name");
+    assert.include(table.content, "WikiTable");
+    assert.notEqual(table.content, "name wikitable");
+    assert.deepEqual(Object.keys(table.formats).sort(), ["html", "markdown"]);
+    assert.include(table.formats.html, "<table>");
+    assert.include(table.formats.markdown, "Name");
+    assert.include(table.formats.markdown, "WikiTable");
+  });
+
+  it("matches fallback HTML table captions with caption-only queries", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown:
+          "# Doc\n\n<table><caption>Dataset Summary</caption><tr><td>WikiTable</td></tr></table>",
+        boxes: [],
+      }),
+    );
+
+    const response = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "Dataset Summary",
+      match: "caption",
+      tableFormat: "markdown",
+    });
+
+    assert.nestedPropertyVal(response, "tables[0].caption", "Dataset Summary");
+    assert.nestedPropertyVal(response, "tables[0].rawIndex", 0);
+  });
+
+  it("does not duplicate markdown fallback tables when box tables are available", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown:
+          "# Doc\n\n<table><caption>Dataset Summary</caption><tr><td>WikiTable</td></tr></table>",
+        boxes: [
+          {
+            rawIndex: 7,
+            page: 3,
+            type: "table",
+            bbox: { x: 0, y: 0, width: 10, height: 10 },
+            markdown: "",
+            formula: null,
+            tableFormats: {
+              html: "<table><caption>Dataset Summary</caption><tr><td>WikiTable</td></tr></table>",
+            },
+          },
+        ],
+      }),
+    );
+
+    const response = await service.queryTables({
+      libraryID: 1,
+      key: "PDF1",
+      q: "WikiTable",
+      match: "both",
+      tableFormat: "markdown",
+    });
+    const tables = (response as { tables: Array<{ rawIndex?: number }> })
+      .tables;
+
+    assert.lengthOf(tables, 1);
+    assert.equal(tables[0].rawIndex, 7);
+  });
+
+  it("reads image bytes and reports invalid, missing, or nested image paths", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc",
+        readImage: async (_ref, path) =>
+          ["images/a.jpg", "images/nested/b.jpg"].includes(path)
+            ? {
+                path,
+                mime: "image/jpeg",
+                bytes: new Uint8Array(
+                  path === "images/a.jpg" ? [1, 2, 3] : [4, 5, 6],
+                ),
+                dataURL:
+                  path === "images/a.jpg"
+                    ? "data:image/jpeg;base64,AQID"
+                    : "data:image/jpeg;base64,BAUG",
+              }
+            : null,
+      }),
+    );
+
+    const response = await service.readImages({
+      libraryID: 1,
+      key: "PDF1",
+      path: "images/a.jpg, images/nested/b.jpg, ../secret.png, images/./bad.jpg, images/missing.png",
+    });
+
+    assert.deepEqual(
+      response.images.map((image) => ({
+        path: image.path,
+        status: image.status,
+        mime: image.mime,
+        bytes: image.bytes ? Array.from(image.bytes) : undefined,
+      })),
+      [
+        {
+          path: "images/a.jpg",
+          status: "ok",
+          mime: "image/jpeg",
+          bytes: [1, 2, 3],
+        },
+        {
+          path: "images/nested/b.jpg",
+          status: "ok",
+          mime: "image/jpeg",
+          bytes: [4, 5, 6],
+        },
+        {
+          path: "../secret.png",
+          status: "invalid-path",
+          mime: undefined,
+          bytes: undefined,
+        },
+        {
+          path: "images/./bad.jpg",
+          status: "invalid-path",
+          mime: undefined,
+          bytes: undefined,
+        },
+        {
+          path: "images/missing.png",
+          status: "not-found",
+          mime: undefined,
+          bytes: undefined,
+        },
+      ],
+    );
+  });
+
+  it("rejects empty image path lists", async function () {
+    const service = createMarkdownQueryService(
+      fakeDeps({
+        markdown: "# Doc",
+      }),
+    );
+
+    await assertRejectsCode(
+      () =>
+        service.readImages({
+          libraryID: 1,
+          key: "PDF1",
+          path: ",,,",
+        }),
+      "invalid-request",
+    );
   });
 
   it("maps missing markdown to parse-result-not-found", async function () {
@@ -219,6 +870,7 @@ describe("markdownQueryService", function () {
 
 function fakeDeps(input: {
   markdown: string;
+  boxes?: NormalizedBox[];
   items?: ZoteroItemLike[];
   parseStatus?: {
     preciseReady: boolean;
@@ -228,6 +880,15 @@ function fakeDeps(input: {
     libraryID: number;
     key: string;
   }) => Promise<string>;
+  readImage?: (
+    ref: { libraryID: number; key: string },
+    path: string,
+  ) => Promise<{
+    path: string;
+    mime: string;
+    bytes: Uint8Array;
+    dataURL: string;
+  } | null>;
   searchItemsByTitle?: (input: {
     libraryID: number;
     title: string;
@@ -247,19 +908,27 @@ function fakeDeps(input: {
     liteReady: true,
   };
 
+  const storage = {
+    async readPreferredMarkdown(ref: { libraryID: number; key: string }) {
+      if (input.readPreferredMarkdown) {
+        return input.readPreferredMarkdown(ref);
+      }
+      return input.markdown;
+    },
+    async readParseStatus() {
+      return parseStatus;
+    },
+    async readBoxes() {
+      return input.boxes ?? [];
+    },
+    async readImage(ref: { libraryID: number; key: string }, path: string) {
+      return input.readImage?.(ref, path) ?? null;
+    },
+  };
+
   return {
     items: fakeItems(items),
-    storage: {
-      async readPreferredMarkdown(ref: { libraryID: number; key: string }) {
-        if (input.readPreferredMarkdown) {
-          return input.readPreferredMarkdown(ref);
-        }
-        return input.markdown;
-      },
-      async readParseStatus() {
-        return parseStatus;
-      },
-    },
+    storage,
     async searchItemsByTitle(searchInput: {
       libraryID: number;
       title: string;
@@ -270,6 +939,37 @@ function fakeDeps(input: {
       return [pdf];
     },
   };
+}
+
+/**
+ * 构造带 caption 和单元格文本的 normalized table 测试夹具。
+ */
+function tableBox(
+  rawIndex: number,
+  caption: string,
+  cellText: string,
+): NormalizedBox {
+  return {
+    rawIndex,
+    page: 1,
+    type: "table",
+    bbox: { x: 0, y: rawIndex, width: 10, height: 10 },
+    markdown: `${caption}\n\n<table><tr><td>${cellText}</td></tr></table>`,
+    formula: null,
+    tableFormats: {
+      html: `<table><tr><td>${cellText}</td></tr></table>`,
+    },
+  };
+}
+
+interface MarkdownQueryServiceWithTables {
+  queryTables(input: {
+    libraryID: number;
+    key: string;
+    q: string;
+    match: "caption" | "content" | "both" | "caption-exact";
+    tableFormat: "markdown";
+  }): Promise<unknown>;
 }
 
 function fakeItem(input: {

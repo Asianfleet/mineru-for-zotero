@@ -2,6 +2,7 @@ import type {
   AttachmentRef,
   LiteParseManifest,
   MinerUImageFile,
+  MinerUImageReadResult,
   NormalizedBox,
   ParseManifest,
 } from "./domain";
@@ -28,6 +29,10 @@ export interface StorageAdapter {
     ref: AttachmentKeyRef,
     imageMarkdownPath: string,
   ): Promise<string | null>;
+  readImage(
+    ref: AttachmentKeyRef,
+    imageMarkdownPath: string,
+  ): Promise<MinerUImageReadResult | null>;
   writeResult(input: {
     attachment: AttachmentRef;
     mineruTaskID: string;
@@ -144,6 +149,10 @@ export function createStorage(rootDir: string): StorageAdapter {
         getAttachmentDir(fsRoot, ref),
         imageMarkdownPath,
       );
+    },
+
+    async readImage(ref, imageMarkdownPath) {
+      return readImageFromDir(getAttachmentDir(fsRoot, ref), imageMarkdownPath);
     },
 
     async writeResult(input) {
@@ -387,6 +396,17 @@ async function readImageDataURLFromDir(
   dir: string,
   imageMarkdownPath: string,
 ): Promise<string | null> {
+  const image = await readImageFromDir(dir, imageMarkdownPath);
+  return image?.dataURL ?? null;
+}
+
+/**
+ * 从附件结果目录读取 MinerU 图片字节，并复用 Markdown 图片路径安全校验。
+ */
+async function readImageFromDir(
+  dir: string,
+  imageMarkdownPath: string,
+): Promise<MinerUImageReadResult | null> {
   const relativePath = normalizeMinerUImageMarkdownPath(imageMarkdownPath);
   if (!relativePath) {
     return null;
@@ -396,7 +416,13 @@ async function readImageDataURLFromDir(
     return null;
   }
   const bytes = await readBytes(imagePath);
-  return `data:${getImageMimeType(relativePath)};base64,${bytesToBase64(bytes)}`;
+  const mime = getImageMimeType(relativePath);
+  return {
+    path: `${IMAGES_DIR}/${relativePath}`,
+    mime,
+    bytes,
+    dataURL: `data:${mime};base64,${bytesToBase64(bytes)}`,
+  };
 }
 
 function getAttachmentDir(root: string, ref: AttachmentKeyRef): string {

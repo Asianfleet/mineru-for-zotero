@@ -2,16 +2,34 @@
 /* global AbortController, URL, clearTimeout, console, fetch, process, setTimeout */
 
 import { existsSync, readFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { Buffer } from "node:buffer";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 const DEFAULT_LISTEN_PORT = 23119;
 const DEFAULT_FORMAT = "text";
 const DEFAULT_TIMEOUT_MS = 30000;
 const SEARCH_ENDPOINT = "/mineru-for-zotero/search";
 const MARKDOWN_ENDPOINT = "/mineru-for-zotero/markdown";
+const TABLE_ENDPOINT = "/mineru-for-zotero/tables";
+const IMAGE_ENDPOINT = "/mineru-for-zotero/image";
+const VALID_COMMANDS = new Set(["search", "markdown", "table", "image"]);
 const VALID_FORMATS = new Set(["text", "json"]);
 const VALID_GRANULARITIES = new Set(["full", "headings", "section", "search"]);
+const VALID_TABLE_FORMATS = new Set([
+  "html",
+  "markdown",
+  "tsv",
+  "latex",
+  "json",
+]);
+const VALID_TABLE_MATCHES = new Set([
+  "caption",
+  "content",
+  "both",
+  "caption-exact",
+]);
 
 /**
  * Runs the CLI entry point and maps failures to stable process output.
@@ -31,11 +49,12 @@ async function main(argv) {
 
   try {
     const response = await requestMarkdownApi(options);
-    const envelope = createSuccessEnvelope(options, response);
+    const data = await prepareSuccessData(options, response);
+    const envelope = createSuccessEnvelope(options, data);
     if (options.format === "json") {
       console.log(JSON.stringify(envelope, null, 2));
     } else {
-      console.log(formatTextSuccess(options, response));
+      console.log(formatTextSuccess(options, data));
     }
     return 0;
   } catch (error) {
@@ -58,7 +77,7 @@ function parseCommand(argv) {
   }
 
   const [command, ...rest] = argv;
-  if (command !== "search" && command !== "markdown") {
+  if (!VALID_COMMANDS.has(command)) {
     throw new CliArgumentError(`Unknown command: ${command}`);
   }
 
@@ -95,6 +114,76 @@ function parseCommand(argv) {
     };
   }
 
+  if (command === "table") {
+    const key = getRequiredFlag(flags, "--key");
+    const query = getRequiredFlag(flags, "--query");
+    const tableFormat = getFlag(flags, "--table-format", "html");
+    const match = getFlag(flags, "--match", "both");
+    if (!VALID_TABLE_FORMATS.has(tableFormat)) {
+      throw new CliArgumentError("Invalid --table-format.");
+    }
+    if (!VALID_TABLE_MATCHES.has(match)) {
+      throw new CliArgumentError("Invalid --match.");
+    }
+    const params = {
+      libraryID,
+      key,
+      q: query,
+      match,
+      tableFormat,
+    };
+    addOptionalParam(
+      params,
+      "attachmentKey",
+      getFlag(flags, "--attachment-key"),
+    );
+    return {
+      command,
+      endpoint: TABLE_ENDPOINT,
+      listenPort,
+      baseUrl,
+      format,
+      timeoutMs,
+      token,
+      params,
+    };
+  }
+
+  if (command === "image") {
+    const key = getRequiredFlag(flags, "--key");
+    const path = getRequiredFlag(flags, "--path");
+    const output = getFlag(flags, "--output");
+    const outputDir = getFlag(flags, "--output-dir");
+    if (!output && !outputDir) {
+      throw new CliArgumentError(
+        "Image command requires --output or --output-dir.",
+      );
+    }
+    if (isMultiImagePath(path) && output && !outputDir) {
+      throw new CliArgumentError(
+        "Multi-image paths require --output-dir. Use --output only for a single image path.",
+      );
+    }
+    const params = { libraryID, key, path };
+    addOptionalParam(
+      params,
+      "attachmentKey",
+      getFlag(flags, "--attachment-key"),
+    );
+    return {
+      command,
+      endpoint: IMAGE_ENDPOINT,
+      listenPort,
+      baseUrl,
+      format,
+      timeoutMs,
+      token,
+      output,
+      outputDir,
+      params,
+    };
+  }
+
   const key = getRequiredFlag(flags, "--key");
   const granularity = getFlag(flags, "--granularity", "full");
   if (!VALID_GRANULARITIES.has(granularity)) {
@@ -110,6 +199,7 @@ function parseCommand(argv) {
   };
   addOptionalParam(params, "attachmentKey", getFlag(flags, "--attachment-key"));
   addOptionalParam(params, "sectionPath", getFlag(flags, "--section-path"));
+  addOptionalParam(params, "sectionNumber", getFlag(flags, "--section-number"));
   addOptionalParam(params, "q", getFlag(flags, "--query"));
 
   const contextParagraphs = getFlag(flags, "--context-paragraphs");
@@ -156,7 +246,7 @@ function parseFlags(args) {
 }
 
 /**
- * Fetches JSON from the local Zotero Markdown query API.
+ * Fetches JSON or image bytes from the local Zotero Markdown query API.
  */
 async function requestMarkdownApi(options) {
   const url = new URL(options.endpoint, options.baseUrl);
@@ -176,6 +266,17 @@ async function requestMarkdownApi(options) {
       headers,
       signal: controller.signal,
     });
+    if (
+      options.command === "image" &&
+      response.ok &&
+      !response.headers.get("content-type")?.includes("json")
+    ) {
+      return {
+        imageBytes: new Uint8Array(await response.arrayBuffer()),
+        mime:
+          response.headers.get("content-type") || "application/octet-stream",
+      };
+    }
     const payload = await parseJsonResponse(response);
     if (!response.ok) {
       throw new ApiError(response.status, payload);
@@ -189,6 +290,99 @@ async function requestMarkdownApi(options) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/**
+ * Writes requested CLI output files and returns JSON-safe success data.
+ */
+async function prepareSuccessData(options, data) {
+  if (options.command !== "image") {
+    return data;
+  }
+
+  if (data?.imageBytes instanceof Uint8Array) {
+    const outputPath = imageOutputPath(options, options.params.path);
+    if (outputPath) {
+      await writeBinaryOutput(outputPath, data.imageBytes);
+    }
+    return {
+      path: options.params.path,
+      mime: data.mime,
+      bytes: data.imageBytes.byteLength,
+      output: outputPath,
+    };
+  }
+
+  if (options.outputDir && Array.isArray(data?.images)) {
+    const writtenImages = [];
+    for (const image of data.images) {
+      if (image.status !== "ok" || typeof image.dataURL !== "string") {
+        continue;
+      }
+      const bytes = decodeDataUrl(image.dataURL);
+      if (!bytes) {
+        continue;
+      }
+      const outputPath = imageOutputPathForDir(options.outputDir, image.path);
+      await writeBinaryOutput(outputPath, bytes);
+      writtenImages.push({
+        path: image.path,
+        output: outputPath,
+        bytes: bytes.byteLength,
+      });
+    }
+    return { ...data, writtenImages };
+  }
+
+  return data;
+}
+
+/**
+ * Resolves the target path for a successful single-image response.
+ */
+function imageOutputPath(options, imagePath) {
+  if (options.output) {
+    return resolve(options.output);
+  }
+  if (options.outputDir) {
+    return imageOutputPathForDir(options.outputDir, imagePath);
+  }
+  return undefined;
+}
+
+/**
+ * Resolves a safe output path for an API image path under an output directory.
+ */
+function imageOutputPathForDir(outputDir, imagePath) {
+  const normalized = String(imagePath ?? "").replaceAll("\\", "/");
+  const withoutPrefix = normalized.startsWith("images/")
+    ? normalized.slice("images/".length)
+    : basename(normalized);
+  const safeParts = withoutPrefix
+    .split("/")
+    .map((part) => part.trim())
+    .filter((part) => part && part !== "." && part !== "..");
+  const fileParts = safeParts.length > 0 ? safeParts : [basename(normalized)];
+  return resolve(outputDir, ...fileParts);
+}
+
+/**
+ * Writes binary output and creates parent directories when needed.
+ */
+async function writeBinaryOutput(outputPath, bytes) {
+  await mkdir(dirname(outputPath), { recursive: true });
+  await writeFile(outputPath, bytes);
+}
+
+/**
+ * Decodes a base64 data URL into bytes for multi-image JSON responses.
+ */
+function decodeDataUrl(dataURL) {
+  const match = /^data:[^;,]+;base64,(.+)$/i.exec(dataURL);
+  if (!match) {
+    return undefined;
+  }
+  return new Uint8Array(Buffer.from(match[1], "base64"));
 }
 
 /**
@@ -267,6 +461,12 @@ function formatTextSuccess(options, data) {
   if (options.command === "search") {
     return formatSearchText(options, data);
   }
+  if (options.command === "table") {
+    return formatTableText(options, data);
+  }
+  if (options.command === "image") {
+    return formatImageText(options, data);
+  }
   return formatMarkdownText(options, data);
 }
 
@@ -335,7 +535,11 @@ function formatMarkdownText(options, data) {
   if (granularity === "headings") {
     lines.push("[Headings]", ...formatHeadings(data.headings));
   } else if (granularity === "section") {
-    lines.push(...formatSection(data));
+    if (Array.isArray(data.groups)) {
+      lines.push(...formatSectionGroups(data.groups));
+    } else {
+      lines.push(...formatSection(data));
+    }
   } else if (granularity === "search") {
     lines.push(...formatSearchMatches(data));
   } else {
@@ -377,6 +581,32 @@ function formatSection(data) {
 }
 
 /**
+ * Formats grouped section query responses from section-number or fuzzy path.
+ */
+function formatSectionGroups(groups) {
+  return groups.flatMap((group, index) => {
+    const matches = Array.isArray(group.matches) ? group.matches : [];
+    const lines = [
+      `[Group ${index + 1}] ${valueOrUnknown(group.query)}`,
+      `Kind: ${valueOrUnknown(group.kind)}`,
+      `Status: ${valueOrUnknown(group.status)}`,
+      `Matches: ${matches.length}`,
+    ];
+    for (const match of matches) {
+      lines.push(
+        "",
+        `Heading: ${valueOrUnknown(match.heading?.title)}`,
+        `Path: ${formatPath(match.heading?.path)}`,
+        `Line: ${valueOrUnknown(match.heading?.line)}`,
+        "",
+        match.content ?? "",
+      );
+    }
+    return lines;
+  });
+}
+
+/**
  * Formats paragraph search matches with highlighted hit paragraphs.
  */
 function formatSearchMatches(data) {
@@ -404,6 +634,76 @@ function formatSearchMatches(data) {
   });
 
   return lines;
+}
+
+/**
+ * Formats table query responses as compact, readable text.
+ */
+function formatTableText(options, data) {
+  const tables = Array.isArray(data.tables) ? data.tables : [];
+  const lines = [
+    "Markdown Table Query Result",
+    `Library: ${options.params.libraryID}`,
+    `Item: ${valueOrUnknown(options.params.key)}`,
+    `Query: ${valueOrUnknown(data.query ?? options.params.q)}`,
+    `Match: ${valueOrUnknown(data.match ?? options.params.match)}`,
+    `Format: ${valueOrUnknown(data.tableFormat ?? options.params.tableFormat)}`,
+    `Tables: ${tables.length}`,
+  ];
+
+  tables.forEach((table, index) => {
+    lines.push(
+      "",
+      `[Table ${index + 1}]`,
+      `Caption: ${valueOrUnknown(table.caption)}`,
+      `Page: ${valueOrUnknown(table.page)}`,
+      `Raw Index: ${valueOrUnknown(table.rawIndex)}`,
+      "",
+      table.content ?? "",
+    );
+  });
+
+  return lines.join("\n");
+}
+
+/**
+ * Formats image query responses without writing binary bytes to stdout.
+ */
+function formatImageText(options, data) {
+  if (typeof data.output === "string") {
+    return [
+      `Image saved: ${data.output}`,
+      `Path: ${valueOrUnknown(data.path ?? options.params.path)}`,
+      `MIME: ${valueOrUnknown(data.mime)}`,
+      `Bytes: ${valueOrUnknown(data.bytes)}`,
+    ].join("\n");
+  }
+
+  const images = Array.isArray(data.images) ? data.images : [];
+  const written = Array.isArray(data.writtenImages) ? data.writtenImages : [];
+  const lines = [
+    "Markdown Image Query Result",
+    `Library: ${options.params.libraryID}`,
+    `Item: ${valueOrUnknown(options.params.key)}`,
+    `Requested Path: ${valueOrUnknown(options.params.path)}`,
+    `Images: ${images.length}`,
+    `Written: ${written.length}`,
+  ];
+
+  for (const image of images) {
+    const saved = written.find((item) => item.path === image.path);
+    lines.push(
+      "",
+      `- ${valueOrUnknown(image.path)}`,
+      `  status: ${valueOrUnknown(image.status)}`,
+      `  mime: ${valueOrUnknown(image.mime)}`,
+    );
+    if (saved) {
+      lines.push(`  output: ${saved.output}`, `  bytes: ${saved.bytes}`);
+    }
+  }
+
+  return lines.join("\n");
 }
 
 /**
@@ -466,8 +766,10 @@ function writeArgumentError(error) {
 function helpText() {
   return [
     "Usage:",
-    "  node skill/scripts/query-markdown.mjs search --library-id <id> --title <text> [--format text|json]",
-    "  node skill/scripts/query-markdown.mjs markdown --library-id <id> --key <key> [--granularity full|headings|section|search] [--format text|json]",
+    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs search --library-id <id> --title <text> [--format text|json]",
+    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id <id> --key <key> [--granularity full|headings|section|search] [--format text|json]",
+    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs table --library-id <id> --key <key> --query <text> [--match caption|content|both|caption-exact] [--table-format html|markdown|tsv|latex|json]",
+    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs image --library-id <id> --key <key> --path <images/...> (--output <file>|--output-dir <dir>)",
     "",
     "Common options:",
     "  --port <number>              Zotero local server port. Default: auto-detect from Zotero profile, then 23119",
@@ -478,8 +780,19 @@ function helpText() {
     "Markdown options:",
     "  --attachment-key <key>       Select a specific PDF attachment under a regular item.",
     "  --section-path <path>        Section path for granularity=section.",
+    "  --section-number <expr>      Section numbers for granularity=section, such as 5.1,5.3-5.5.",
     "  --query <text>               Search query for granularity=search.",
     "  --context-paragraphs <n>     Context paragraphs for granularity=search.",
+    "",
+    "Table options:",
+    "  --query <text>               Required table caption or content query.",
+    "  --match <kind>               caption, content, both, or caption-exact. Default: both",
+    "  --table-format <format>      html, markdown, tsv, latex, or json. Default: html",
+    "",
+    "Image options:",
+    "  --path <paths>               Required image path or comma-separated paths.",
+    "  --output <file>              Save a single image response to a file. Required unless --output-dir is set.",
+    "  --output-dir <dir>           Save image responses under a directory. Required unless --output is set.",
   ].join("\n");
 }
 
@@ -508,6 +821,18 @@ function getRequiredFlag(flags, name) {
     throw new CliArgumentError(`Missing required option: ${name}`);
   }
   return value;
+}
+
+/**
+ * Returns true when an image path argument contains multiple comma-separated paths.
+ */
+function isMultiImagePath(path) {
+  return (
+    String(path)
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean).length > 1
+  );
 }
 
 /**

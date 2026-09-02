@@ -1,3 +1,5 @@
+import type { TableCopyTextFormat } from "../domain";
+
 /**
  * Markdown Query API 使用的标准错误码集合。
  */
@@ -38,6 +40,7 @@ export interface MarkdownHeading {
   title: string;
   path: string[];
   line: number;
+  number?: string;
 }
 
 /**
@@ -47,6 +50,93 @@ export interface MarkdownSectionResult {
   heading: MarkdownHeading;
   content: string;
 }
+
+/**
+ * 表示章节分组查询的输入类型。
+ */
+export type MarkdownSectionQueryKind =
+  | "section-number"
+  | "section-number-range"
+  | "section-path";
+
+/**
+ * 表示章节分组查询的匹配状态。
+ */
+export type MarkdownSectionGroupStatus =
+  | "ok"
+  | "not-found"
+  | "ambiguous"
+  | "invalid-range";
+
+/**
+ * 表示章节分组查询中命中的单个章节及其图片引用。
+ */
+export interface MarkdownSectionMatch extends MarkdownSectionResult {
+  images: string[];
+}
+
+/**
+ * 表示按章节号、章节号范围或模糊路径分组后的查询结果。
+ */
+export interface MarkdownSectionGroup {
+  query: string;
+  kind: MarkdownSectionQueryKind;
+  status: MarkdownSectionGroupStatus;
+  matches: MarkdownSectionMatch[];
+  candidates?: MarkdownHeading[];
+  warnings?: string[];
+}
+
+/**
+ * 表示从 Markdown 中提取出的表格来源。
+ */
+export interface MarkdownTableSource {
+  rawIndex?: number;
+  page?: number;
+  caption?: string;
+  html?: string;
+  markdown?: string;
+  tsv?: string;
+  latex?: string;
+  text: string;
+}
+
+/**
+ * 表示单个 Markdown 图片读取请求的状态。
+ */
+export type MarkdownImageStatus = "ok" | "not-found" | "invalid-path";
+
+/**
+ * 表示 Markdown Query API 返回的单个图片读取结果。
+ */
+export interface MarkdownImageResult {
+  path: string;
+  status: MarkdownImageStatus;
+  mime?: string;
+  dataURL?: string;
+  bytes?: Uint8Array;
+}
+
+/**
+ * 表示 Markdown Query API 图片读取响应。
+ */
+export interface MarkdownImageQueryResult {
+  images: MarkdownImageResult[];
+}
+
+/**
+ * 表示表格查询匹配标题、内容、两者，或精确标题表号。
+ */
+export type MarkdownTableMatchMode =
+  | "caption"
+  | "content"
+  | "both"
+  | "caption-exact";
+
+/**
+ * 表示表格查询返回内容时使用的格式。
+ */
+export type MarkdownTableFormat = TableCopyTextFormat | "json";
 
 /**
  * 表示一个带前后文的 Markdown 段落搜索命中。

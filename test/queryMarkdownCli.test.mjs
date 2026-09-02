@@ -1,8 +1,9 @@
 /* global URL, process */
 
 import assert from "node:assert/strict";
+import { Buffer } from "node:buffer";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -204,6 +205,319 @@ test("formats markdown search matches as text", async () => {
   );
 });
 
+test("passes comma and range section-number expressions", async () => {
+  await withServer(
+    {
+      status: 200,
+      body: {
+        item: { key: "ABCD1234", title: "Paper" },
+        attachment: { key: "PDFKEY01", fileName: "paper.pdf" },
+        result: { mode: "precise", source: "preferred" },
+        granularity: "section",
+        groups: [
+          {
+            query: "5.1,5.3-5.5",
+            kind: "section-number",
+            status: "ok",
+            matches: [
+              {
+                heading: {
+                  title: "5.1 Setup",
+                  path: ["Paper", "5.1 Setup"],
+                  line: 10,
+                },
+                content: "## 5.1 Setup\n\nBody",
+                images: [],
+              },
+            ],
+          },
+        ],
+      },
+    },
+    async ({ port, requests }) => {
+      const result = await runCli([
+        "markdown",
+        "--port",
+        String(port),
+        "--library-id",
+        "1",
+        "--key",
+        "ABCD1234",
+        "--granularity",
+        "section",
+        "--section-number",
+        "5.1,5.3-5.5",
+      ]);
+
+      assert.equal(result.code, 0);
+      assert.match(result.stdout, /\[Group 1] 5\.1,5\.3-5\.5/);
+      assert.equal(requests[0].searchParams.sectionNumber, "5.1,5.3-5.5");
+    },
+  );
+});
+
+test("passes table match and table-format options", async () => {
+  await withServer(
+    {
+      status: 200,
+      body: {
+        query: "Table 2",
+        match: "content",
+        tableFormat: "markdown",
+        tables: [
+          { caption: "Table 2", page: 3, rawIndex: 7, content: "| A |" },
+        ],
+      },
+    },
+    async ({ port, requests }) => {
+      const result = await runCli([
+        "table",
+        "--port",
+        String(port),
+        "--library-id",
+        "1",
+        "--key",
+        "ABCD1234",
+        "--query",
+        "Table 2",
+        "--table-format",
+        "markdown",
+        "--match",
+        "content",
+      ]);
+
+      assert.equal(result.code, 0);
+      assert.match(result.stdout, /Table 2/);
+      assert.equal(requests[0].pathname, "/mineru-for-zotero/tables");
+      assert.equal(requests[0].searchParams.tableFormat, "markdown");
+      assert.equal(requests[0].searchParams.match, "content");
+    },
+  );
+});
+
+test("passes caption-exact table match option", async () => {
+  await withServer(
+    {
+      status: 200,
+      body: {
+        query: "Table 1",
+        match: "caption-exact",
+        tableFormat: "html",
+        tables: [{ caption: "Table 1", page: 1, rawIndex: 1, content: "" }],
+      },
+    },
+    async ({ port, requests }) => {
+      const result = await runCli([
+        "table",
+        "--port",
+        String(port),
+        "--library-id",
+        "1",
+        "--key",
+        "ABCD1234",
+        "--query",
+        "Table 1",
+        "--match",
+        "caption-exact",
+      ]);
+
+      assert.equal(result.code, 0);
+      assert.equal(result.stderr, "");
+      assert.equal(requests[0].pathname, "/mineru-for-zotero/tables");
+      assert.equal(requests[0].searchParams.match, "caption-exact");
+    },
+  );
+});
+
+test("writes image binary responses to the requested output file", async () => {
+  const root = await mkdtemp(join(tmpdir(), "mineru-cli-image-"));
+  const outputPath = join(root, "figure.png");
+  const imageBytes = Uint8Array.from([137, 80, 78, 71]);
+
+  try {
+    await withServer(
+      {
+        status: 200,
+        headers: {
+          "content-type": "image/png",
+        },
+        rawBody: imageBytes,
+      },
+      async ({ port, requests }) => {
+        const result = await runCli([
+          "image",
+          "--port",
+          String(port),
+          "--library-id",
+          "1",
+          "--key",
+          "ABCD1234",
+          "--path",
+          "images/figure.png",
+          "--output",
+          outputPath,
+        ]);
+
+        assert.equal(result.code, 0);
+        assert.match(result.stdout, /Image saved/);
+        assert.equal(result.stderr, "");
+        assert.equal(requests[0].pathname, "/mineru-for-zotero/image");
+        assert.equal(requests[0].searchParams.path, "images/figure.png");
+        assert.deepEqual(
+          new Uint8Array(await readFile(outputPath)),
+          imageBytes,
+        );
+      },
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects image requests without an output target", async () => {
+  await withServer(
+    {
+      status: 200,
+      headers: {
+        "content-type": "image/png",
+      },
+      rawBody: Uint8Array.from([137, 80, 78, 71]),
+    },
+    async ({ port, requests }) => {
+      const result = await runCli([
+        "image",
+        "--port",
+        String(port),
+        "--library-id",
+        "1",
+        "--key",
+        "ABCD1234",
+        "--path",
+        "images/figure.png",
+      ]);
+
+      assert.equal(result.code, 2);
+      assert.equal(result.stdout, "");
+      assert.match(result.stderr, /--output or --output-dir/);
+      assert.equal(requests.length, 0);
+    },
+  );
+});
+
+test("writes multi-image json responses under the requested output directory", async () => {
+  const root = await mkdtemp(join(tmpdir(), "mineru-cli-images-"));
+  const outputDir = join(root, "images-out");
+  const firstBytes = Uint8Array.from([1, 2, 3, 4]);
+  const secondBytes = Uint8Array.from([5, 6, 7, 8]);
+
+  try {
+    await withServer(
+      {
+        status: 200,
+        body: {
+          images: [
+            {
+              path: "images/figures/one.png",
+              status: "ok",
+              mime: "image/png",
+              dataURL: `data:image/png;base64,${Buffer.from(
+                firstBytes,
+              ).toString("base64")}`,
+            },
+            {
+              path: "images/two.jpg",
+              status: "ok",
+              mime: "image/jpeg",
+              dataURL: `data:image/jpeg;base64,${Buffer.from(
+                secondBytes,
+              ).toString("base64")}`,
+            },
+          ],
+        },
+      },
+      async ({ port, requests }) => {
+        const result = await runCli([
+          "image",
+          "--port",
+          String(port),
+          "--library-id",
+          "1",
+          "--key",
+          "ABCD1234",
+          "--path",
+          "images/figures/one.png,images/two.jpg",
+          "--output-dir",
+          outputDir,
+        ]);
+
+        assert.equal(result.code, 0);
+        assert.match(result.stdout, /Written: 2/);
+        assert.equal(result.stderr, "");
+        assert.equal(requests[0].pathname, "/mineru-for-zotero/image");
+        assert.equal(
+          requests[0].searchParams.path,
+          "images/figures/one.png,images/two.jpg",
+        );
+        assert.deepEqual(
+          new Uint8Array(await readFile(join(outputDir, "figures", "one.png"))),
+          firstBytes,
+        );
+        assert.deepEqual(
+          new Uint8Array(await readFile(join(outputDir, "two.jpg"))),
+          secondBytes,
+        );
+      },
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("rejects multi-image requests that use --output without --output-dir", async () => {
+  const root = await mkdtemp(join(tmpdir(), "mineru-cli-image-"));
+  const outputPath = join(root, "figure.png");
+
+  try {
+    await withServer(
+      {
+        status: 200,
+        body: {
+          images: [
+            {
+              path: "images/figures/one.png",
+              status: "ok",
+              mime: "image/png",
+              dataURL: "data:image/png;base64,AQIDBA==",
+            },
+          ],
+        },
+      },
+      async ({ port, requests }) => {
+        const result = await runCli([
+          "image",
+          "--port",
+          String(port),
+          "--library-id",
+          "1",
+          "--key",
+          "ABCD1234",
+          "--path",
+          "images/figures/one.png,images/two.jpg",
+          "--output",
+          outputPath,
+        ]);
+
+        assert.equal(result.code, 2);
+        assert.equal(result.stdout, "");
+        assert.match(result.stderr, /--output-dir/);
+        assert.equal(requests.length, 0);
+      },
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("formats api errors as json and exits with code 1", async () => {
   await withServer(
     {
@@ -247,6 +561,10 @@ test("prints parameter errors to stderr and exits with code 2", async () => {
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /Missing required option: --key/);
   assert.match(result.stderr, /Usage:/);
+  assert.match(
+    result.stderr,
+    /node mineru-for-zotero-cli\/scripts\/query-markdown\.mjs markdown/,
+  );
 });
 
 test("discovers the listen port from the default Zotero profile", async () => {
@@ -297,8 +615,9 @@ async function withServer(response, run) {
     });
     res.writeHead(response.status, {
       "content-type": "application/json",
+      ...(response.headers ?? {}),
     });
-    res.end(JSON.stringify(response.body));
+    res.end(response.rawBody ?? JSON.stringify(response.body));
   });
 
   await new Promise((resolve) => {

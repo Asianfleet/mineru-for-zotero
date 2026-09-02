@@ -9,7 +9,11 @@ import {
   createMarkdownQueryService,
   MarkdownQueryService,
 } from "./queryService";
-import { MarkdownQueryError, ZoteroItemLike } from "./types";
+import {
+  MarkdownImageResult,
+  MarkdownQueryError,
+  ZoteroItemLike,
+} from "./types";
 
 interface MarkdownEndpointRequest {
   method: "GET" | "POST";
@@ -22,6 +26,8 @@ interface MarkdownEndpointRequest {
 
 export const MARKDOWN_ENDPOINT_PATHS = [
   "/mineru-for-zotero/search",
+  "/mineru-for-zotero/tables",
+  "/mineru-for-zotero/image",
   "/mineru-for-zotero/markdown",
 ] as const;
 
@@ -60,30 +66,59 @@ export function createMarkdownQueryEndpoint(service: MarkdownQueryService) {
       try {
         const query = getQuery(options);
         authorize(query, options.headers);
-        const payload =
-          options.pathname === "/mineru-for-zotero/search"
-            ? await service.searchByTitle({
-                libraryID: requireInteger(query.libraryID, "libraryID"),
-                title: requireString(query.title, "title"),
-              })
-            : await service.queryMarkdown({
-                libraryID: requireInteger(query.libraryID, "libraryID"),
-                key: requireString(query.key, "key"),
-                attachmentKey: optionalString(query.attachmentKey),
-                granularity: optionalString(query.granularity) as
-                  | "full"
-                  | "headings"
-                  | "section"
-                  | "search"
-                  | undefined,
-                sectionPath: parseSectionPath(query.sectionPath),
-                q: optionalString(query.q),
-                contextParagraphs: parseOptionalInteger(
-                  query.contextParagraphs,
-                ),
-              });
+        if (options.pathname === "/mineru-for-zotero/search") {
+          return json(
+            200,
+            await service.searchByTitle({
+              libraryID: requireInteger(query.libraryID, "libraryID"),
+              title: requireString(query.title, "title"),
+            }),
+          );
+        }
 
-        return json(200, payload);
+        if (options.pathname === "/mineru-for-zotero/tables") {
+          return json(
+            200,
+            await service.queryTables({
+              libraryID: requireInteger(query.libraryID, "libraryID"),
+              key: requireString(query.key, "key"),
+              attachmentKey: optionalString(query.attachmentKey),
+              q: requireString(query.q, "q"),
+              match: parseTableMatch(query.match),
+              tableFormat: parseTableFormat(query.tableFormat),
+            }),
+          );
+        }
+
+        if (options.pathname === "/mineru-for-zotero/image") {
+          return imageResponse(
+            await service.readImages({
+              libraryID: requireInteger(query.libraryID, "libraryID"),
+              key: requireString(query.key, "key"),
+              attachmentKey: optionalString(query.attachmentKey),
+              path: requireImagePath(query.path),
+            }),
+          );
+        }
+
+        return json(
+          200,
+          await service.queryMarkdown({
+            libraryID: requireInteger(query.libraryID, "libraryID"),
+            key: requireString(query.key, "key"),
+            attachmentKey: optionalString(query.attachmentKey),
+            granularity: optionalString(query.granularity) as
+              | "full"
+              | "headings"
+              | "section"
+              | "search"
+              | undefined,
+            sectionPath: parseSectionPath(query.sectionPath),
+            sectionNumber: optionalString(query.sectionNumber),
+            q: optionalString(query.q),
+            contextParagraphs: parseOptionalInteger(query.contextParagraphs),
+          }),
+        );
       } catch (error) {
         return jsonError(error);
       }
@@ -258,10 +293,76 @@ function parseSectionPath(
 }
 
 /**
+ * 解析表格查询的匹配范围，只接受稳定的枚举值。
+ */
+function parseTableMatch(value: string | undefined) {
+  const text = optionalString(value);
+  if (!text) {
+    return undefined;
+  }
+  if (["caption", "content", "both", "caption-exact"].includes(text)) {
+    return text as "caption" | "content" | "both" | "caption-exact";
+  }
+  throw new MarkdownQueryError("invalid-request", 400, "Invalid table match");
+}
+
+/**
+ * 解析表格查询的输出格式，只接受复制格式和 JSON。
+ */
+function parseTableFormat(value: string | undefined) {
+  const text = optionalString(value);
+  if (!text) {
+    return undefined;
+  }
+  if (["html", "markdown", "tsv", "latex", "json"].includes(text)) {
+    return text as "html" | "markdown" | "tsv" | "latex" | "json";
+  }
+  throw new MarkdownQueryError("invalid-request", 400, "Invalid table format");
+}
+
+/**
+ * 读取图片路径参数，并拒绝只包含逗号或空白的空列表。
+ */
+function requireImagePath(value: string | undefined): string {
+  const text = requireString(value, "path");
+  const hasAnyPath = text.split(",").some((part) => part.trim().length > 0);
+  if (!hasAnyPath) {
+    throw new MarkdownQueryError("invalid-request", 400, "Missing image path");
+  }
+  return text;
+}
+
+/**
  * 生成标准 JSON HTTP 响应。
  */
 function json(code: number, payload: unknown) {
   return [code, "application/json", JSON.stringify(payload)] as const;
+}
+
+/**
+ * 生成图片 endpoint 响应；单图成功返回原始字节，多图返回 JSON 元数据。
+ */
+function imageResponse(payload: { images: MarkdownImageResult[] }) {
+  if (payload.images.length === 1) {
+    const image = payload.images[0];
+    if (image.status === "ok" && image.bytes && image.mime) {
+      return [200, image.mime, image.bytes] as const;
+    }
+    if (image.status === "invalid-path") {
+      return json(400, {
+        error: "invalid-path",
+        message: "Invalid image path",
+      });
+    }
+    return json(404, {
+      error: "image-not-found",
+      message: "Image not found",
+    });
+  }
+
+  return json(200, {
+    images: payload.images.map(({ bytes: _bytes, ...image }) => image),
+  });
 }
 
 /**

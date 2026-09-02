@@ -30,6 +30,13 @@ export interface MinerUImageFile {
   bytes: Uint8Array;
 }
 
+export interface MinerUImageReadResult {
+  path: string;
+  mime: string;
+  bytes: Uint8Array;
+  dataURL: string;
+}
+
 export interface ParseManifest {
   attachmentID: number;
   attachmentKey: string;
