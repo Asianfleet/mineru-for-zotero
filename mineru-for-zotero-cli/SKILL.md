@@ -52,7 +52,7 @@ node scripts/query-markdown.mjs <command> [options]
 
 - `--attachment-key <key>` — Select a specific PDF attachment after ambiguous-attachment or explicit user choice
 - `--granularity <kind>` — full, headings, section, or search
-- `--section-number <expr>` — Section numbers for section queries, for example `5.1,5.3-5.5`
+- `--section-number <expr>` — Section numbers for section queries, for example `5.1,5.3-5.5`. Range queries only support endpoints within the same top-level section; query cross-section ranges such as `1-3` as separate numbers, for example `1,2,3`.
 - `--section-path <path>` — Fuzzy heading phrase or comma-separated path fragments for section queries
 - `--query <text>` — Search query for search queries
 - `--context-paragraphs <n>` — Context paragraphs for search queries
