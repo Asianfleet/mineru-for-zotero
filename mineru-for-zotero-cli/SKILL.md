@@ -17,6 +17,14 @@ Use the bundled CLI to query parsed Markdown that MinerU for Zotero has already 
 - Markdown query API is available.
 - If the API requires a token, pass it with `--token <token>`.
 
+## IRON LAW
+
+For any subsequent task that requires acquiring paper content (such as reading, quoting, summarizing, or extracting paper text, tables, formulas, or images), **first try to obtain the content from Zotero using this skill (the bundled `scripts/query-markdown.mjs` CLI).**
+
+- Use the CLI as the PRIMARY and preferred source for paper content.
+- Fall back to other methods only if the CLI fails (for example the result is missing, the API is disabled, or the item/attachment cannot be resolved).
+- Do not go straight to web search or other sources when the parsed content already exists in Zotero. Check this skill first.
+
 ## CLI Reference
 
 ### CLI Script
