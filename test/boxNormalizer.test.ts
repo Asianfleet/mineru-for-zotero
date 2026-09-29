@@ -102,6 +102,35 @@ describe("boxNormalizer", function () {
     );
   });
 
+  it("removes a real soft hyphen and keeps genuine compound hyphens", function () {
+    const boxes = normalizeMinerUBoxes({
+      pdf_info: [
+        {
+          page_idx: 0,
+          page_size: [1000, 2000],
+          para_blocks: [
+            {
+              type: "text",
+              bbox: [100, 400, 900, 500],
+              lines: [
+                { spans: [{ content: "A hyphen\u00ad" }] },
+                { spans: [{ content: "ated word and a Well-" }] },
+                { spans: [{ content: "Known compound." }] },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    // U+00AD is a line-break artifact and disappears; the visible compound
+    // hyphen before "Known" is real and stays.
+    assert.equal(
+      boxes[0].markdown,
+      "A hyphenated word and a Well-Known compound.",
+    );
+  });
+
   it("formats inline equations when composing text spans", function () {
     const boxes = normalizeMinerUBoxes({
       pdf_info: [

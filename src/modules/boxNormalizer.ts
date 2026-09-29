@@ -644,11 +644,33 @@ function joinParagraphLines(lines: string[]): string {
       return `${text.slice(0, -1)}${line}`;
     }
 
+    if (isCompoundHyphenBreak(text, line)) {
+      return `${text}${line}`;
+    }
+
     return `${text} ${line}`;
   }, "");
 }
 
+/**
+ * A visible hyphen followed by an upper-case continuation is a compound hyphen
+ * ("Well-" / "Known"), so the next line joins it without an extra space.
+ */
+function isCompoundHyphenBreak(text: string, nextLine: string): boolean {
+  return text.endsWith("-") && /^[A-Z]/.test(nextLine);
+}
+
 function isSoftHyphenBreak(text: string, nextLine: string): boolean {
+  // A real soft hyphen (U+00AD) is always a line-break artifact, whatever the
+  // case of the next line.
+  if (text.endsWith("\u00ad")) {
+    return true;
+  }
+
+  // A visible trailing hyphen is ambiguous: PDF text extraction emits it both
+  // for words split across a line and for genuine compound hyphens. Only join
+  // when the next line continues in lower case and the previous token carries
+  // no other hyphen, which preserves "Well-Known" style compounds.
   if (!text.endsWith("-") || !/^[a-z]/.test(nextLine)) {
     return false;
   }
