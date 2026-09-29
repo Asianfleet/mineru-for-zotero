@@ -7,6 +7,7 @@ import {
 } from "../src/modules/mineruClient";
 import { fallbackDownloadBinary } from "../src/modules/mineruClient/http";
 import { extractJobError } from "../src/modules/mineruClient/v1";
+import { readZip } from "../src/modules/mineruClient/zip";
 
 const ONLINE_BASE = "https://mineru.net/api";
 const LOCAL_BASE = "http://127.0.0.1:8000";
@@ -107,6 +108,33 @@ describe("mineruClient (V1)", function () {
     // official docs, the upload must not set a Content-Type header.
     assert.isUndefined(upload!.headers.Authorization);
     assert.isUndefined(upload!.headers["Content-Type"]);
+  });
+
+  it("rejects a result entry that declares an oversized payload", async function () {
+    const zip = createStoredZipBytes({ "full.md": "# Title" });
+    patchCentralUncompressedSize(zip, "full.md", 300 * 1024 * 1024);
+
+    let error: unknown;
+    try {
+      await readZip(zip.buffer as ArrayBuffer);
+    } catch (caught) {
+      error = caught;
+    }
+
+    assert.instanceOf(error, MinerUTaskError);
+    assert.include(String((error as Error).message), "too large");
+  });
+
+  it("skips a non-result entry before applying the size cap", async function () {
+    const zip = createStoredZipBytes({
+      "full.md": "# Title",
+      "notes.txt": "ignored",
+    });
+    patchCentralUncompressedSize(zip, "notes.txt", 300 * 1024 * 1024);
+
+    const entries = await readZip(zip.buffer as ArrayBuffer);
+
+    assert.deepEqual([...entries.keys()], ["full.md"]);
   });
 
   it("downloads and parses the v4 full_zip_url result", async function () {
@@ -580,6 +608,44 @@ function createStoredZipBytes(
   endView.setUint32(16, centralOffset, true);
 
   return concatBytes([...localParts, ...centralParts, end]);
+}
+
+/**
+ * Overwrite the declared uncompressed size of one central-directory entry, to
+ * simulate a ZIP that claims to expand far beyond the reader's size cap.
+ */
+function patchCentralUncompressedSize(
+  zip: Uint8Array,
+  name: string,
+  size: number,
+): void {
+  const nameBytes = new TextEncoder().encode(name);
+  for (let offset = 0; offset + 46 <= zip.length; offset += 1) {
+    if (readUint32Le(zip, offset) !== 0x02014b50) {
+      continue;
+    }
+    const nameLength = zip[offset + 28] | (zip[offset + 29] << 8);
+    const candidate = zip.slice(offset + 46, offset + 46 + nameLength);
+    if (
+      candidate.length === nameBytes.length &&
+      candidate.every((byte, index) => byte === nameBytes[index])
+    ) {
+      new DataView(zip.buffer, zip.byteOffset + offset, 46).setUint32(
+        24,
+        size,
+        true,
+      );
+      return;
+    }
+  }
+  throw new Error(`central directory entry not found: ${name}`);
+}
+
+function readUint32Le(bytes: Uint8Array, offset: number): number {
+  return new DataView(bytes.buffer, bytes.byteOffset + offset, 4).getUint32(
+    0,
+    true,
+  );
 }
 
 function concatBytes(parts: Uint8Array[]): Uint8Array {

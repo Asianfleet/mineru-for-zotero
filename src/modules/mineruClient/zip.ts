@@ -2,6 +2,12 @@ import { MinerUTaskError } from "./errors";
 import { isSafeRelativePath, summarizeBytes } from "./path";
 import type { ZipEntries } from "./types";
 
+// Guard against decompression bombs. MinerU only returns Markdown, JSON and
+// page images for a PDF that is itself limited to 200 MB, so these caps are far
+// above any legitimate result while still bounding memory use.
+const MAX_ZIP_ENTRY_BYTES = 256 * 1024 * 1024;
+const MAX_ZIP_TOTAL_BYTES = 512 * 1024 * 1024;
+
 /**
  * Read entries to retain from a local ZIP file using Zotero nsIZipReader.
  */
@@ -79,6 +85,7 @@ export async function readZip(buffer: ArrayBuffer): Promise<ZipEntries> {
   const centralOffset = findCentralDirectoryOffset(bytes);
   const decoder = new TextDecoder();
   let offset = centralOffset;
+  let totalBytes = 0;
 
   while (readUint32(bytes, offset) === 0x02014b50) {
     const method = readUint16(bytes, offset + 10);
@@ -91,20 +98,44 @@ export async function readZip(buffer: ArrayBuffer): Promise<ZipEntries> {
     const name = decoder.decode(
       bytes.slice(offset + 46, offset + 46 + nameLength),
     );
-    const content = await readZipEntry(
-      bytes,
-      localOffset,
-      method,
-      compressedSize,
-      uncompressedSize,
-    );
+    // Skip entries that are not part of a MinerU result before inflating them,
+    // and reject entries whose declared size exceeds the safety caps.
     if (shouldReadZipEntry(name)) {
+      assertZipEntryWithinLimits(name, uncompressedSize, totalBytes);
+      const content = await readZipEntry(
+        bytes,
+        localOffset,
+        method,
+        compressedSize,
+        uncompressedSize,
+      );
+      totalBytes += content.length;
       entries.set(name, { name, bytes: content });
     }
     offset += 46 + nameLength + extraLength + commentLength;
   }
 
   return entries;
+}
+
+/**
+ * Reject ZIP entries that would exceed the per-entry or total size caps.
+ */
+function assertZipEntryWithinLimits(
+  name: string,
+  uncompressedSize: number,
+  totalBytes: number,
+): void {
+  if (uncompressedSize > MAX_ZIP_ENTRY_BYTES) {
+    throw new MinerUTaskError(
+      `MinerU result zip entry is too large: ${name} (${uncompressedSize} bytes)`,
+    );
+  }
+  if (totalBytes + uncompressedSize > MAX_ZIP_TOTAL_BYTES) {
+    throw new MinerUTaskError(
+      `MinerU result zip expands beyond the supported size (${totalBytes + uncompressedSize} bytes)`,
+    );
+  }
 }
 
 /**
@@ -194,6 +225,11 @@ export async function inflateRaw(
   const result = new Uint8Array(buffer);
   if (expectedSize > 0 && result.length !== expectedSize) {
     throw new MinerUTaskError("MinerU result zip entry size mismatch");
+  }
+  if (result.length > MAX_ZIP_ENTRY_BYTES) {
+    throw new MinerUTaskError(
+      `MinerU result zip entry is too large (${result.length} bytes)`,
+    );
   }
   return result;
 }
