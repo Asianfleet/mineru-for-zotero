@@ -1,7 +1,9 @@
 import { assert } from "chai";
 import {
+  clearTaskCancelled,
   createProgressWindowTexts,
   createParseManager,
+  markTaskCancelled,
   resolveReparseChoiceFromPromptButton,
   type ParseManagerDependencies,
 } from "../src/modules/parseManager";
@@ -13,6 +15,17 @@ import { normalizedBoxes } from "./domainFixtures";
 import { taskStore } from "../src/modules/taskStore";
 
 describe("parseManager", function () {
+  afterEach(async function () {
+    // Cancellation state is process-wide; keep the suite order-independent.
+    for (const id of ["7201", "7202", "7203", "7204", "7205", "7206"]) {
+      clearTaskCancelled(id);
+    }
+    // The task store is a process-wide singleton; drop finished records so the
+    // assertions below cannot depend on the order of the tests.
+    await taskStore.waitUntilLoaded();
+    await taskStore.clearHistory();
+  });
+
   it("creates aligned progress window lines for parse task notices", function () {
     const texts = createProgressWindowTexts(
       "parse-task-submitted",
@@ -1508,6 +1521,168 @@ describe("parseManager", function () {
     assert.lengthOf(delays, 120);
     assert.isEmpty(messages);
   });
+
+  it("marks a task cancelled without reporting a failure when stopped while polling", async function () {
+    const messages: string[] = [];
+    const tags: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      client: {
+        submitPdf: async () => ({ taskID: "cancel-poll-task" }),
+        pollTask: async () => {
+          // The Task Manager "Stop" button marks the task while it is polling.
+          markTaskCancelled("7201");
+          return { status: "running" };
+        },
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7201, tags }));
+
+    assert.isEmpty(messages, "cancellation must not raise a failure notice");
+    assert.notInclude(tags, "+MinerU: Failed ❌");
+    assert.include(tags, "-MinerU: Processing ⏳");
+    assert.equal(taskStore.getTask("7201")?.status, "cancelled");
+    assert.equal(taskStore.getTask("7201")?.error, "Cancelled by user");
+  });
+
+  it("does not publish a result when stopped during the download phase", async function () {
+    const messages: string[] = [];
+    let writeResultCalls = 0;
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      storage: {
+        ...baseStorage(),
+        writeResult: async () => {
+          writeResultCalls += 1;
+        },
+      },
+      client: {
+        submitPdf: async () => ({ taskID: "cancel-download-task" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => {
+          markTaskCancelled("7202");
+          return preciseResultFixture();
+        },
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7202 }));
+
+    assert.equal(writeResultCalls, 0);
+    assert.isEmpty(messages);
+    assert.equal(taskStore.getTask("7202")?.status, "cancelled");
+  });
+
+  it("lets a retry run after a cancellation", async function () {
+    const messages: string[] = [];
+    let cancelNextPoll = true;
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      client: {
+        submitPdf: async () => ({ taskID: "cancel-retry-task" }),
+        pollTask: async () => {
+          if (cancelNextPoll) {
+            cancelNextPoll = false;
+            markTaskCancelled("7203");
+            return { status: "running" };
+          }
+          return { status: "succeeded" };
+        },
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+    const attachment = pdfAttachment({ id: 7203 });
+
+    await manager.parseAttachment(attachment);
+    assert.equal(taskStore.getTask("7203")?.status, "cancelled");
+
+    await manager.parseAttachment(attachment, { force: true });
+
+    assert.equal(taskStore.getTask("7203")?.status, "succeeded");
+    assert.isEmpty(messages);
+  });
+
+  it("ignores a second parse while the same attachment is already running", async function () {
+    const messages: string[] = [];
+    let submitCount = 0;
+    let releasePoll: (() => void) | undefined;
+    const pollGate = new Promise<void>((resolve) => {
+      releasePoll = resolve;
+    });
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      client: {
+        submitPdf: async () => {
+          submitCount += 1;
+          return { taskID: "overlap-task" };
+        },
+        pollTask: async () => {
+          await pollGate;
+          return { status: "succeeded" };
+        },
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+    const attachment = pdfAttachment({ id: 7204 });
+
+    const first = manager.parseAttachment(attachment);
+    const second = manager.parseAttachment(attachment);
+    await second;
+    releasePoll?.();
+    await first;
+
+    assert.equal(
+      submitCount,
+      1,
+      "only one pipeline may submit for an attachment",
+    );
+    assert.isEmpty(messages);
+  });
+
+  it("rejects an oversized PDF on the single attachment path with a dedicated message", async function () {
+    const messages: string[] = [];
+    const tags: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getFileSize: async () => 201 * 1024 * 1024,
+      client: {
+        submitPdf: async () => {
+          throw new Error("must not submit an oversized PDF");
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7205, tags }));
+
+    assert.deepEqual(messages, ["parse-error-file-too-large"]);
+    assert.include(tags, "+MinerU: Failed ❌");
+  });
+
+  it("stores the user-facing failure message on the task record", async function () {
+    const messages: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      client: {
+        submitPdf: async () => {
+          throw new MinerURequestError("upload", 0, "offline");
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7206 }));
+
+    assert.deepEqual(messages, ["parse-error-upload"]);
+    assert.equal(
+      taskStore.getTask("7206")?.error,
+      "MinerU upload request failed: offline",
+    );
+  });
 });
 
 function successfulPreciseClient(): NonNullable<
@@ -1597,6 +1772,7 @@ function pdfAttachment(options?: {
   id?: number;
   fileName?: string;
   filePath?: string;
+  tags?: string[];
 }): Zotero.Item {
   return {
     id: options?.id ?? 1,
@@ -1607,6 +1783,13 @@ function pdfAttachment(options?: {
     isAttachment: () => true,
     isPDFAttachment: () => true,
     getFilePathAsync: async () => options?.filePath ?? "C:/tmp/a.pdf",
+    addTag: (tag: string) => {
+      options?.tags?.push(`+${tag}`);
+    },
+    removeTag: (tag: string) => {
+      options?.tags?.push(`-${tag}`);
+    },
+    saveTx: async () => {},
   } as unknown as Zotero.Item;
 }
 
