@@ -398,7 +398,9 @@ async function getSubmittableAttachments(
  * Report whether the PDF exceeds the MinerU upload size limit.
  *
  * The check is best effort: when the file size is unavailable the parse
- * proceeds and the remote service reports the limit instead.
+ * proceeds and the remote service reports the limit instead. A failed size
+ * read stays quiet because the readability check already reports missing or
+ * unreadable files with their path, and an extra log line would only add noise.
  */
 async function isAttachmentTooLarge(
   filePath: string,
@@ -408,8 +410,7 @@ async function isAttachmentTooLarge(
   let size: number | undefined;
   try {
     size = await readFileSize(filePath);
-  } catch (e) {
-    dependencies.log("Failed to check file size", filePath, e);
+  } catch {
     return false;
   }
 
