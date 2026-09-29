@@ -1,13 +1,15 @@
 /**
- * 为 scaffold 测试预置浏览器端 chai。
+ * Seeds the browser-side chai build for the scaffold tests.
  *
- * zotero-plugin-scaffold 在生成测试资源时会在 `.scaffold/cache/chai.js`
- * 找不到缓存的情况下，从 https://www.chaijs.com/chai.js 下载。CI 环境可能
- * 无法访问该站点（`TypeError: fetch failed`），导致测试在启动前失败。
+ * When zotero-plugin-scaffold generates the test resources and finds no cache
+ * at `.scaffold/cache/chai.js`, it downloads the file from
+ * https://www.chaijs.com/chai.js. CI may not reach that site
+ * (`TypeError: fetch failed`), which makes the test run fail before it starts.
  *
- * 这里把仓库内 `scripts/vendor/chai.js` 的 UMD 构建预置到缓存目录，使
- * scaffold 直接命中缓存，测试不再依赖外网。脚本是幂等的：缓存已存在且
- * 非空时不做任何事。
+ * This script copies the vendored UMD build from `scripts/vendor/chai.js` into
+ * the cache directory so the scaffold hits the cache and the tests no longer
+ * depend on the network. The script is idempotent: when a non-empty cache
+ * already exists it does nothing.
  */
 
 import { copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
@@ -28,16 +30,16 @@ function isUsable(path) {
 }
 
 if (isUsable(CACHE_CHAI)) {
-  console.log("  [chai] .scaffold/cache/chai.js 已存在，跳过。");
+  console.log("  [chai] .scaffold/cache/chai.js already exists, skipping.");
 } else if (!isUsable(VENDOR_CHAI)) {
   console.error(
-    `  [chai] 缺少 vendored 文件：${VENDOR_CHAI}。无法为 scaffold 预置 chai。`,
+    `  [chai] Missing vendored file: ${VENDOR_CHAI}. Cannot seed chai for the scaffold.`,
   );
   process.exitCode = 1;
 } else {
   mkdirSync(CACHE_DIR, { recursive: true });
   copyFileSync(VENDOR_CHAI, CACHE_CHAI);
   console.log(
-    "  [chai] 已从 scripts/vendor/chai.js 预置 .scaffold/cache/chai.js",
+    "  [chai] Seeded .scaffold/cache/chai.js from scripts/vendor/chai.js",
   );
 }

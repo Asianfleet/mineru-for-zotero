@@ -1,14 +1,17 @@
 /**
- * 确保测试 profile 中存在 user.js，将 httpServer.port 隔离到 user.js 中
+ * Makes sure user.js exists in the test profile and keeps httpServer.port
+ * inside user.js.
  *
- * scaffold 默认在 prefs.js 中写入 extensions.zotero.httpServer.port = 23124，
- * 用以避免与用户正式 Zotero 实例（端口 23119）冲突。但 prefs.js 中的偏好
- * 可能被 Zotero 在运行时写回（shutdown 时），如果测试 profile 与真实 profile
- * 发生交叉（如误操作或插件行为），端口 23124 会泄漏到真实 profile，导致
- * Zotero Connector 浏览器扩展检测不到桌面端。
+ * By default the scaffold writes extensions.zotero.httpServer.port = 23124 into
+ * prefs.js so the test profile does not clash with a running user instance
+ * (port 23119). But preferences in prefs.js can be written back by Zotero at
+ * runtime (on shutdown), so if the test profile and the real profile ever cross
+ * (a mistake or plugin behavior), port 23124 leaks into the real profile and
+ * the Zotero Connector browser extension can no longer detect the desktop
+ * client.
  *
- * user.js 在每次 Zotero 启动时覆盖偏好，但不会持久化写入 prefs.js，
- * 从而阻断泄漏路径。
+ * user.js overrides preferences on every Zotero start without persisting them
+ * into prefs.js, which closes that leak path.
  */
 
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
@@ -26,9 +29,10 @@ const PORT_KEY = "extensions.zotero.httpServer.port";
 const PORT_VALUE = 23124;
 
 const USER_JS_CONTENT =
-  `// 测试 profile 使用非标准端口 ${PORT_VALUE}，避免与用户正在运行的主 Zotero 实例（默认 23119）冲突。\n` +
-  `// user.js 在每次启动时覆盖 prefs.js，但不会持久化写入 prefs.js，\n` +
-  `// 从而防止测试配置泄漏到用户真实 Zotero profile。\n` +
+  `// The test profile uses the non-standard port ${PORT_VALUE} to avoid a clash\n` +
+  `// with a running main Zotero instance (default 23119).\n` +
+  `// user.js overrides prefs.js on every start but is never persisted into\n` +
+  `// prefs.js, which keeps the test configuration out of the real Zotero profile.\n` +
   `user_pref("${PORT_KEY}", ${PORT_VALUE});\n`;
 
 let count = 0;
@@ -39,13 +43,13 @@ for (const rel of PROFILES) {
   if (!existsSync(userJsPath)) {
     mkdirSync(dirname(userJsPath), { recursive: true });
     writeFileSync(userJsPath, USER_JS_CONTENT, "utf-8");
-    console.log(`  [创建] ${rel}/user.js`);
+    console.log(`  [created] ${rel}/user.js`);
     count++;
   }
 }
 
 if (count === 0) {
-  console.log("  所有 user.js 已存在，无需更新。");
+  console.log("  All user.js files already exist, nothing to update.");
 } else {
-  console.log(`  已创建 ${count} 个 user.js`);
+  console.log(`  Created ${count} user.js file(s)`);
 }

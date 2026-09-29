@@ -31,6 +31,6 @@ test("preserves explicit non-test connector ports", () => {
 test("refuses to repair prefs while Zotero is running", () => {
   assert.throws(
     () => assertZoteroIsNotRunning(["zotero.exe"]),
-    /请先完全退出 Zotero/,
+    /Quit Zotero completely/,
   );
 });

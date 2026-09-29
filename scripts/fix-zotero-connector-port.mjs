@@ -1,8 +1,12 @@
 /**
- * 修复真实 Zotero profile 中误残留的 scaffold 测试端口。
+ * Repairs a scaffold test port that leaked into a real Zotero profile.
  *
- * 该脚本只把明确的测试端口 23124 改回 Zotero Connector 默认端口 23119，
- * 不覆盖用户主动设置的其他端口。
+ * The script only rewrites the known test port 23124 back to the Zotero
+ * Connector default port 23119; it never overrides another port that the user
+ * set on purpose.
+ *
+ * It is Windows-only: it locates the profile through APPDATA and lists running
+ * processes with tasklist.
  */
 
 import { execFileSync } from "node:child_process";
@@ -15,10 +19,10 @@ const TEST_PROFILE_PORT = 23124;
 const CONNECTOR_DEFAULT_PORT = 23119;
 
 /**
- * 将 prefs.js 内容中的测试端口恢复为 Zotero Connector 默认端口。
+ * Restores the Zotero Connector default port in the given prefs.js content.
  *
- * @param {string} content Zotero prefs.js 的文本内容。
- * @returns {{ changed: boolean, content: string }} 修复后的内容与变更标记。
+ * @param {string} content Text content of a Zotero prefs.js file.
+ * @returns {{ changed: boolean, content: string }} Repaired content and change flag.
  */
 export function fixConnectorPortContent(content) {
   const leakedPortPreference = `user_pref("${PORT_KEY}", ${TEST_PROFILE_PORT});`;
@@ -32,10 +36,10 @@ export function fixConnectorPortContent(content) {
 }
 
 /**
- * 返回 Windows 下 Zotero 默认 profile 根目录。
+ * Returns the default Zotero profile root on Windows.
  *
- * @param {NodeJS.ProcessEnv} env 当前进程环境变量。
- * @returns {string | undefined} profile 根目录路径。
+ * @param {NodeJS.ProcessEnv} env Current process environment.
+ * @returns {string | undefined} Profile root path.
  */
 export function getDefaultZoteroProfilesRoot(env = process.env) {
   if (!env.APPDATA) {
@@ -46,9 +50,9 @@ export function getDefaultZoteroProfilesRoot(env = process.env) {
 }
 
 /**
- * 检查 Windows 进程列表中是否仍有 Zotero 正在运行。
+ * Checks the Windows process list for a running Zotero instance.
  *
- * @returns {string[]} 匹配到的 Zotero 进程名。
+ * @returns {string[]} Matching Zotero process names.
  */
 export function listRunningZoteroProcesses() {
   try {
@@ -71,25 +75,26 @@ export function listRunningZoteroProcesses() {
 }
 
 /**
- * 确保 Zotero 已完全退出，避免运行时内存偏好在退出时覆盖 prefs.js。
+ * Ensures Zotero has fully exited, so in-memory preferences cannot overwrite
+ * prefs.js on shutdown.
  *
- * @param {string[]} processNames 运行中的 Zotero 进程名。
+ * @param {string[]} processNames Names of running Zotero processes.
  */
 export function assertZoteroIsNotRunning(
   processNames = listRunningZoteroProcesses(),
 ) {
   if (processNames.length > 0) {
     throw new Error(
-      "请先完全退出 Zotero，再运行本脚本；否则 Zotero 退出时可能把旧端口重新写回 prefs.js。",
+      "Quit Zotero completely before running this script; otherwise Zotero may write the old port back to prefs.js when it exits.",
     );
   }
 }
 
 /**
- * 修复指定 Zotero profile 根目录下的 prefs.js 文件。
+ * Repairs the prefs.js files under the given Zotero profile root.
  *
- * @param {string} profilesRoot Zotero Profiles 根目录。
- * @returns {{ path: string, changed: boolean }[]} 每个 profile 的处理结果。
+ * @param {string} profilesRoot Zotero Profiles root directory.
+ * @returns {{ path: string, changed: boolean }[]} Result per profile.
  */
 export function fixConnectorPortInProfiles(profilesRoot) {
   if (!existsSync(profilesRoot)) {
@@ -116,34 +121,60 @@ export function fixConnectorPortInProfiles(profilesRoot) {
     });
 }
 
-const isDirectRun = process.argv[1] === fileURLToPath(import.meta.url);
+/**
+ * Repairs the default Zotero profile, or reports the Windows-only limitation.
+ *
+ * The platform guard lives here, in the CLI entry point, so the exported
+ * helpers stay testable on any platform.
+ */
+function runRepair() {
+  if (process.platform !== "win32") {
+    console.error(
+      "This repair script is Windows-only: it finds the Zotero profile through APPDATA and lists running processes with tasklist.",
+    );
+    console.error(
+      `Detected platform: ${process.platform}. Run this script on Windows, or set ${PORT_KEY} back to ${CONNECTOR_DEFAULT_PORT} manually in the Zotero prefs.js file.`,
+    );
+    process.exitCode = 1;
+    return;
+  }
 
-if (isDirectRun) {
   const profilesRoot = getDefaultZoteroProfilesRoot();
 
   if (!profilesRoot) {
-    console.error("未找到 APPDATA，无法定位 Zotero Profiles 目录。");
+    console.error(
+      "APPDATA is not set, so the Zotero Profiles directory cannot be located.",
+    );
     process.exitCode = 1;
-  } else {
-    try {
-      assertZoteroIsNotRunning();
-
-      const results = fixConnectorPortInProfiles(profilesRoot);
-      const changed = results.filter((result) => result.changed);
-
-      if (results.length === 0) {
-        console.log(`未找到 Zotero Profiles 目录：${profilesRoot}`);
-      } else if (changed.length === 0) {
-        console.log("未发现真实 Zotero profile 中残留测试端口 23124。");
-      } else {
-        for (const result of changed) {
-          console.log(`已修复：${result.path}`);
-        }
-        console.log("请启动 Zotero，使端口设置重新加载。");
-      }
-    } catch (error) {
-      console.error(error instanceof Error ? error.message : String(error));
-      process.exitCode = 1;
-    }
+    return;
   }
+
+  try {
+    assertZoteroIsNotRunning();
+
+    const results = fixConnectorPortInProfiles(profilesRoot);
+    const changed = results.filter((result) => result.changed);
+
+    if (results.length === 0) {
+      console.log(`Zotero Profiles directory not found: ${profilesRoot}`);
+    } else if (changed.length === 0) {
+      console.log(
+        "No leaked scaffold test port 23124 found in a real Zotero profile.",
+      );
+    } else {
+      for (const result of changed) {
+        console.log(`Repaired: ${result.path}`);
+      }
+      console.log("Start Zotero so the port setting is loaded again.");
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  }
+}
+
+const isDirectRun = process.argv[1] === fileURLToPath(import.meta.url);
+
+if (isDirectRun) {
+  runRepair();
 }
