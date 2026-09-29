@@ -18,6 +18,10 @@ describe("Results Manager", function () {
       readManifestSafe: async () => null,
       readLiteManifestSafe: async () => null,
       getAttachmentDirSize: async () => 1024,
+      readResultContentFlags: async () => ({
+        hasImages: false,
+        hasBoxes: false,
+      }),
       deleteResult: async () => {},
     };
 
@@ -101,6 +105,28 @@ describe("Results Manager", function () {
       assert.strictEqual(results.length, 2);
       assert.strictEqual(results[0]?.key, "NEW");
       assert.strictEqual(results[1]?.key, "OLD");
+    });
+
+    it("derives hasImages and hasBoxes from the stored result content", async function () {
+      mockStorage.listParseStatuses = async () =>
+        new Map([
+          ["1-WITHIMG", { preciseReady: true, liteReady: false }],
+          ["1-LITEONLY", { preciseReady: false, liteReady: true }],
+        ]);
+      mockStorage.readResultContentFlags = async (ref) =>
+        ref.key === "WITHIMG"
+          ? { hasImages: true, hasBoxes: false }
+          : { hasImages: true, hasBoxes: true };
+
+      const results = await scanAllResults(deps);
+      const withImages = results.find((entry) => entry.key === "WITHIMG");
+      const liteOnly = results.find((entry) => entry.key === "LITEONLY");
+
+      assert.isTrue(withImages?.hasImages);
+      assert.isFalse(withImages?.hasBoxes);
+      // A lite result has no stored boxes or images, whatever storage reports.
+      assert.isFalse(liteOnly?.hasImages);
+      assert.isFalse(liteOnly?.hasBoxes);
     });
   });
 

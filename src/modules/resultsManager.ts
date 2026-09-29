@@ -1,5 +1,5 @@
 import { config } from "../../package.json";
-import { createStorage, type StorageAdapter } from "./storage";
+import { createStorage, type StorageAdapter, toNativePath } from "./storage";
 import { syncResultToAgentFolder } from "./agentSync";
 import { getSyncFolder } from "../utils/prefs";
 import { taskStore } from "./taskStore";
@@ -74,13 +74,6 @@ const MINERU_TAGS = [
   "MinerU: Failed ❌",
 ];
 
-function toNativePath(path: string): string {
-  if (/^[a-z]:\//i.test(path)) {
-    return path.replace(/\//g, "\\");
-  }
-  return path;
-}
-
 export async function scanAllResults(
   deps: ResultsManagerDependencies,
 ): Promise<ParsedResultEntry[]> {
@@ -136,6 +129,10 @@ export async function scanAllResults(
 
     const attachmentDir = deps.storage.getAttachmentDir?.(ref) || "";
 
+    const contentFlags = status.preciseReady
+      ? await deps.storage.readResultContentFlags(ref)
+      : { hasImages: false, hasBoxes: false };
+
     entries.push({
       libraryID,
       key,
@@ -156,8 +153,8 @@ export async function scanAllResults(
       totalSizeBytes: sizeBytes,
       isOrphan,
       attachmentDir,
-      hasImages: status.preciseReady,
-      hasBoxes: status.preciseReady,
+      hasImages: contentFlags.hasImages,
+      hasBoxes: contentFlags.hasBoxes,
     });
   }
 

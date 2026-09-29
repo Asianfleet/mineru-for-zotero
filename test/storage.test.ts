@@ -6,7 +6,24 @@ const rootDir = `TmpD/mineru-copy-${Date.now()}-${Math.random()
   .toString(36)
   .slice(2, 8)}`;
 
+// Tests that exercise a specific broken or partial layout use fixed directory
+// names. They are removed afterwards so repeated runs cannot reuse stale state.
+const FIXED_TEST_DIRS = [
+  "mineru-copy-broken-precise-test",
+  "mineru-copy-partial-lite-test",
+  "mineru-copy-test",
+  "mineru-copy-parse-status-test",
+  "mineru-copy-list-status-test",
+  "mineru-copy-count",
+];
+
 describe("storage", function () {
+  after(async function () {
+    for (const dir of [...FIXED_TEST_DIRS, rootDir]) {
+      await removeTestDir(dir);
+    }
+  });
+
   it("uses libraryID and attachmentKey as stable directory name", function () {
     const storage = createStorage("custom-root/mineru-copy");
 
@@ -494,6 +511,48 @@ describe("storage", function () {
       "data:image/png;base64,iVBORw==",
     );
     assert.isNull(await storage.readImageDataURL(attachment, "../a.png"));
+  });
+
+  it("reports whether a stored result actually contains images and boxes", async function () {
+    const storage = createStorage(rootDir);
+    const withImages = {
+      id: 1,
+      key: "CONTENT1",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    const withoutImages = { ...withImages, key: "CONTENT2" };
+
+    await writeResultOrFail(storage, {
+      attachment: withImages,
+      mineruTaskID: "task-content-1",
+      rawResult: { ok: true },
+      markdown: "![A](images/a.png)",
+      boxes: normalizedBoxes,
+      images: [{ path: "a.png", bytes: new Uint8Array([137, 80, 78, 71]) }],
+    });
+    await writeResultOrFail(storage, {
+      attachment: withoutImages,
+      mineruTaskID: "task-content-2",
+      rawResult: { ok: true },
+      markdown: "# A",
+      boxes: normalizedBoxes,
+    });
+
+    assert.deepEqual(await storage.readResultContentFlags(withImages), {
+      hasImages: true,
+      hasBoxes: true,
+    });
+    assert.deepEqual(await storage.readResultContentFlags(withoutImages), {
+      hasImages: false,
+      hasBoxes: true,
+    });
+    assert.deepEqual(
+      await storage.readResultContentFlags({ libraryID: 12, key: "MISSING" }),
+      { hasImages: false, hasBoxes: false },
+    );
   });
 
   it("reports missing or non-ready results as not ready", async function () {
@@ -1088,6 +1147,22 @@ async function exists(path: string): Promise<boolean> {
     throw new Error("No file existence checker is available");
   }
   return Boolean(await runtime.OS.File.exists(path));
+}
+
+async function removeTestDir(name: string): Promise<void> {
+  const path = resolveTmpPath(name.startsWith("TmpD/") ? name : `TmpD/${name}`);
+  try {
+    if (typeof IOUtils !== "undefined") {
+      await IOUtils.remove(path, { recursive: true, ignoreAbsent: true });
+      return;
+    }
+    const runtime = globalThis as typeof globalThis & { OS?: typeof OS };
+    if (runtime.OS && (await runtime.OS.File.exists(path))) {
+      await runtime.OS.File.remove(path, { recursive: true });
+    }
+  } catch {
+    // Cleanup is best effort; a failed removal must not fail the suite.
+  }
 }
 
 function resolveTmpPath(path: string): string {

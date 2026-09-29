@@ -20,10 +20,11 @@ import {
   readText,
   removePath,
   resolveFsRoot,
-  toNativePath,
   writeBytes,
   writeText,
 } from "./storageFs";
+
+export { toNativePath } from "./storageFs";
 
 type AttachmentKeyRef = Pick<AttachmentRef, "libraryID" | "key">;
 
@@ -46,6 +47,10 @@ export interface StorageAdapter {
     ref: AttachmentKeyRef,
     imageMarkdownPath: string,
   ): Promise<string | null>;
+  readResultContentFlags(ref: AttachmentKeyRef): Promise<{
+    hasImages: boolean;
+    hasBoxes: boolean;
+  }>;
   writeResult(input: {
     attachment: AttachmentRef;
     mineruTaskID: string;
@@ -176,6 +181,10 @@ export function createStorage(rootDir: string): StorageAdapter {
         getAttachmentDir(fsRoot, ref),
         imageMarkdownPath,
       );
+    },
+
+    async readResultContentFlags(ref) {
+      return readResultContentFlagsFromDir(getAttachmentDir(fsRoot, ref));
     },
 
     async writeResult(input) {
@@ -475,6 +484,37 @@ async function readImageDataURLFromDir(
 
 function getAttachmentDir(root: string, ref: AttachmentKeyRef): string {
   return joinPath(root, ATTACHMENTS_DIR, `${ref.libraryID}-${ref.key}`);
+}
+
+/**
+ * Report which content a stored result actually contains.
+ *
+ * A precise result is "ready" even when it was saved without images or with an
+ * empty box array, so callers must inspect the directory instead of inferring
+ * content from the ready flag.
+ */
+async function readResultContentFlagsFromDir(
+  dir: string,
+): Promise<{ hasImages: boolean; hasBoxes: boolean }> {
+  let hasBoxes = false;
+  try {
+    const boxes = await readJson(joinPath(dir, BOXES_FILE));
+    hasBoxes = Array.isArray(boxes) && boxes.length > 0;
+  } catch {
+    hasBoxes = false;
+  }
+
+  let hasImages = false;
+  try {
+    const imagesDir = joinPath(dir, IMAGES_DIR);
+    if (await exists(imagesDir)) {
+      hasImages = (await readDir(imagesDir)).length > 0;
+    }
+  } catch {
+    hasImages = false;
+  }
+
+  return { hasImages, hasBoxes };
 }
 
 function isAttachmentResultDirName(name: string): boolean {
