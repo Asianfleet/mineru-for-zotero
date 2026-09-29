@@ -15,7 +15,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GitHub_TOKEN }}
     steps:
       - name: Setup JS
-        uses: zotero-plugin-dev/workflows/setup-js@main
+        uses: zotero-plugin-dev/workflows/setup-js@v1.1.0
       - name: Run Lint
         run: npm run lint:check
 
@@ -25,7 +25,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GitHub_TOKEN }}
     steps:
       - name: Setup JS
-        uses: zotero-plugin-dev/workflows/setup-js@main
+        uses: zotero-plugin-dev/workflows/setup-js@v1.1.0
       - name: Run Build
         run: npm run build
       - name: Upload build result
@@ -34,11 +34,30 @@ jobs:
           name: build-result
           path: .scaffold/build
 
+  # Standalone node:test suites. They use only Node.js built-ins (no npm
+  # dependencies) and never launch Zotero, so this job stays fast and runs
+  # independently of the Zotero test job.
+  node-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+      - name: Run standalone node:test suites
+        run: node --test test/queryMarkdownCli.test.mjs scripts/fix-zotero-connector-port.test.mjs
+
+  # `zotero-plugin test` builds the plugin into `.scaffold/build` itself before
+  # launching Zotero, so this job needs neither the `build` job's artifact nor a
+  # `needs: [build]` dependency on it.
   test:
     runs-on: ubuntu-latest
-    needs:
-      - build
+    env:
+      GITHUB_TOKEN: ${{ secrets.GitHub_TOKEN }}
     steps:
       - name: Setup JS
-        uses: zotero-plugin-dev/workflows/setup-js@main
-      - run: npm run test
+        uses: zotero-plugin-dev/workflows/setup-js@v1.1.0
+      - name: Run Zotero tests
+        run: npm run test
