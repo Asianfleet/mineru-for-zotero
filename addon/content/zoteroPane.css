@@ -1,126 +1,10 @@
-.mineru-copy-overlay-root {
-  position: fixed;
-  inset: 0;
-  z-index: 2147483000;
-  pointer-events: none;
-}
-
-.mineru-copy-page-layer {
-  position: fixed;
-  pointer-events: none;
-}
-
-.mineru-copy-overlay-modifier-active .mineru-copy-page-layer {
-  pointer-events: auto;
-}
-
-.mineru-copy-box {
-  position: absolute;
-  box-sizing: border-box;
-  border: 1px solid rgba(33, 99, 235, 0.9);
-  background: transparent;
-  pointer-events: none;
-}
-
-.mineru-copy-overlay-modifier-active .mineru-copy-box {
-  pointer-events: auto;
-}
-
-.mineru-copy-box:hover,
-.mineru-copy-box-hovered {
-  background: rgba(64, 156, 255, 0.18);
-  z-index: 2147483001;
-}
-
-.mineru-copy-box-selected {
-  border-color: rgba(217, 119, 6, 0.95);
-  outline: 1px solid rgba(217, 119, 6, 0.95);
-  background: rgba(245, 158, 11, 0.18);
-}
-
-.mineru-copy-mode-hover .mineru-copy-box {
-  opacity: 0;
-  border-color: transparent;
-  background: transparent;
-}
-
-.mineru-copy-mode-hover .mineru-copy-box:hover,
-.mineru-copy-mode-hover .mineru-copy-box-hovered {
-  opacity: 1;
-  border-color: rgba(33, 99, 235, 0.9);
-  background: rgba(64, 156, 255, 0.18);
-}
-
-.mineru-copy-mode-hover .mineru-copy-box-selected {
-  opacity: 1;
-  border-color: rgba(217, 119, 6, 0.95);
-  background: rgba(245, 158, 11, 0.18);
-}
-
-.mineru-copy-box-label,
-.mineru-copy-box-actions {
-  display: none;
-}
-
-.mineru-copy-box:hover .mineru-copy-box-label,
-.mineru-copy-box-hovered .mineru-copy-box-label {
-  display: block;
-}
-
-.mineru-copy-box:hover .mineru-copy-box-actions,
-.mineru-copy-box-hovered .mineru-copy-box-actions {
-  display: flex;
-}
-
-.mineru-copy-box-label {
-  position: absolute;
-  left: 0;
-  top: 0;
-  transform: translateY(-100%);
-  padding: 2px 4px;
-  border-radius: 3px 3px 0 0;
-  background: rgba(33, 99, 235, 0.95);
-  color: #fff;
-  font-size: 12px;
-  line-height: 1.2;
-  pointer-events: none;
-}
-
-.mineru-copy-box-selected .mineru-copy-box-label,
-.mineru-copy-mode-hover .mineru-copy-box-selected .mineru-copy-box-label {
-  background: rgba(217, 119, 6, 0.95);
-}
-
-.mineru-copy-box-actions {
-  position: absolute;
-  left: 50%;
-  top: 100%;
-  transform: translateX(-50%);
-  gap: 4px;
-  padding-top: 3px;
-}
-
-.mineru-copy-button {
-  border: 0;
-  border-radius: 5px;
-  background: var(--material-toolbar, ButtonFace);
-  box-shadow:
-    0 0 3px 0 rgba(0, 0, 0, 0.35),
-    0 2px 8px 0 rgba(0, 0, 0, 0.22);
-  color: var(--fill-primary, ButtonText);
-  font-size: 13px;
-  line-height: 1.35;
-  padding: 4px 8px;
-  white-space: nowrap;
-  pointer-events: auto;
-}
-
-.mineru-copy-button:hover {
-  background: var(--material-toolbar, ButtonFace);
-  box-shadow:
-    0 0 3px 0 rgba(0, 0, 0, 0.45),
-    0 4px 14px 0 rgba(0, 0, 0, 0.28);
-}
+/*
+ * Main-window styles for the MinerU item-tree parse column.
+ *
+ * The PDF reader overlay is styled separately, inside the reader document, by
+ * READER_OVERLAY_CSS in src/modules/readerOverlay/styles.ts: CSS from this file
+ * is injected into the main window only and never reaches the reader iframe.
+ */
 
 .mineru-parse-column-cell {
   align-items: center;
@@ -179,4 +63,31 @@
   border-color: #d1d5db;
   background: #f3f4f6;
   color: #4b5563;
+}
+
+/* Keep the column badges readable on dark main-window themes. */
+@media (prefers-color-scheme: dark) {
+  .mineru-parse-column-badge-precise {
+    border-color: #3b5b9a;
+    background: #1e2f52;
+    color: #bcd4ff;
+  }
+
+  .mineru-parse-column-badge-lite {
+    border-color: #2f6b46;
+    background: #16301f;
+    color: #b6e6c8;
+  }
+
+  .mineru-parse-column-badge-running {
+    border-color: #8a6d00;
+    background: #3a2f00;
+    color: #ffd966;
+  }
+
+  .mineru-parse-column-badge-unparsed {
+    border-color: #4b5563;
+    background: #2b3038;
+    color: #cbd5e1;
+  }
 }
