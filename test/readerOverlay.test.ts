@@ -71,10 +71,10 @@ describe("readerOverlay", function () {
     const { root } = buildReaderOverlayRoot(
       doc as unknown as Document,
       [
-        createBox(0, "text", "第一段"),
-        createBox(1, "title", "标题"),
-        createBox(2, "image_caption", "图片标题"),
-        createBox(3, "page_header", "页眉"),
+        createBox(0, "text", "First paragraph"),
+        createBox(1, "title", "Title"),
+        createBox(2, "image_caption", "Image caption"),
+        createBox(3, "page_header", "Header"),
         createBox(4, "page_number", "1"),
         createBox(5, "interline_equation", "E=mc^2", "E=mc^2"),
         createBox(6, "table_body", "<table></table>"),
@@ -238,10 +238,10 @@ describe("readerOverlay", function () {
     const { root } = buildReaderOverlayRoot(
       doc as unknown as Document,
       [
-        createBox(0, "text", "第一段"),
-        createBox(1, "title", "标题"),
-        createBox(2, "image_caption", "图片标题"),
-        createBox(3, "page_header", "页眉"),
+        createBox(0, "text", "First paragraph"),
+        createBox(1, "title", "Title"),
+        createBox(2, "image_caption", "Image caption"),
+        createBox(3, "page_header", "Header"),
         createBox(4, "page_number", "1"),
         createBox(5, "interline_equation", "E=mc^2", "E=mc^2"),
       ],
@@ -272,8 +272,8 @@ describe("readerOverlay", function () {
     const { root } = buildReaderOverlayRoot(
       doc as unknown as Document,
       [
-        createBox(0, "title", "标题"),
-        { ...createBox(1, "text", "正文"), sourceIndex: 41 },
+        createBox(0, "title", "Title"),
+        { ...createBox(1, "text", "Body text"), sourceIndex: 41 },
         { ...createBox(2, "reference", "[1]"), sourceIndex: 9 },
       ],
       "all",
@@ -292,7 +292,7 @@ describe("readerOverlay", function () {
 
     buildReaderOverlayRoot(
       doc as unknown as Document,
-      [createBox(0, "text", "正文")],
+      [createBox(0, "text", "Body text")],
       "all",
     );
     ensureReaderOverlayStyles(doc as unknown as Document);
@@ -385,7 +385,7 @@ describe("readerOverlay", function () {
               return messages.map(({ id }) => ({
                 value:
                   id === "mineruForZotero-reader-copy-text-missing"
-                    ? "当前 box 没有可选择复制的文本。"
+                    ? "This box does not have selectable text to copy."
                     : null,
                 attributes: null,
               }));
@@ -413,7 +413,9 @@ describe("readerOverlay", function () {
       selectButton.dispatch("click", createClickEvent());
 
       assert.notInclude(actions.className, "mineru-copy-select-panel-open");
-      assert.deepEqual(notices, ["当前 box 没有可选择复制的文本。"]);
+      assert.deepEqual(notices, [
+        "This box does not have selectable text to copy.",
+      ]);
     } finally {
       globals.addon = originalAddon;
       (Zotero as any).getMainWindow = originalGetMainWindow;
@@ -817,7 +819,7 @@ describe("readerOverlay", function () {
               return messages.map(({ id }) => ({
                 value:
                   id === "mineruForZotero-reader-copy-image-missing"
-                    ? "当前 box 没有可复制的图片。"
+                    ? "This box does not have an image to copy."
                     : null,
                 attributes: null,
               }));
@@ -845,7 +847,7 @@ describe("readerOverlay", function () {
       );
 
       await waitForAsync(() => {
-        assert.deepEqual(notices, ["当前 box 没有可复制的图片。"]);
+        assert.deepEqual(notices, ["This box does not have an image to copy."]);
       });
     } finally {
       globals.addon = originalAddon;
@@ -3574,11 +3576,14 @@ describe("readerOverlay", function () {
     const doc = createDocumentStub();
     const selectionAnchor = { rawIndex: null as number | null };
     const boxesForSelection = [
-      createBox(0, "text", "跨页段落上一页"),
-      { ...createBox(1, "header", "页眉别名"), page: 2 },
-      { ...createBox(2, "page_header", "页眉"), page: 2 },
+      createBox(0, "text", "Cross-page paragraph on the previous page"),
+      { ...createBox(1, "header", "Header alias"), page: 2 },
+      { ...createBox(2, "page_header", "Header"), page: 2 },
       { ...createBox(3, "page_number", "2"), page: 2 },
-      { ...createBox(4, "text", "跨页段落下一页"), page: 2 },
+      {
+        ...createBox(4, "text", "Cross-page paragraph on the next page"),
+        page: 2,
+      },
     ];
     const state = {
       selectedRawIndexes: new Set<number>(),
@@ -3622,18 +3627,18 @@ describe("readerOverlay", function () {
         [normalizedBoxes[2], normalizedBoxes[1], normalizedBoxes[0]],
         new Set([2, 0]),
       ),
-      "第一段\n\n公式：E=mc^2",
+      "First paragraph\n\nFormula: E=mc^2",
     );
     assert.equal(
       formatter(
         [
-          createBox(0, "text", "第一段"),
+          createBox(0, "text", "First paragraph"),
           createBox(1, "interline_equation", "E=mc^2", "E=mc^2"),
           createBox(2, "inline_equation", "$a+b$", "a+b"),
         ],
         new Set([0, 1, 2]),
       ),
-      "第一段\n\n$$\nE=mc^2\n$$\n\n$a+b$",
+      "First paragraph\n\n$$\nE=mc^2\n$$\n\n$a+b$",
     );
   });
 });

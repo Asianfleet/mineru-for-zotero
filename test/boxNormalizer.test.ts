@@ -9,7 +9,7 @@ describe("boxNormalizer", function () {
       rawIndex: 0,
       page: 1,
       type: "text",
-      markdown: "第一段",
+      markdown: "First paragraph",
       formula: null,
     });
     assert.deepEqual(boxes[0].bbox, {
@@ -36,7 +36,7 @@ describe("boxNormalizer", function () {
             {
               type: "text",
               bbox: [100, 400, 400, 500],
-              lines: [{ spans: [{ content: "第一段" }] }],
+              lines: [{ spans: [{ content: "First paragraph" }] }],
             },
             {
               type: "interline_equation",
@@ -50,7 +50,7 @@ describe("boxNormalizer", function () {
 
     assert.equal(boxes.length, 2);
     assert.equal(boxes[0].page, 1);
-    assert.equal(boxes[0].markdown, "第一段");
+    assert.equal(boxes[0].markdown, "First paragraph");
     assert.equal(boxes[1].type, "interline_equation");
     assert.equal(boxes[1].formula, "E=mc^2");
   });

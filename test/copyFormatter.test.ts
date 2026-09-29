@@ -9,13 +9,13 @@ import { normalizedBoxes } from "./domainFixtures";
 
 describe("copyFormatter", function () {
   it("copies one text box as markdown", function () {
-    assert.equal(formatBoxesForCopy([normalizedBoxes[1]]), "第二段");
+    assert.equal(formatBoxesForCopy([normalizedBoxes[1]]), "Second paragraph");
   });
 
   it("merges selected boxes by rawIndex", function () {
     assert.equal(
       formatBoxesForCopy([normalizedBoxes[2], normalizedBoxes[0]]),
-      "第一段\n\n公式：E=mc^2",
+      "First paragraph\n\nFormula: E=mc^2",
     );
   });
 

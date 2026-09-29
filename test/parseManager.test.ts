@@ -37,8 +37,8 @@ describe("parseManager", function () {
     );
 
     assert.deepEqual(texts, [
-      { text: "已提交 MinerU 文档解析任务" },
-      { text: "[在线 API · 精准]" },
+      { text: "MinerU document parse task submitted" },
+      { text: "[Online API · Precise]" },
     ]);
   });
 
@@ -54,8 +54,8 @@ describe("parseManager", function () {
     );
 
     assert.deepEqual(texts, [
-      { text: "已提交 MinerU 文档解析任务" },
-      { text: "[在线 API · 精准 · 共 2 个]" },
+      { text: "MinerU document parse task submitted" },
+      { text: "[Online API · Precise · 2 total]" },
     ]);
   });
 
@@ -72,9 +72,9 @@ describe("parseManager", function () {
     );
 
     assert.deepEqual(texts, [
-      { text: "MinerU 文档解析任务完成" },
+      { text: "MinerU document parse task finished" },
       {
-        text: "[本地 API · 轻量 · 2/3]",
+        text: "[Local API · Lite · 2/3]",
       },
     ]);
   });
@@ -1844,20 +1844,20 @@ function resolveProgressWindowTestMessage(
   args?: Record<string, string>,
 ): string {
   const values: Record<string, string> = {
-    "parse-notice-mode-lite": "轻量",
-    "parse-notice-mode-precise": "精准",
-    "parse-notice-source-local": "本地 API",
-    "parse-notice-source-online": "在线 API",
-    "parse-task-finished-progress": "MinerU 文档解析任务完成",
-    "parse-task-submitted": "已提交 MinerU 文档解析任务",
-    "parse-task-submitted-total": "已提交 MinerU 文档解析任务",
+    "parse-notice-mode-lite": "Lite",
+    "parse-notice-mode-precise": "Precise",
+    "parse-notice-source-local": "Local API",
+    "parse-notice-source-online": "Online API",
+    "parse-task-finished-progress": "MinerU document parse task finished",
+    "parse-task-submitted": "MinerU document parse task submitted",
+    "parse-task-submitted-total": "MinerU document parse task submitted",
   };
 
   if (id === "parse-task-detail") {
     return `[${args?.sourceLabel} · ${args?.modeLabel}]`;
   }
   if (id === "parse-task-detail-total") {
-    return `[${args?.sourceLabel} · ${args?.modeLabel} · 共 ${args?.total} 个]`;
+    return `[${args?.sourceLabel} · ${args?.modeLabel} · ${args?.total} total]`;
   }
   if (id === "parse-task-detail-progress") {
     return `[${args?.sourceLabel} · ${args?.modeLabel} · ${args?.completed}/${args?.total}]`;

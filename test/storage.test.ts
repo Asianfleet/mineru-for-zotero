@@ -297,7 +297,7 @@ describe("storage", function () {
       mineruTaskID: "failed-task",
       rawResult: { content_list: [{ type: "text" }] },
       markdown: "# Failed",
-      error: "解析结果缺少 box 信息",
+      error: "The parse result does not contain box data",
     });
 
     assert.deepEqual(await storage.readParseStatus(attachment), {
@@ -579,14 +579,14 @@ describe("storage", function () {
       mineruTaskID: "task-empty",
       rawResult: { content_list: [{ type: "text" }] },
       markdown: "# No boxes",
-      error: "解析结果缺少 box 信息",
+      error: "The parse result does not contain box data",
     });
 
     const manifest = await storage.readManifest(attachment);
 
     assert.isFalse(await storage.hasReadyResult(attachment));
     assert.equal(manifest.status, "failed");
-    assert.equal(manifest.error, "解析结果缺少 box 信息");
+    assert.equal(manifest.error, "The parse result does not contain box data");
     await assertRejects(
       () => storage.readBoxes(attachment),
       "MinerU result is not ready: failed",

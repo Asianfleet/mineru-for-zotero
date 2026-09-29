@@ -24,7 +24,8 @@ const markdown = [
   "Method body mentions retrieval again.",
 ].join("\n");
 
-// MinerU 常把编号子节渲染成与父节同级，例如 3 与 3.1 都是二级标题。
+// MinerU often renders numbered subsections at the same level as their parent,
+// so 3 and 3.1 both become level-2 headings.
 const sameLevelMarkdown = [
   "# Doc",
   "",

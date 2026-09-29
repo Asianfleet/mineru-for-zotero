@@ -109,9 +109,9 @@ describe("itemTreeColumn", function () {
       document,
       (id) => {
         const values: Record<string, string> = {
-          "item-tree-column-mineru-parse-precise": "精准",
-          "item-tree-column-mineru-parse-lite": "轻量",
-          "item-tree-column-mineru-parse-running": "解析中",
+          "item-tree-column-mineru-parse-precise": "Precise",
+          "item-tree-column-mineru-parse-lite": "Lite",
+          "item-tree-column-mineru-parse-running": "Parsing",
         };
         return values[id] ?? id;
       },
@@ -126,7 +126,7 @@ describe("itemTreeColumn", function () {
       Array.from(cell.querySelectorAll(".mineru-parse-column-badge")).map(
         (badge) => badge.textContent,
       ),
-      ["精准", "轻量(解析中)"],
+      ["Precise", "Lite(Parsing)"],
     );
     assert.deepEqual(
       Array.from(cell.querySelectorAll(".mineru-parse-column-badge")).map(
@@ -154,7 +154,7 @@ describe("itemTreeColumn", function () {
       undefined,
       (id) => {
         const values: Record<string, string> = {
-          "item-tree-column-mineru-parse-precise": "精准",
+          "item-tree-column-mineru-parse-precise": "Precise",
         };
         return values[id] ?? id;
       },
@@ -163,7 +163,7 @@ describe("itemTreeColumn", function () {
     assert.equal(cell.className, "custom-column mineru-parse-column-cell");
     assert.equal(
       cell.querySelector(".mineru-parse-column-badge-precise")?.textContent,
-      "精准",
+      "Precise",
     );
   });
 

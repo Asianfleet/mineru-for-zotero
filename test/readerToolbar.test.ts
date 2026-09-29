@@ -118,9 +118,13 @@ describe("readerToolbar", function () {
       },
     } as unknown as Document;
 
-    const button = createReaderToolbarCommandButton(doc, "显示全部 box", () => {
-      clicked = true;
-    }) as HTMLButtonElement & { click?: EventListener };
+    const button = createReaderToolbarCommandButton(
+      doc,
+      "Show all boxes",
+      () => {
+        clicked = true;
+      },
+    ) as HTMLButtonElement & { click?: EventListener };
 
     button.click?.({
       preventDefault() {},
@@ -143,7 +147,7 @@ describe("readerToolbar", function () {
 
     const button = createReaderToolbarCommandButton(
       doc,
-      "关闭插件能力",
+      "Disable plugin features",
       () => {},
       { active: true },
     );
@@ -197,7 +201,7 @@ describe("readerToolbar", function () {
 
     const button = createReaderToolbarCommandButton(
       doc,
-      "仅显示鼠标所在 box",
+      "Show only hovered box",
       () => {},
     );
 
@@ -242,13 +246,13 @@ describe("readerToolbar", function () {
     } as unknown as HTMLDivElement;
 
     createReaderToolbarActionRow(doc, group, {
-      selectionLabel: "已选内容",
-      copySelectedLabel: "复制已选内容",
-      copyFullMarkdownLabel: "复制全文 markdown",
+      selectionLabel: "Selected content",
+      copySelectedLabel: "Copy selected content",
+      copyFullMarkdownLabel: "Copy full markdown",
       selectedCount: 3,
       copyIconSVG:
         '<svg xmlns="http://www.w3.org/2000/svg"><path fill="#333333"></path></svg>',
-      clearLabel: "清空选择",
+      clearLabel: "Clear selection",
       clearIconSVG:
         '<svg xmlns="http://www.w3.org/2000/svg"><path fill="#333333"></path></svg>',
       onCopy() {},
@@ -267,7 +271,7 @@ describe("readerToolbar", function () {
       children: HTMLElement[];
     };
     assert.equal(label.className, "mineru-reader-toolbar-selection-label");
-    assert.equal(label.children[0].textContent, "已选内容");
+    assert.equal(label.children[0].textContent, "Selected content");
     assert.equal(label.children[1].className, "mineru-reader-toolbar-badge");
     assert.equal(label.children[1].textContent, "3");
 
@@ -283,7 +287,7 @@ describe("readerToolbar", function () {
     assert.equal(copyButton.style.height, "24px");
     assert.equal(copyButton.style.padding, "0");
     assert.equal(copyButton.style.color, "var(--fill-secondary)");
-    assert.equal(copyButton.title, "复制已选内容");
+    assert.equal(copyButton.title, "Copy selected content");
 
     const clearButton = actions.children[1];
     assert.include(clearButton.className, "mineru-reader-toolbar-icon-command");
@@ -292,7 +296,7 @@ describe("readerToolbar", function () {
     assert.equal(clearButton.style.height, "24px");
     assert.equal(clearButton.style.padding, "0");
     assert.equal(clearButton.style.color, "var(--fill-secondary)");
-    assert.equal(clearButton.title, "清空选择");
+    assert.equal(clearButton.title, "Clear selection");
   });
 
   it("uses full markdown copy text when no boxes are selected", function () {
@@ -328,13 +332,13 @@ describe("readerToolbar", function () {
     } as unknown as HTMLDivElement;
 
     createReaderToolbarActionRow(doc, group, {
-      selectionLabel: "已选内容",
-      copySelectedLabel: "复制已选内容",
-      copyFullMarkdownLabel: "复制全文 markdown",
+      selectionLabel: "Selected content",
+      copySelectedLabel: "Copy selected content",
+      copyFullMarkdownLabel: "Copy full markdown",
       selectedCount: 0,
       copyIconSVG:
         '<svg xmlns="http://www.w3.org/2000/svg"><path fill="#333333"></path></svg>',
-      clearLabel: "清空选择",
+      clearLabel: "Clear selection",
       clearIconSVG:
         '<svg xmlns="http://www.w3.org/2000/svg"><path fill="#333333"></path></svg>',
       onCopy() {},
@@ -347,8 +351,8 @@ describe("readerToolbar", function () {
     };
     const copyButton = actions.children[0];
 
-    assert.equal(copyButton.title, "复制全文 markdown");
-    assert.equal(copyButton["aria-label"], "复制全文 markdown");
+    assert.equal(copyButton.title, "Copy full markdown");
+    assert.equal(copyButton["aria-label"], "Copy full markdown");
   });
 
   it("creates active icon buttons for reader toolbar modes", function () {
@@ -382,7 +386,7 @@ describe("readerToolbar", function () {
 
     const button = createReaderToolbarModeButton(
       doc,
-      "仅显示鼠标所在 box",
+      "Show only hovered box",
       "hover",
       true,
       () => {
@@ -400,8 +404,8 @@ describe("readerToolbar", function () {
     assert.equal(button.className, "active");
     assert.equal(button.tabIndex, -1);
     assert.equal(button.innerHTML, svg);
-    assert.equal(button.title, "仅显示鼠标所在 box");
-    assert.equal(button["aria-label"], "仅显示鼠标所在 box");
+    assert.equal(button.title, "Show only hovered box");
+    assert.equal(button["aria-label"], "Show only hovered box");
     assert.equal(button["aria-pressed"], "true");
     assert.equal(button.style.background, "");
     assert.equal(button.style.border, "");
