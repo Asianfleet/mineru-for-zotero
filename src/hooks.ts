@@ -94,16 +94,7 @@ async function onStartup() {
 }
 
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
-  await new Promise((resolve) => {
-    if (win.document.readyState !== "complete") {
-      win.document.addEventListener("readystatechange", () => {
-        if (win.document.readyState === "complete") {
-          resolve(void 0);
-        }
-      });
-    }
-    resolve(void 0);
-  });
+  await waitForWindowReady(win);
 
   await Promise.all([
     Zotero.initializationPromise,
@@ -122,6 +113,31 @@ async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   registerItemMenu();
   await registerItemTreeColumn();
   await registerReaderToolbar(win);
+}
+
+/**
+ * Resolve once the main window document finished loading.
+ *
+ * The listener removes itself on completion, so a window that is still loading
+ * does not leak a `readystatechange` handler.
+ */
+async function waitForWindowReady(win: _ZoteroTypes.MainWindow): Promise<void> {
+  if (win.document.readyState === "complete") {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    const onReadyStateChange = () => {
+      if (win.document.readyState === "complete") {
+        win.document.removeEventListener(
+          "readystatechange",
+          onReadyStateChange,
+        );
+        resolve();
+      }
+    };
+    win.document.addEventListener("readystatechange", onReadyStateChange);
+  });
 }
 
 function registerPreferencePane(): void {
@@ -194,19 +210,6 @@ function removeMainWindowStylesheet(win: Window): void {
 }
 
 /**
- * Dispatches Notify events.
- * Keep the event-specific work in dedicated helpers to keep this function small.
- */
-async function onNotify(
-  event: string,
-  type: string,
-  ids: Array<string | number>,
-  extraData: { [key: string]: any },
-) {
-  ztoolkit.log("notify", event, type, ids, extraData);
-}
-
-/**
  * Dispatches Preference UI events.
  * Keep the event-specific work in dedicated helpers to keep this function small.
  * @param type event type
@@ -222,14 +225,6 @@ async function onPrefsEvent(type: string, data: { [key: string]: any }) {
   }
 }
 
-function onShortcuts(type: string) {
-  ztoolkit.log("shortcut", type);
-}
-
-function onDialogEvents(type: string) {
-  ztoolkit.log("dialog event", type);
-}
-
 // Add your hooks here. For element click, etc.
 // Keep in mind hooks only do dispatch. Don't add code that does real jobs in hooks.
 // Otherwise the code would be hard to read and maintain.
@@ -239,8 +234,5 @@ export default {
   onShutdown,
   onMainWindowLoad,
   onMainWindowUnload,
-  onNotify,
   onPrefsEvent,
-  onShortcuts,
-  onDialogEvents,
 };

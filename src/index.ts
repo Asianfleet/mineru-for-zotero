@@ -21,18 +21,18 @@ function getZotero(): typeof Zotero {
   ).Zotero;
 }
 
-// @ts-expect-error - Plugin instance is not typed
-if (!getZotero()[config.addonInstance]) {
-  _globalThis.addon = new Addon();
-  defineGlobal("ztoolkit", () => _globalThis.addon.data.ztoolkit);
-  // @ts-expect-error - Plugin instance is not typed
-  Zotero[config.addonInstance] = addon;
-}
-
 function defineGlobal(name: string, getter: () => unknown): void {
   Object.defineProperty(_globalThis, name, {
     get() {
       return getter();
     },
   });
+}
+
+// @ts-expect-error - Plugin instance is not typed
+if (!getZotero()[config.addonInstance]) {
+  _globalThis.addon = new Addon();
+  defineGlobal("ztoolkit", () => _globalThis.addon.data.ztoolkit);
+  // @ts-expect-error - Plugin instance is not typed
+  getZotero()[config.addonInstance] = addon;
 }
