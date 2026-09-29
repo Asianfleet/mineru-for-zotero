@@ -7,8 +7,12 @@ import {
   ZoteroItemLike,
 } from "./types";
 
+// Derived PDFs (annotated, highlighted, translated, copied, edited) can carry
+// Chinese labels in their file names, so the CJK alternatives below are part of
+// the match. They are written as \uXXXX escapes because this repository must not
+// contain literal CJK characters.
 const DERIVED_NAME_PATTERN =
-  /(annotated|annotation|annotations|highlight|highlights|note|notes|translated|translation|copy|edited|批注|注释|高亮|笔记|翻译|译文|副本|修改)/i;
+  /(annotated|annotation|annotations|highlight|highlights|note|notes|translated|translation|copy|edited|\u6279\u6ce8|\u6ce8\u91ca|\u9ad8\u4eae|\u7b14\u8bb0|\u7ffb\u8bd1|\u8bd1\u6587|\u526f\u672c|\u4fee\u6539)/i;
 
 /**
  * Resolve a libraryID/key pair into a target PDF attachment usable for Markdown Query.
