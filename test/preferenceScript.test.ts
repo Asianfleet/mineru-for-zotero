@@ -5,17 +5,13 @@ import {
   registerPreferenceValueSync,
 } from "../src/modules/preferenceScript";
 import {
-  generateMarkdownApiToken,
   getMarkdownApiEnabled,
-  getMarkdownApiRequireToken,
-  getMarkdownApiToken,
   getLocalApiBaseURL,
   getLocalApiTimeoutMinutes,
   getParseTier,
   getParseSource,
   getSaveImages,
   setMarkdownApiEnabled,
-  setMarkdownApiToken,
   setLocalApiBaseURL,
   setLocalApiTimeoutMinutes,
   setParseTier,
@@ -107,20 +103,8 @@ describe("preferenceScript", function () {
     assert.equal(getLocalApiTimeoutMinutes(), 30);
   });
 
-  it("defaults the markdown query API to disabled without requiring a token", function () {
+  it("defaults the markdown query API to disabled", function () {
     assert.isFalse(getMarkdownApiEnabled());
-    assert.isFalse(getMarkdownApiRequireToken());
-  });
-
-  it("generates and persists a markdown query API token", function () {
-    try {
-      const token = generateMarkdownApiToken();
-      assert.match(token, /^[A-Za-z0-9_-]{32,}$/);
-      setMarkdownApiToken(token);
-      assert.equal(getMarkdownApiToken(), token);
-    } finally {
-      setMarkdownApiToken("");
-    }
   });
 
   it("round-trips parse source, parse tier, and local API URL", function () {

@@ -19,8 +19,9 @@ import {
   ZoteroItemLike,
 } from "./types";
 import { parseAttachment } from "../parseManager";
-import { taskStore } from "../taskStore";
+import { taskStore, type TaskRecord } from "../taskStore";
 import { exportBibTeX } from "../agentSync";
+import { extractItemYear } from "./itemYear";
 import type { NormalizedBox } from "../domain";
 
 /**
@@ -165,7 +166,7 @@ export function createMarkdownQueryService(deps: {
     },
 
     async getTasks() {
-      return { tasks: taskStore.getTasks() };
+      return { tasks: taskStore.getTasks().map(summarizeTask) };
     },
     async triggerParse(input) {
       const resolved = await resolveAttachment({
@@ -176,13 +177,15 @@ export function createMarkdownQueryService(deps: {
         storage: deps.storage,
       });
       // Try to parse using Zotero backend. This won't wait for it to finish.
-      // We don't await because it blocks the HTTP response.
+      // We don't await because it blocks the HTTP response. `force` keeps the
+      // request non-interactive: an HTTP caller must never be able to open a
+      // modal reparse prompt in the Zotero window.
       const item = Zotero.Items.getByLibraryAndKey(
         input.libraryID,
         resolved.attachment.key,
       );
       if (item) {
-        parseAttachment(item).catch((e) =>
+        parseAttachment(item, { force: true }).catch((e) =>
           ztoolkit.log("API Trigger Parse Error", e),
         );
       }
@@ -438,11 +441,35 @@ function extractDoi(item: ZoteroItemLike): string | undefined {
 }
 
 /**
- * Extract a four-digit year from the item's date field.
+ * Extract a four-digit year from the item.
  */
 function extractYear(item: ZoteroItemLike): string | undefined {
-  const match = /^\s*(\d{4})/.exec(item.getField("date") ?? "");
-  return match?.[1];
+  return extractItemYear(item);
+}
+
+/**
+ * Reduce a task record to the fields an HTTP client needs.
+ *
+ * Absolute PDF paths and per-chunk resume bookkeeping stay local: any process
+ * on the machine can reach this endpoint, so it must not disclose more of the
+ * library layout than necessary.
+ */
+function summarizeTask(task: TaskRecord) {
+  return {
+    id: task.id,
+    attachmentID: task.attachment.id,
+    libraryID: task.attachment.libraryID,
+    key: task.attachment.key,
+    fileName: task.attachment.fileName,
+    title: task.title,
+    status: task.status,
+    progress: task.progress,
+    detail: task.detail,
+    error: task.error,
+    resumeAvailable: Boolean(task.resume),
+    createdAt: task.createdAt,
+    updatedAt: task.updatedAt,
+  };
 }
 
 /**

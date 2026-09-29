@@ -1,10 +1,7 @@
-import {
-  getMarkdownApiEnabled,
-  getMarkdownApiRequireToken,
-  getMarkdownApiToken,
-} from "../../utils/prefs";
+import { getMarkdownApiEnabled } from "../../utils/prefs";
 import { getMinerUStorageRoot } from "../preferenceScript";
 import { createStorage } from "../storage";
+import { extractItemYear } from "./itemYear";
 import {
   createMarkdownQueryService,
   MarkdownQueryService,
@@ -33,6 +30,14 @@ export const MARKDOWN_ENDPOINT_PATHS = [
 
 /**
  * Register the Markdown query HTTP endpoint for external local clients.
+ *
+ * Safety note: this endpoint does not add its own authentication. It relies on
+ * Zotero's HTTP server, which binds to 127.0.0.1, rejects non-local `Host`
+ * headers (DNS rebinding) and drops browser-originated requests unless an
+ * endpoint opts in with `allowRequestsFromUnsafeWebContent`. The practical
+ * exposure is therefore another local process running as the same user, which
+ * could already read the Zotero data directory. The API stays opt-in through
+ * the `apiEnabled` preference.
  */
 export function registerMarkdownQueryApiEndpoint(): void {
   const service = createMarkdownQueryService({
@@ -65,7 +70,7 @@ export function createMarkdownQueryEndpoint(service: MarkdownQueryService) {
     async init(options: MarkdownEndpointRequest) {
       try {
         const query = getQuery(options);
-        authorize(query, options.headers);
+        authorize();
         let payload;
         if (options.pathname === "/mineru-for-zotero/search") {
           payload = await service.searchByTitle({
@@ -262,8 +267,8 @@ async function searchItems(input: ItemSearchInput): Promise<ZoteroItemLike[]> {
         valA = a.dateModified || a.getField("dateModified") || "";
         valB = b.dateModified || b.getField("dateModified") || "";
       } else if (input.sortBy === "year") {
-        valA = a.getField("date") || "";
-        valB = b.getField("date") || "";
+        valA = extractItemYear(a) ?? "";
+        valB = extractItemYear(b) ?? "";
       } else if (input.sortBy === "title") {
         valA = a.getDisplayTitle() || a.getField("title") || "";
         valB = b.getDisplayTitle() || b.getField("title") || "";
@@ -309,34 +314,30 @@ function resolveCollection(
 }
 
 /**
- * Check whether the item's date field begins with the specified four-digit year.
+ * Check whether the item's publication year matches the requested year.
+ *
+ * Uses Zotero's derived `year` field so that non-ISO dates ("March 4, 2021")
+ * match, instead of comparing the raw date string. Exported for tests.
  */
-function itemMatchesYear(item: ZoteroItemLike, year: string): boolean {
-  return (item.getField("date") ?? "").trim().startsWith(year);
+export function itemMatchesYear(item: ZoteroItemLike, year: string): boolean {
+  const target = year.trim();
+  if (!target) {
+    return false;
+  }
+  return extractItemYear(item) === target;
 }
 
 /**
- * Verify API enabled state and token, supporting both Bearer header and query parameter sources.
+ * Verify that the local query API is enabled. The endpoint has no token: the
+ * feature was removed from the settings UI, so it must not be enforced here.
  */
-function authorize(
-  query: Record<string, string>,
-  headers: Record<string, string>,
-): void {
+function authorize(): void {
   if (!getMarkdownApiEnabled()) {
     throw new MarkdownQueryError(
       "api-disabled",
       403,
       "Markdown query API is disabled",
     );
-  }
-  if (!getMarkdownApiRequireToken()) {
-    return;
-  }
-
-  const expected = getMarkdownApiToken();
-  const provided = getBearerToken(headers) || optionalString(query.token) || "";
-  if (!expected || provided !== expected) {
-    throw new MarkdownQueryError("invalid-token", 403, "Invalid API token");
   }
 }
 
@@ -348,15 +349,6 @@ function getQuery(options: MarkdownEndpointRequest): Record<string, string> {
     return Object.fromEntries(options.searchParams.entries());
   }
   return options.query;
-}
-
-/**
- * Extract Bearer token from the Authorization header.
- */
-function getBearerToken(headers: Record<string, string>): string {
-  const header = headers.authorization ?? headers.Authorization ?? "";
-  const match = /^Bearer\s+(.+)$/i.exec(header);
-  return match?.[1]?.trim() ?? "";
 }
 
 /**

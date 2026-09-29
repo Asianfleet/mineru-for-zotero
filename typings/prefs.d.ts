@@ -13,8 +13,6 @@ declare namespace _ZoteroTypes {
       "localApiBaseURL": string;
       "localApiTimeoutMinutes": number;
       "apiEnabled": boolean;
-      "apiRequireToken": boolean;
-      "apiToken": string;
       "saveImages": boolean;
       "syncFolder": string;
       "autoParsePageLimit": number;

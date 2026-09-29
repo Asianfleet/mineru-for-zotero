@@ -3,7 +3,6 @@
  */
 export type MarkdownQueryErrorCode =
   | "api-disabled"
-  | "invalid-token"
   | "invalid-request"
   | "item-not-found"
   | "pdf-attachment-not-found"

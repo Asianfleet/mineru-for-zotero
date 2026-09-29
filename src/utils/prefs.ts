@@ -125,50 +125,6 @@ export function setMarkdownApiEnabled(value: boolean) {
   return setPref("apiEnabled", value);
 }
 
-/**
- * Read whether the Markdown query API requires a token (disabled by default).
- */
-export function getMarkdownApiRequireToken(): boolean {
-  return getPref("apiRequireToken") === true;
-}
-
-/**
- * Persist the token validation switch for the Markdown query API.
- */
-export function setMarkdownApiRequireToken(value: boolean) {
-  return setPref("apiRequireToken", value);
-}
-
-/**
- * Read the Markdown query API token.
- */
-export function getMarkdownApiToken(): string {
-  const value = getPref("apiToken");
-  if (typeof value === "string" && value.trim()) {
-    return value;
-  }
-
-  const token = generateMarkdownApiToken();
-  setMarkdownApiToken(token);
-  return token;
-}
-
-/**
- * Persist the Markdown query API token.
- */
-export function setMarkdownApiToken(value: string) {
-  return setPref("apiToken", value);
-}
-
-/**
- * Generate a random token suitable for URL transmission.
- */
-export function generateMarkdownApiToken(): string {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  return bytesToUrlToken(bytes);
-}
-
 export function getSaveImages(): boolean {
   const value = getPref("saveImages");
   return value !== false;
@@ -196,17 +152,4 @@ export function getAutoParsePageLimit(): number {
 
 export function setAutoParsePageLimit(value: number) {
   return setPref("autoParsePageLimit" as keyof PluginPrefsMap, value);
-}
-
-/**
- * Encode a byte array into a URL-safe token.
- */
-function bytesToUrlToken(bytes: Uint8Array): string {
-  const binary = Array.from(bytes, (byte) => String.fromCharCode(byte)).join(
-    "",
-  );
-  return btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
 }

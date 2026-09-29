@@ -2,20 +2,16 @@ import { assert } from "chai";
 import {
   createMarkdownQueryEndpoint,
   createMarkdownQueryEndpointClass,
+  itemMatchesYear,
   MARKDOWN_ENDPOINT_PATHS,
 } from "../src/modules/markdownQuery/apiEndpoint";
 import { MarkdownQueryError } from "../src/modules/markdownQuery/types";
-import {
-  setMarkdownApiEnabled,
-  setMarkdownApiRequireToken,
-  setMarkdownApiToken,
-} from "../src/utils/prefs";
+import type { ZoteroItemLike } from "../src/modules/markdownQuery/types";
+import { setMarkdownApiEnabled } from "../src/utils/prefs";
 
 describe("markdownApiEndpoint", function () {
   afterEach(function () {
     setMarkdownApiEnabled(false);
-    setMarkdownApiRequireToken(false);
-    setMarkdownApiToken("");
   });
 
   it("returns api-disabled when the API is off", async function () {
@@ -35,55 +31,8 @@ describe("markdownApiEndpoint", function () {
     ]);
   });
 
-  it("rejects missing tokens when token auth is required", async function () {
-    setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(true);
-    setMarkdownApiToken("secret");
-    const endpoint = createMarkdownQueryEndpoint(fakeService());
-
-    const response = await endpoint.init(
-      request("/mineru-for-zotero/markdown"),
-    );
-
-    assert.include(String(response[2]), "invalid-token");
-  });
-
-  it("accepts bearer tokens", async function () {
-    setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(true);
-    setMarkdownApiToken("secret");
-    const endpoint = createMarkdownQueryEndpoint(fakeService());
-
-    const response = await endpoint.init(
-      request("/mineru-for-zotero/markdown", {
-        headers: { authorization: "Bearer secret" },
-        query: { libraryID: "1", key: "PDF1" },
-      }),
-    );
-
-    assert.equal(response[0], 200);
-    assert.include(String(response[2]), "# Body");
-  });
-
-  it("accepts query tokens", async function () {
-    setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(true);
-    setMarkdownApiToken("secret");
-    const endpoint = createMarkdownQueryEndpoint(fakeService());
-
-    const response = await endpoint.init(
-      request("/mineru-for-zotero/search", {
-        query: { libraryID: "1", title: "Doc", token: "secret" },
-      }),
-    );
-
-    assert.equal(response[0], 200);
-    assert.include(String(response[2]), '"candidates":[]');
-  });
-
   it("forwards creator, year, tag, and limit search parameters", async function () {
     setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(false);
     const searches: unknown[] = [];
     const endpoint = createMarkdownQueryEndpoint({
       ...fakeService(),
@@ -117,7 +66,6 @@ describe("markdownApiEndpoint", function () {
 
   it("rejects malformed year parameters", async function () {
     setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(false);
     const endpoint = createMarkdownQueryEndpoint(fakeService());
 
     const response = await endpoint.init(
@@ -133,7 +81,6 @@ describe("markdownApiEndpoint", function () {
 
   it("rejects non-positive limit parameters", async function () {
     setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(false);
     const endpoint = createMarkdownQueryEndpoint(fakeService());
 
     const response = await endpoint.init(
@@ -148,7 +95,6 @@ describe("markdownApiEndpoint", function () {
 
   it("surfaces the title-or-creator requirement from the service", async function () {
     setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(false);
     const endpoint = createMarkdownQueryEndpoint({
       async searchByTitle() {
         throw new MarkdownQueryError(
@@ -180,7 +126,6 @@ describe("markdownApiEndpoint", function () {
 
   it("forwards includeSubsections to markdown queries", async function () {
     setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(false);
     const queries: unknown[] = [];
     const endpoint = createMarkdownQueryEndpoint({
       ...fakeService(),
@@ -209,7 +154,6 @@ describe("markdownApiEndpoint", function () {
 
   it("creates a constructible Zotero endpoint class", async function () {
     setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(false);
     const EndpointClass = createMarkdownQueryEndpointClass(fakeService());
     const endpoint = new EndpointClass();
 
@@ -225,7 +169,6 @@ describe("markdownApiEndpoint", function () {
 
   it("reads query parameters from Zotero runtime searchParams", async function () {
     setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(false);
     const endpoint = createMarkdownQueryEndpoint(fakeService());
 
     const response = await endpoint.init(
@@ -240,7 +183,6 @@ describe("markdownApiEndpoint", function () {
 
   it("uses a generic internal-error message for unexpected errors", async function () {
     setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(false);
     const endpoint = createMarkdownQueryEndpoint({
       async searchByTitle() {
         return { candidates: [] };
@@ -280,7 +222,6 @@ describe("markdownApiEndpoint", function () {
 
   it("returns libraries through the libraries endpoint", async function () {
     setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(false);
     const endpoint = createMarkdownQueryEndpoint({
       ...fakeService(),
       async getLibraries() {
@@ -301,7 +242,6 @@ describe("markdownApiEndpoint", function () {
 
   it("returns collections through the collections endpoint", async function () {
     setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(false);
     let captured: unknown;
     const endpoint = createMarkdownQueryEndpoint({
       ...fakeService(),
@@ -328,7 +268,6 @@ describe("markdownApiEndpoint", function () {
 
   it("returns tags through the tags endpoint", async function () {
     setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(false);
     let captured: unknown;
     const endpoint = createMarkdownQueryEndpoint({
       ...fakeService(),
@@ -355,7 +294,6 @@ describe("markdownApiEndpoint", function () {
 
   it("forwards enhanced search parameters to service", async function () {
     setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(false);
     const searches: unknown[] = [];
     const endpoint = createMarkdownQueryEndpoint({
       ...fakeService(),
@@ -405,7 +343,6 @@ describe("markdownApiEndpoint", function () {
 
   it("rejects invalid sortBy parameters", async function () {
     setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(false);
     const endpoint = createMarkdownQueryEndpoint(fakeService());
 
     const response = await endpoint.init(
@@ -420,7 +357,6 @@ describe("markdownApiEndpoint", function () {
 
   it("returns task records through the tasks endpoint", async function () {
     setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(false);
     const endpoint = createMarkdownQueryEndpoint({
       ...fakeService(),
       async getTasks() {
@@ -436,7 +372,6 @@ describe("markdownApiEndpoint", function () {
 
   it("rejects non-POST parse triggers", async function () {
     setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(false);
     const endpoint = createMarkdownQueryEndpoint(fakeService());
 
     const response = await endpoint.init(
@@ -451,7 +386,6 @@ describe("markdownApiEndpoint", function () {
 
   it("submits parse tasks through the parse endpoint", async function () {
     setMarkdownApiEnabled(true);
-    setMarkdownApiRequireToken(false);
     let submitted: unknown;
     const endpoint = createMarkdownQueryEndpoint({
       ...fakeService(),
@@ -473,6 +407,28 @@ describe("markdownApiEndpoint", function () {
     const trigger = submitted as { libraryID: number; key: string };
     assert.equal(trigger.libraryID, 1);
     assert.equal(trigger.key, "ABC1");
+  });
+
+  describe("year matching", function () {
+    function item(fields: Record<string, string>): ZoteroItemLike {
+      return {
+        getField: (name: string) => fields[name] ?? "",
+      } as unknown as ZoteroItemLike;
+    }
+
+    it("matches a non-ISO date through Zotero's derived year field", function () {
+      const march = item({ year: "2021", date: "March 4, 2021" });
+
+      assert.isTrue(itemMatchesYear(march, "2021"));
+      assert.isFalse(itemMatchesYear(march, "2020"));
+    });
+
+    it("falls back to scanning the date string when no year is derived", function () {
+      assert.isTrue(itemMatchesYear(item({ date: "12 Jan 2019" }), "2019"));
+      assert.isTrue(itemMatchesYear(item({ date: "Spring 2021" }), "2021"));
+      assert.isFalse(itemMatchesYear(item({ date: "Spring 2021" }), "2020"));
+      assert.isFalse(itemMatchesYear(item({ date: "" }), "2021"));
+    });
   });
 });
 
