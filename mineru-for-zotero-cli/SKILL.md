@@ -68,7 +68,7 @@ node scripts/query-markdown.mjs <command> [options]
 - `--has-pdf` — Boolean flag; only return items that have at least one PDF attachment.
 - `--parsed-only` — Boolean flag; only return items with ready MinerU parse results (precise or lite).
 - `--sort-by <field>` — Sort by `dateAdded`, `dateModified`, `title`, or `year`.
-- `--sort-order <asc|desc>` — Sort direction (`desc` by default for dates/years, `asc` for title).
+- `--sort-order <asc|desc>` — Sort direction (`desc` by default, for every `--sort-by` field).
 - `--limit <n>` — Maximum number of candidates to return.
 
 ### Markdown options

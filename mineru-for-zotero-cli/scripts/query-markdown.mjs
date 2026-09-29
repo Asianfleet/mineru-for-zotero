@@ -811,7 +811,7 @@ function helpText() {
     "  --has-pdf                    Only return items with at least one PDF attachment",
     "  --parsed-only                Only return items with available MinerU parse results",
     "  --sort-by <field>            Sort by dateAdded, dateModified, title, or year",
-    "  --sort-order <asc|desc>      Sort direction (default: desc for dates/year, asc for title)",
+    "  --sort-order <asc|desc>      Sort direction (default: desc)",
     "  --limit <n>                  Maximum number of candidates to return",
     "",
     "Markdown options:",
