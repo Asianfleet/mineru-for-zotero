@@ -70,7 +70,7 @@ test("formats search results as agent-friendly text", async () => {
   );
 });
 
-test("formats markdown headings as json envelope without exposing token", async () => {
+test("formats markdown headings as json envelope without auth headers", async () => {
   await withServer(
     {
       status: 200,
@@ -114,16 +114,13 @@ test("formats markdown headings as json envelope without exposing token", async 
         "ABCD1234",
         "--granularity",
         "headings",
-        "--token",
-        "secret-token",
         "--format",
         "json",
       ]);
 
       assert.equal(result.code, 0);
       assert.equal(result.stderr, "");
-      assert.equal(requests[0].headers.authorization, "Bearer secret-token");
-      assert.doesNotMatch(result.stdout, /secret-token/);
+      assert.equal(requests[0].headers.authorization, undefined);
 
       const output = JSON.parse(result.stdout);
       assert.equal(output.ok, true);
@@ -589,7 +586,7 @@ test("forwards rich search options to the search endpoint", async () => {
 });
 
 test("hints at Zotero availability when the API is unreachable", async () => {
-  // 端口 1 上通常没有监听者，连接会立即被拒绝。
+  // Nothing listens on port 1, so the connection is refused immediately.
   const result = await runCli([
     "markdown",
     "--port",
@@ -602,10 +599,43 @@ test("hints at Zotero availability when the API is unreachable", async () => {
     "ABCD1234",
   ]);
 
-  assert.equal(result.code, 2);
+  assert.equal(result.code, 3);
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /Error: network-error/);
   assert.match(result.stderr, /Zotero may not be running/);
+  // Transport errors must not print the usage block; only argument errors do.
+  assert.doesNotMatch(result.stderr, /Usage:/);
+});
+
+test("treats non-JSON responses as transport errors with exit code 3", async () => {
+  const server = createServer((request, res) => {
+    res.writeHead(200, { "content-type": "text/plain" });
+    res.end("not json");
+  });
+  await new Promise((resolve) => {
+    server.listen(0, "127.0.0.1", resolve);
+  });
+
+  try {
+    const { port } = server.address();
+    const result = await runCli(["libraries", "--port", String(port)]);
+
+    assert.equal(result.code, 3);
+    assert.equal(result.stdout, "");
+    assert.match(result.stderr, /Error: network-error/);
+    assert.match(result.stderr, /non-JSON response/);
+    assert.doesNotMatch(result.stderr, /Usage:/);
+  } finally {
+    await new Promise((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve();
+      });
+    });
+  }
 });
 
 /**

@@ -1,9 +1,28 @@
 #!/usr/bin/env node
 /* global AbortController, URL, clearTimeout, console, fetch, process, setTimeout */
 
+/**
+ * Agent-facing CLI for the MinerU for Zotero Markdown query API.
+ *
+ * The local query API is gated only by the plugin's enable switch, so requests
+ * carry no Authorization header.
+ *
+ * Exit codes (also printed by --help):
+ *   0  success
+ *   1  API error: the API answered with an HTTP 4xx/5xx error envelope
+ *   2  argument or usage error: the usage text is printed to stderr
+ *   3  transport error: Zotero is unreachable (connection refused, timeout, or
+ *      a non-JSON response)
+ */
+
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+
+const EXIT_SUCCESS = 0;
+const EXIT_API_ERROR = 1;
+const EXIT_USAGE_ERROR = 2;
+const EXIT_TRANSPORT_ERROR = 3;
 
 const DEFAULT_LISTEN_PORT = 23119;
 const DEFAULT_FORMAT = "text";
@@ -36,6 +55,8 @@ const BOOLEAN_FLAGS = new Set([
 
 /**
  * Runs the CLI entry point and maps failures to stable process output.
+ * Returns one of the documented exit codes: 0 success, 1 API error,
+ * 2 argument or usage error, 3 transport error.
  */
 async function main(argv) {
   let options;
@@ -43,11 +64,12 @@ async function main(argv) {
     options = parseCommand(argv);
     if (options.help) {
       console.log(helpText());
-      return 0;
+      return EXIT_SUCCESS;
     }
   } catch (error) {
+    // Argument errors are the only failures that print the usage block.
     writeArgumentError(error);
-    return 2;
+    return EXIT_USAGE_ERROR;
   }
 
   try {
@@ -58,7 +80,7 @@ async function main(argv) {
     } else {
       console.log(formatTextSuccess(options, response));
     }
-    return 0;
+    return EXIT_SUCCESS;
   } catch (error) {
     const envelope = createErrorEnvelope(options, error);
     if (options.format === "json") {
@@ -66,7 +88,11 @@ async function main(argv) {
     } else {
       console.error(formatTextError(envelope));
     }
-    return envelope.status >= 400 && envelope.status < 600 ? 1 : 2;
+    // HTTP 4xx/5xx errors arrive as an API envelope; everything else is a
+    // transport failure (connection refused, timeout, non-JSON response).
+    return envelope.status >= 400 && envelope.status < 600
+      ? EXIT_API_ERROR
+      : EXIT_TRANSPORT_ERROR;
   }
 }
 
@@ -102,7 +128,6 @@ function parseCommand(argv) {
     getFlag(flags, "--timeout-ms", String(DEFAULT_TIMEOUT_MS)),
     "--timeout-ms",
   );
-  const token = getFlag(flags, "--token");
 
   if (command === "libraries") {
     return {
@@ -112,7 +137,6 @@ function parseCommand(argv) {
       baseUrl,
       format,
       timeoutMs,
-      token,
       params: {},
     };
   }
@@ -130,7 +154,6 @@ function parseCommand(argv) {
       baseUrl,
       format,
       timeoutMs,
-      token,
       params,
     };
   }
@@ -149,7 +172,6 @@ function parseCommand(argv) {
       baseUrl,
       format,
       timeoutMs,
-      token,
       params,
     };
   }
@@ -162,7 +184,6 @@ function parseCommand(argv) {
       baseUrl,
       format,
       timeoutMs,
-      token,
       params: parseSearchParams(flags, libraryID),
     };
   }
@@ -200,7 +221,6 @@ function parseCommand(argv) {
     baseUrl,
     format,
     timeoutMs,
-    token,
     params,
   };
 }
@@ -335,6 +355,8 @@ function hasValue(value) {
 
 /**
  * Fetches JSON from the local Zotero Markdown query API.
+ * The API is gated only by the plugin's enable switch, so requests are sent
+ * without an Authorization header.
  */
 async function requestMarkdownApi(options) {
   const url = new URL(options.endpoint, options.baseUrl);
@@ -345,13 +367,7 @@ async function requestMarkdownApi(options) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs);
   try {
-    const headers = {};
-    if (options.token) {
-      headers.Authorization = `Bearer ${options.token}`;
-    }
-
     const response = await fetch(url, {
-      headers,
       signal: controller.signal,
     });
     const payload = await parseJsonResponse(response);
@@ -426,7 +442,7 @@ function createErrorEnvelope(options, error) {
 }
 
 /**
- * Builds a request summary without sensitive token values.
+ * Builds the request summary embedded in JSON envelopes.
  */
 function createRequestSummary(options) {
   return {
@@ -741,7 +757,6 @@ function formatTextError(envelope) {
 function hintForError(code) {
   const hints = {
     "api-disabled": "Enable the Markdown query API in Zotero preferences.",
-    "invalid-token": "Check the --token value from Zotero preferences.",
     "ambiguous-attachment":
       "Pass --attachment-key with one of the candidate keys.",
     "parse-result-not-found":
@@ -770,15 +785,14 @@ function writeArgumentError(error) {
 function helpText() {
   return [
     "Usage:",
-    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs libraries [--port <number>] [--token <token>] [--format text|json]",
-    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs collections --library-id <id> [--parent-key <key>] [--port <number>] [--token <token>] [--format text|json]",
-    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs tags --library-id <id> [--limit <n>] [--port <number>] [--token <token>] [--format text|json]",
+    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs libraries [--port <number>] [--format text|json]",
+    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs collections --library-id <id> [--parent-key <key>] [--port <number>] [--format text|json]",
+    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs tags --library-id <id> [--limit <n>] [--port <number>] [--format text|json]",
     "  node mineru-for-zotero-cli/scripts/query-markdown.mjs search --library-id <id> [--title <text>] [--creator <text>] [--collection <name|key>] [--tag <tag>] [--abstract <text>] [--publication <text>] [--citekey <key>] [--doi <doi>] [--item-type <type>] [--since <date>] [--year YYYY] [--has-pdf] [--parsed-only] [--sort-by dateAdded|dateModified|title|year] [--sort-order asc|desc] [--limit <n>] [--format text|json]",
     "  node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id <id> --key <key> [--granularity full|headings|section|search|locate] [--format text|json]",
     "",
     "Common options:",
     "  --port <number>              Zotero local server port. Default: auto-detect from Zotero profile, then 23119",
-    "  --token <token>              Markdown query API token. Sent as Authorization: Bearer.",
     "  --format <text|json>         Output format. Default: text",
     "  --timeout-ms <number>        Request timeout. Default: 30000",
     "",
@@ -806,6 +820,12 @@ function helpText() {
     "  --include-subsections        Include same-level subsections in section output.",
     "  --query <text>               Search query for granularity=search or locate.",
     "  --context-paragraphs <n>     Context paragraphs for granularity=search or locate.",
+    "",
+    "Exit codes:",
+    "  0  Success",
+    "  1  API error (HTTP 4xx/5xx error envelope)",
+    "  2  Argument or usage error",
+    "  3  Transport error (cannot reach Zotero: connection refused, timeout, or non-JSON response)",
   ].join("\n");
 }
 

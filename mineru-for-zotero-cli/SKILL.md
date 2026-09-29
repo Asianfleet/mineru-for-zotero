@@ -15,7 +15,7 @@ Use the bundled CLI to query parsed Markdown that MinerU for Zotero has already 
 
 - Zotero is running.
 - Markdown query API is available.
-- If the API requires a token, pass it with `--token <token>`.
+- No token is needed: the local API is gated only by the plugin's enable switch.
 
 ## CLI Reference
 
@@ -41,7 +41,6 @@ node scripts/query-markdown.mjs <command> [options]
 
 - `--library-id <id>` — Zotero library ID; required for `collections`, `tags`, `search`, and `markdown`
 - `--port <number>` — Zotero local server port; default is auto-detected from the Zotero profile, then 23119
-- `--token <token>` — API token, sent as Authorization: Bearer
 - `--format <text|json>` — Output format; default is text, use `--format text` for agent-readable text. use `--format json` when another script or pipeline needs structured output.
 - `--timeout-ms <number>` — Request timeout; default is 30000
 
@@ -80,6 +79,17 @@ node scripts/query-markdown.mjs <command> [options]
 - `--include-subsections` — With `granularity=section`, extend the range past same-level numbered subsections (e.g. include `3.1`–`3.4` inside `3.`) until the next chapter or unnumbered heading
 - `--query <text>` — Search query for search queries
 - `--context-paragraphs <n>` — Context paragraphs for search queries
+
+### Exit Codes
+
+The CLI exits with one of four codes; check the code to decide whether to retry, fix the command, or report a failure.
+
+| Code | Meaning              | What it indicates                                                                            |
+| ---- | -------------------- | -------------------------------------------------------------------------------------------- |
+| 0    | Success              | The API answered and the result was printed.                                                 |
+| 1    | API error            | The API answered with an HTTP 4xx/5xx error envelope (for example `parse-result-not-found`). |
+| 2    | Argument/usage error | The command line was wrong; the usage text is printed to stderr.                             |
+| 3    | Transport error      | Zotero could not be reached: connection refused, timeout, or a non-JSON response.            |
 
 ## Workflows
 
@@ -168,9 +178,8 @@ Use full Markdown only when section or search output is insufficient.
 
 ## Error Handling
 
-- `network-error`: Zotero may not be running, or nothing listens on the detected port. Ask whether Zotero is running, start it, or retry with an explicit `--port`. The CLI prints this hint automatically.
+- `network-error`: Zotero may not be running, or nothing listens on the detected port. Ask whether Zotero is running, start it, or retry with an explicit `--port`. The CLI prints this hint automatically and exits with code 3.
 - `api-disabled`: Ask the user to enable the Markdown query API in Zotero preferences.
-- `invalid-token`: Ask the user for the current API token from Zotero preferences.
 - `ambiguous-attachment`: This is the signal to re-run with `--attachment-key` using one of the candidate keys. It is not a failure to prevent in advance.
 - `parse-result-not-found`: Tell the user the target PDF has no available parse result yet.
 - `section-not-found`: Re-run with `--granularity headings` and use an exact full heading path, including the root title.
