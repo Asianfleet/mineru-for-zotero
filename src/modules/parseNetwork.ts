@@ -6,6 +6,20 @@ import {
 import { ParseSource } from "../utils/prefs";
 
 export const POLL_INTERVAL_MS = 3000;
+
+/**
+ * Error raised when the user cancels a MinerU task.
+ *
+ * Cancellation is a normal outcome rather than a failure, so callers must not
+ * report it as an error (no failure notice, no Failed tag).
+ */
+export class MinerUTaskCancelledError extends MinerUTaskError {
+  constructor(message = "MinerU task cancelled by user") {
+    super(message);
+    this.name = "MinerUTaskCancelledError";
+  }
+}
+
 export async function downloadTaskResultWithRetry(
   client: MinerUClient,
   taskID: string,
@@ -14,11 +28,15 @@ export async function downloadTaskResultWithRetry(
   source: ParseSource,
   log: (...args: unknown[]) => void,
   onRetry?: (attempt: number, waitMs: number) => Promise<void>,
+  checkAbort?: () => boolean,
 ): Promise<any> {
   const deadline = Date.now() + timeoutMs;
   const maxAttempts = Math.max(1, Math.ceil(timeoutMs / POLL_INTERVAL_MS));
   let attempt = 0;
   while (true) {
+    if (checkAbort?.()) {
+      throw new MinerUTaskCancelledError();
+    }
     try {
       return await client.downloadResult(taskID);
     } catch (error) {

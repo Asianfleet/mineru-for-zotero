@@ -1,6 +1,12 @@
 import { AttachmentRef } from "./domain";
+import { removeTaskResumeDirectory } from "./taskResumeDirectory";
 
-export type TaskStatus = "pending" | "running" | "succeeded" | "failed";
+export type TaskStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
 export type TaskChunkStatus = "pending" | "submitted" | "succeeded";
 
 export interface TaskChunkRecord {
@@ -143,14 +149,29 @@ class TaskManagerStore {
     return this.saveQueue;
   }
 
-  public clearHistory(): Promise<void> {
+  /**
+   * Drop every finished task and the resume cache that belongs to it.
+   *
+   * Resume chunks live outside the task record, so they have to be removed
+   * here; a cleared record would otherwise strand its chunk files forever.
+   */
+  public async clearHistory(): Promise<void> {
+    const removed: TaskRecord[] = [];
     for (const [id, task] of this.tasks.entries()) {
-      if (task.status === "succeeded" || task.status === "failed") {
+      if (isFinishedTaskStatus(task.status)) {
+        removed.push(task);
         this.tasks.delete(id);
       }
     }
     this.notify();
-    return this.save();
+    await this.save();
+
+    for (const task of removed) {
+      if (!task.resume) {
+        continue;
+      }
+      await removeTaskResumeDirectory(Number(task.id));
+    }
   }
 
   public subscribe(listener: () => void) {
@@ -164,6 +185,13 @@ class TaskManagerStore {
 }
 
 export const taskStore = new TaskManagerStore();
+
+/** Report whether a task status is terminal and can be cleared from history. */
+export function isFinishedTaskStatus(status: TaskStatus): boolean {
+  return (
+    status === "succeeded" || status === "failed" || status === "cancelled"
+  );
+}
 
 export interface TaskManagerWindowOptions {
   initialTab?: "tasks" | "results";

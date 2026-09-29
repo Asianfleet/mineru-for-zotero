@@ -1,5 +1,8 @@
 import { MinerUTaskError } from "./mineruClient";
-import { toNativePath } from "./mineruClient/path";
+import {
+  getTaskResumeDirectory,
+  removeTaskResumeDirectory,
+} from "./taskResumeDirectory";
 import {
   taskStore,
   TaskChunkRecord,
@@ -7,8 +10,8 @@ import {
   TaskResumeRecord,
 } from "./taskStore";
 import { ParseMode, ParseSource } from "../utils/prefs";
-import { mkdir, readdir, readFile, rm, writeFile, unlink } from "fs/promises";
-import path from "path";
+
+export { getTaskResumeDirectory };
 
 export function createTaskResume(
   existing: TaskResumeRecord | undefined,
@@ -76,14 +79,19 @@ export async function persistTaskResume(
   const completed = resume.chunks.filter(
     (chunk) => chunk.status === "succeeded",
   ).length;
-  const status = current?.status === "failed" ? "failed" : "running";
+  // A cancelled or failed record must not be rewritten as running by a late
+  // resume write, otherwise the next poll tick would overwrite the cancel.
+  const status =
+    current?.status === "failed" || current?.status === "cancelled"
+      ? current.status
+      : "running";
   await taskStore.upsertTask({
     ...task,
     ...current,
     resume,
     status,
     progress: Math.round((completed / resume.chunks.length) * 100),
-    error: status === "failed" ? current?.error : undefined,
+    error: status === "running" ? undefined : current?.error,
   });
 }
 export async function updateTaskDetail(
@@ -95,11 +103,6 @@ export async function updateTaskDetail(
     return;
   }
   await taskStore.upsertTask({ ...current, detail });
-}
-export function getTaskResumeDirectory(attachmentID: number): string {
-  return toNativePath(
-    `${Zotero.DataDirectory.dir}/mineru-resume/${attachmentID}`,
-  );
 }
 export async function ensureTaskResumeDirectory(path: string): Promise<void> {
   if (typeof IOUtils === "undefined") {
@@ -177,13 +180,7 @@ export async function cleanupTaskResume(
         }
       }
     }
-    try {
-      await IOUtils.remove(getTaskResumeDirectory(Number(taskID)), {
-        recursive: true,
-      });
-    } catch {
-      // The directory may already be empty or unavailable.
-    }
+    await removeTaskResumeDirectory(Number(taskID));
   }
   const current = taskStore.getTask(taskID);
   if (current) {

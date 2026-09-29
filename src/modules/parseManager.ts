@@ -59,13 +59,67 @@ import {
   isTaskNotFoundError,
   isRetryableNetworkError,
   getReconnectDelayMs,
+  MinerUTaskCancelledError,
 } from "./parseNetwork";
+import { runWithConcurrency } from "../utils/concurrency";
 
 const CHUNK_PAGE_LIMIT = 200;
+const MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024;
 const DEFAULT_ONLINE_POLL_TIMEOUT_MS = 6 * 60 * 1000;
 const MAX_CONCURRENT_REQUESTS_DEFAULT = 3;
 const MAX_CONCURRENT_REQUESTS_CEILING = 10;
 export type ReparseChoice = "use-existing" | "reparse";
+
+/**
+ * Attachment ids with a parse pipeline currently running in this session.
+ *
+ * Guards against a second pipeline (double-click, repeated API call, or Retry
+ * while running) resetting the resume directory of the first one.
+ */
+const activeParseIDs = new Set<string>();
+
+/**
+ * Attachment ids the user asked to cancel.
+ *
+ * The parse pipeline checks this set before every phase and inside the poll and
+ * download retry loops, so a cancel is honored even when the task record was
+ * already rewritten by the UI.
+ */
+const cancelledTaskIDs = new Set<string>();
+
+/** Mark a task as cancelled by the user. */
+export function markTaskCancelled(taskID: string): void {
+  cancelledTaskIDs.add(taskID);
+}
+
+/** Report whether the user cancelled the task. */
+export function isTaskCancelled(taskID: string): boolean {
+  return cancelledTaskIDs.has(taskID);
+}
+
+/** Forget a cancellation so a later retry or resume can run normally. */
+export function clearTaskCancelled(taskID: string): void {
+  cancelledTaskIDs.delete(taskID);
+}
+
+/**
+ * Throw when the task was cancelled, so the pipeline stops at the next phase
+ * boundary instead of finishing and overwriting the cancelled state.
+ */
+function throwIfCancelled(taskID: string): void {
+  if (isTaskCancelled(taskID)) {
+    throw new MinerUTaskCancelledError();
+  }
+}
+
+/**
+ * Abort predicate for the poll and download loops: true once the user
+ * cancelled the task, either through this session or through the task record.
+ */
+function isTaskAborted(attachment: Zotero.Item): boolean {
+  const id = String(attachment.id);
+  return isTaskCancelled(id) || taskStore.getTask(id)?.status === "cancelled";
+}
 
 export interface ParseManagerDependencies {
   getApiKey: () => string;
@@ -76,6 +130,8 @@ export interface ParseManagerDependencies {
   getSaveImages?: () => boolean;
   getMaxConcurrentRequests?: () => number;
   getPdfPageCount?: (filePath: string) => Promise<number>;
+  /** Read the on-disk size of a PDF; used to enforce the upload limit. */
+  getFileSize?: (filePath: string) => Promise<number | undefined>;
   storage?: StorageAdapter;
   createStorage?: () => StorageAdapter;
   client?: MinerUClient;
@@ -221,8 +277,6 @@ async function parseAttachmentsWithDependencies(
 
     // Limit concurrent MinerU requests across attachments.
     const concurrency = getMaxConcurrentRequests(dependencies);
-    let active = 0;
-    const queue = [...attachmentsToParse];
 
     try {
       (dependencies.openTaskManager ?? openTaskManagerWindow)();
@@ -230,27 +284,7 @@ async function parseAttachmentsWithDependencies(
       ztoolkit.log("Failed to open Task Manager window", e);
     }
 
-    await new Promise<void>((resolve) => {
-      const next = () => {
-        if (queue.length === 0 && active === 0) {
-          resolve();
-          return;
-        }
-        while (active < concurrency && queue.length > 0) {
-          const attachment = queue.shift()!;
-          active++;
-          parseAttachmentWithDependencies(
-            attachment,
-            options,
-            dependencies,
-          ).finally(() => {
-            active--;
-            next();
-          });
-        }
-      };
-      next();
-    });
+    await runParseQueue(attachmentsToParse, options, dependencies, concurrency);
     return;
   }
 
@@ -281,8 +315,6 @@ async function parseAttachmentsWithDependencies(
 
   // Limit concurrent MinerU requests across attachments.
   const concurrency = getMaxConcurrentRequests(dependencies);
-  let active = 0;
-  const queue = [...attachmentsToParse];
 
   // Open the global Task Manager UI to view progress
   try {
@@ -291,27 +323,39 @@ async function parseAttachmentsWithDependencies(
     ztoolkit.log("Failed to open Task Manager window", e);
   }
 
-  await new Promise<void>((resolve) => {
-    const next = () => {
-      if (queue.length === 0 && active === 0) {
-        resolve();
-        return;
-      }
-      while (active < concurrency && queue.length > 0) {
-        const attachment = queue.shift()!;
-        active++;
-        parseAttachmentWithDependencies(
-          attachment,
-          { ...options, force: true },
-          dependencies,
-        ).finally(() => {
-          active--;
-          next();
-        });
-      }
-    };
-    next();
+  await runParseQueue(
+    attachmentsToParse,
+    { ...options, force: true },
+    dependencies,
+    concurrency,
+  );
+}
+
+/**
+ * Run the per-attachment parse pipelines with a bounded concurrency.
+ *
+ * Failures raised before a pipeline installs its own error handling (for
+ * example a task-store write failure) are logged instead of surfacing as
+ * unhandled rejections, and the queue keeps draining.
+ */
+async function runParseQueue(
+  attachments: Zotero.Item[],
+  options: ParseAttachmentOptions | undefined,
+  dependencies: ParseManagerDependencies,
+  concurrency: number,
+): Promise<void> {
+  const tasks = attachments.map((attachment) => async () => {
+    try {
+      await parseAttachmentWithDependencies(attachment, options, dependencies);
+    } catch (error) {
+      dependencies.log(
+        "MinerU parse failed before task setup",
+        attachment.id,
+        error,
+      );
+    }
   });
+  await runWithConcurrency(tasks, concurrency);
 }
 
 async function getSubmittableAttachments(
@@ -334,24 +378,11 @@ async function getSubmittableAttachments(
         return null;
       }
 
-      // Check file size limit (200MB = 200 * 1024 * 1024 bytes)
-      try {
-        const stat = await IOUtils.stat(filePath);
-        if ((stat.size ?? 0) > 200 * 1024 * 1024) {
-          dependencies.log("File exceeds 200MB limit", filePath);
-          // Show error and tag
-          dependencies.showMessage("parse-error-empty-boxes"); // fallback message, ideally should have a dedicated one
-          try {
-            attachment.removeTag("MinerU: Processing ⏳");
-            attachment.addTag("MinerU: Failed ❌", 1);
-            await attachment.saveTx();
-          } catch (e) {
-            // Ignore tag update errors
-          }
-          return null;
-        }
-      } catch (e) {
-        dependencies.log("Failed to check file size", filePath, e);
+      // Check the MinerU upload size limit on every path that submits a PDF.
+      if (await isAttachmentTooLarge(filePath, dependencies)) {
+        await markAttachmentFailed(attachment);
+        dependencies.showMessage("parse-error-file-too-large");
+        return null;
       }
 
       return attachment;
@@ -361,6 +392,54 @@ async function getSubmittableAttachments(
   return checkedAttachments.filter(
     (attachment): attachment is Zotero.Item => attachment !== null,
   );
+}
+
+/**
+ * Report whether the PDF exceeds the MinerU upload size limit.
+ *
+ * The check is best effort: when the file size is unavailable the parse
+ * proceeds and the remote service reports the limit instead.
+ */
+async function isAttachmentTooLarge(
+  filePath: string,
+  dependencies: ParseManagerDependencies,
+): Promise<boolean> {
+  const readFileSize = dependencies.getFileSize ?? defaultGetFileSize;
+  let size: number | undefined;
+  try {
+    size = await readFileSize(filePath);
+  } catch (e) {
+    dependencies.log("Failed to check file size", filePath, e);
+    return false;
+  }
+
+  if (size !== undefined && size > MAX_FILE_SIZE_BYTES) {
+    dependencies.log("File exceeds 200MB limit", filePath);
+    return true;
+  }
+  return false;
+}
+
+/** Default file size reader backed by IOUtils. */
+async function defaultGetFileSize(
+  filePath: string,
+): Promise<number | undefined> {
+  if (typeof IOUtils === "undefined") {
+    return undefined;
+  }
+  const stat = await IOUtils.stat(filePath);
+  return stat.size ?? 0;
+}
+
+/** Tag an attachment as failed and clear any in-progress marker. */
+async function markAttachmentFailed(attachment: Zotero.Item): Promise<void> {
+  try {
+    attachment.removeTag("MinerU: Processing ⏳");
+    attachment.addTag("MinerU: Failed ❌", 1);
+    await attachment.saveTx();
+  } catch (e) {
+    // Ignore tag update errors
+  }
 }
 
 async function getReadyAttachmentIDs(
@@ -397,6 +476,30 @@ async function parseAttachmentWithDependencies(
   options: ParseAttachmentOptions | undefined,
   dependencies: ParseManagerDependencies,
 ): Promise<void> {
+  const taskID = String(attachment.id);
+  if (activeParseIDs.has(taskID)) {
+    dependencies.log("MinerU parse already running for attachment", taskID);
+    return;
+  }
+
+  activeParseIDs.add(taskID);
+  // A new attempt (retry or resume) supersedes an earlier cancellation.
+  clearTaskCancelled(taskID);
+  try {
+    await runParseAttachment(attachment, options, dependencies);
+  } finally {
+    activeParseIDs.delete(taskID);
+  }
+}
+
+async function runParseAttachment(
+  attachment: Zotero.Item,
+  options: ParseAttachmentOptions | undefined,
+  dependencies: ParseManagerDependencies,
+): Promise<void> {
+  // Attachment id used for cancellation and resume bookkeeping. The MinerU
+  // remote task ids are tracked separately as `taskIDs`.
+  const attachmentTaskID = String(attachment.id);
   if (!attachment.isPDFAttachment()) {
     dependencies.showMessage("parse-error-not-pdf");
     return;
@@ -413,6 +516,12 @@ async function parseAttachmentWithDependencies(
   if (!(await dependencies.isFileReadable(filePath))) {
     logFileAccessFailure(attachment, filePath, dependencies);
     dependencies.showMessage("parse-error-file-access");
+    return;
+  }
+
+  if (await isAttachmentTooLarge(filePath, dependencies)) {
+    await markAttachmentFailed(attachment);
+    dependencies.showMessage("parse-error-file-too-large");
     return;
   }
 
@@ -527,6 +636,7 @@ async function parseAttachmentWithDependencies(
 
     if (pageCount > CHUNK_SIZE) {
       const chunkTasks = Array.from({ length: chunks }, (_, i) => async () => {
+        throwIfCancelled(attachmentTaskID);
         const chunk = resume.chunks[i];
         const startPage = chunk.startPage;
         const endPage = chunk.endPage;
@@ -552,6 +662,7 @@ async function parseAttachmentWithDependencies(
         );
 
         const submitChunk = async (): Promise<void> => {
+          throwIfCancelled(attachmentTaskID);
           const submitResult = await client.submitPdf(filePath, {
             pageRange: `${startPage}-${endPage}`,
           });
@@ -580,7 +691,7 @@ async function parseAttachmentWithDependencies(
             taskID,
             dependencies.delay,
             getPollTimeoutMs(source, dependencies),
-            () => taskStore.getTask(String(attachment.id))?.status === "failed",
+            () => isTaskAborted(attachment),
             source,
             dependencies.log,
             async (attempt, waitMs) =>
@@ -630,6 +741,7 @@ async function parseAttachmentWithDependencies(
                   seconds: String(Math.ceil(waitMs / 1000)),
                 }),
               ),
+            () => isTaskAborted(attachment),
           );
         };
 
@@ -687,6 +799,7 @@ async function parseAttachmentWithDependencies(
           `Uploading full document (${pageCount} pages)...`,
         );
         const submitSingle = async (): Promise<void> => {
+          throwIfCancelled(attachmentTaskID);
           const submitResult = await client.submitPdf(filePath);
           chunk.taskID = submitResult.taskID;
           chunk.status = "submitted";
@@ -710,7 +823,7 @@ async function parseAttachmentWithDependencies(
             taskID,
             dependencies.delay,
             getPollTimeoutMs(source, dependencies),
-            () => taskStore.getTask(String(attachment.id))?.status === "failed",
+            () => isTaskAborted(attachment),
             source,
             dependencies.log,
             async (attempt, waitMs) =>
@@ -757,6 +870,7 @@ async function parseAttachmentWithDependencies(
                   seconds: String(Math.ceil(waitMs / 1000)),
                 }),
               ),
+            () => isTaskAborted(attachment),
           );
         };
         let result: any;
@@ -793,8 +907,12 @@ async function parseAttachmentWithDependencies(
     const result = mergeChunkResults(results, mergeMode);
     const taskID = taskIDs.join(",");
 
+    // A cancel during the download phase must not publish a result.
+    throwIfCancelled(attachmentTaskID);
+
     if (result.kind === "lite") {
       phase = "write";
+      throwIfCancelled(attachmentTaskID);
       if (!result.markdown.trim()) {
         if (parseColumnRunning) {
           await updateParseColumnStatus(
@@ -847,6 +965,7 @@ async function parseAttachmentWithDependencies(
 
     if (boxes.length === 0) {
       phase = "write";
+      throwIfCancelled(attachmentTaskID);
       await storage.writeFailedResult({
         attachment: attachmentRef,
         mineruTaskID: taskID,
@@ -878,6 +997,7 @@ async function parseAttachmentWithDependencies(
     }
 
     phase = "write";
+    throwIfCancelled(attachmentTaskID);
     await storage.writeResult({
       attachment: attachmentRef,
       mineruTaskID: taskID,
@@ -919,6 +1039,29 @@ async function parseAttachmentWithDependencies(
       );
       parseColumnRunning = false;
     }
+
+    // Cancellation is a user action, not a failure: keep the resume data, drop
+    // the in-progress tag, and skip both the failure notice and the Failed tag.
+    if (
+      error instanceof MinerUTaskCancelledError ||
+      isTaskCancelled(attachmentTaskID)
+    ) {
+      dependencies.log("MinerU parse cancelled by user", attachment.id);
+      try {
+        attachment.removeTag("MinerU: Processing ⏳");
+        attachment.removeTag("MinerU: Failed ❌");
+        await attachment.saveTx();
+      } catch (e) {
+        // Ignore tag update errors
+      }
+      await taskStore.updateTaskStatus(
+        String(attachment.id),
+        "cancelled",
+        "Cancelled by user",
+      );
+      return;
+    }
+
     if (error instanceof MinerUFileAccessError) {
       logFileAccessFailure(attachment, filePath, dependencies, error);
       dependencies.showMessage("parse-error-file-access");
@@ -941,13 +1084,15 @@ async function parseAttachmentWithDependencies(
       phase,
       mode === "precise" && hasExistingResult,
     );
-    dependencies.showMessage(failure.id, failure.args);
 
+    // Persist the failure before alerting, so the failed state does not depend
+    // on the user dismissing the notice (parallel failures queue their alerts).
     await taskStore.updateTaskStatus(
       String(attachment.id),
       "failed",
-      failure.args?.error || String(error),
+      failure.args?.message || String(error),
     );
+    dependencies.showMessage(failure.id, failure.args);
   }
 }
 

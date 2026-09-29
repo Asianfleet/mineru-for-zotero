@@ -15,7 +15,7 @@ import {
 import { createStorage } from "./modules/storage";
 import { getMinerUStorageRoot } from "./modules/preferenceScript";
 import { syncAllToAgentFolder, updateAllMinerUTags } from "./modules/agentSync";
-import { parseAttachment } from "./modules/parseManager";
+import { parseAttachment, markTaskCancelled } from "./modules/parseManager";
 import { getString } from "./utils/locale";
 import type { FluentMessageId } from "../typings/i10n";
 
@@ -75,18 +75,35 @@ class Addon {
     };
   }
 
+  /**
+   * Cancel a running or queued task.
+   *
+   * The running pipeline owns the final state, so cancellation is signalled
+   * through `markTaskCancelled` and the record is rewritten to `cancelled`
+   * immediately, which the Task Manager renders as a stopped task with the
+   * Resume/Retry actions instead of a failure.
+   */
   public async cancelTask(taskId: string): Promise<void> {
     const existingTask = taskStore.getTask(taskId);
-    if (existingTask) {
-      await taskStore.upsertTask({
-        ...existingTask,
-        status: "failed",
-        error: "Cancelled by user",
-        detail: existingTask.resume
-          ? "Resume available for the saved MinerU task."
-          : undefined,
-      });
+    if (!existingTask) {
+      return;
     }
+    if (
+      existingTask.status !== "running" &&
+      existingTask.status !== "pending"
+    ) {
+      return;
+    }
+
+    markTaskCancelled(taskId);
+    await taskStore.upsertTask({
+      ...existingTask,
+      status: "cancelled",
+      error: "Cancelled by user",
+      detail: existingTask.resume
+        ? "Resume available for the saved MinerU task."
+        : undefined,
+    });
   }
 
   public async resumeTask(taskId: string): Promise<void> {
