@@ -1660,6 +1660,44 @@ describe("parseManager", function () {
 
     assert.deepEqual(messages, ["parse-error-file-too-large"]);
     assert.include(tags, "+MinerU: Failed ❌");
+    assert.include(tags, "-MinerU: Precise ✅");
+  });
+
+  it("resolves a pending task when the retry target is rejected before submission", async function () {
+    const messages: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getFileSize: async () => 201 * 1024 * 1024,
+    });
+    // Retry/Resume mark the record pending before the pipeline starts.
+    await taskStore.upsertTask({
+      id: "7207",
+      attachment: {
+        id: 7207,
+        key: "ABC7207",
+        libraryID: 12,
+        fileName: "a.pdf",
+        filePath: "C:/tmp/a.pdf",
+        mtime: 1,
+      },
+      title: "a.pdf",
+      status: "pending",
+      progress: 0,
+      detail: "Retrying...",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7207 }));
+
+    const task = taskStore.getTask("7207");
+    assert.equal(task?.status, "failed");
+    // Without a locale bundle getSafeMessageText falls back to the message id.
+    assert.oneOf(task?.error, [
+      "The PDF is larger than the 200 MB MinerU upload limit",
+      "parse-error-file-too-large",
+    ]);
+    assert.deepEqual(messages, ["parse-error-file-too-large"]);
   });
 
   it("stores the user-facing failure message on the task record", async function () {

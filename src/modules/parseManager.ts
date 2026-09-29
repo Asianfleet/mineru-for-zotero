@@ -431,15 +431,43 @@ async function defaultGetFileSize(
   return stat.size ?? 0;
 }
 
-/** Tag an attachment as failed and clear any in-progress marker. */
+/** Tag an attachment as failed and clear any in-progress or stale ready marker. */
 async function markAttachmentFailed(attachment: Zotero.Item): Promise<void> {
   try {
     attachment.removeTag("MinerU: Processing ⏳");
+    attachment.removeTag("MinerU: Precise ✅");
+    attachment.removeTag("MinerU: Lite ✅");
     attachment.addTag("MinerU: Failed ❌", 1);
     await attachment.saveTx();
   } catch (e) {
     // Ignore tag update errors
   }
+}
+
+/**
+ * Fail a task record that an early return would otherwise leave pending.
+ *
+ * Retry and Resume mark the record `pending`/`running` before the pipeline
+ * starts, so a rejected PDF (not an attachment, unreadable, oversized, missing
+ * API key) must resolve that record instead of leaving a stuck task in the Task
+ * Manager. Records in any other state are left untouched.
+ */
+async function failPendingTask(
+  taskID: string,
+  message: FluentMessageId,
+): Promise<void> {
+  const current = taskStore.getTask(taskID);
+  if (!current) {
+    return;
+  }
+  if (current.status !== "pending" && current.status !== "running") {
+    return;
+  }
+  await taskStore.updateTaskStatus(
+    taskID,
+    "failed",
+    getSafeMessageText(message),
+  );
 }
 
 async function getReadyAttachmentIDs(
@@ -501,6 +529,7 @@ async function runParseAttachment(
   // remote task ids are tracked separately as `taskIDs`.
   const attachmentTaskID = String(attachment.id);
   if (!attachment.isPDFAttachment()) {
+    await failPendingTask(attachmentTaskID, "parse-error-not-pdf");
     dependencies.showMessage("parse-error-not-pdf");
     return;
   }
@@ -508,6 +537,7 @@ async function runParseAttachment(
   const rawFilePath = await getAttachmentFilePath(attachment, dependencies);
   if (!rawFilePath) {
     logFileAccessFailure(attachment, "<missing>", dependencies);
+    await failPendingTask(attachmentTaskID, "parse-error-file-access");
     dependencies.showMessage("parse-error-file-access");
     return;
   }
@@ -515,12 +545,14 @@ async function runParseAttachment(
 
   if (!(await dependencies.isFileReadable(filePath))) {
     logFileAccessFailure(attachment, filePath, dependencies);
+    await failPendingTask(attachmentTaskID, "parse-error-file-access");
     dependencies.showMessage("parse-error-file-access");
     return;
   }
 
   if (await isAttachmentTooLarge(filePath, dependencies)) {
     await markAttachmentFailed(attachment);
+    await failPendingTask(attachmentTaskID, "parse-error-file-too-large");
     dependencies.showMessage("parse-error-file-too-large");
     return;
   }
@@ -530,6 +562,7 @@ async function runParseAttachment(
   const apiKey = dependencies.getApiKey().trim();
   const localApiBaseURL = dependencies.getLocalApiBaseURL?.() ?? "";
   if (requiresApiKey(source) && !apiKey) {
+    await failPendingTask(attachmentTaskID, "parse-error-missing-api-key");
     dependencies.showMessage("parse-error-missing-api-key");
     return;
   }
