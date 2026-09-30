@@ -12,7 +12,7 @@ Core feature modules currently include:
 - `taskStore.ts`, `resultsManager.ts`, `storage.ts`, `storageFs.ts`, `domain.ts` — task persistence and the unified two-tab Task Manager window (task queue & parsed results), per-attachment result storage, the `IOUtils`/`OS.File` filesystem adapter, and shared parse/storage/overlay domain types.
 - `boxNormalizer.ts`, `copyFormatter.ts` — MinerU schema normalization into stable boxes and copy output.
 - `readerToolbar/`, `readerOverlay/` — PDF Reader toolbar UI and box rendering/selection behavior.
-- `markdownQuery/` — the local HTTP Markdown query API (endpoint, attachment resolver, Markdown parser, query service).
+- `markdownQuery/` — the local HTTP Markdown query API (endpoint, attachment resolver, Markdown parser, query service). It has no token: the only switch is the `apiEnabled` preference, and safety relies on Zotero's server binding to `127.0.0.1` plus its non-local `Host` rejection. `POST /mineru-for-zotero/parse` is non-interactive (it forces a reparse and never opens a dialog), while `GET /mineru-for-zotero/tasks` returns sanitized task summaries without absolute PDF paths.
 - `agentSync.ts`, `itemTreeColumn.ts`, `itemMenu.ts`, `preferenceScript.ts` — sync-folder export, item-tree status column, attachment-only context menu, and settings-page UI.
 
 ## Build, Test, and Development Commands
@@ -47,7 +47,7 @@ Standalone `node:test` files (`test/queryMarkdownCli.test.mjs`, `scripts/*.test.
 
 ## Test Profile Port Isolation
 
-`zotero-plugin-scaffold` sets the test profile HTTP port to **23124** (default 23119) to avoid conflicts. The `scripts/fix-test-profile.mjs` pre-hook mitigates leaks of this port into `prefs.js`. If the Zotero Connector extension breaks after development work, run `node scripts/fix-zotero-connector-port.mjs` to restore port `23119` in the real profile.
+`zotero-plugin-scaffold` sets the test profile HTTP port to **23124** (default 23119) to avoid conflicts. The `scripts/fix-test-profile.mjs` pre-hook mitigates leaks of this port into `prefs.js`. If the Zotero Connector extension breaks after development work, run `node scripts/fix-zotero-connector-port.mjs` to restore port `23119` in the real profile. That repair script is Windows-only (it reads `%APPDATA%` and shells out to `tasklist`) and now exits with a clear message on other platforms.
 
 ## MinerU Parsing Pipeline
 
@@ -64,11 +64,12 @@ Parse notices are failure-only. Success states emit no UI notices. Errors (empty
 - `online` → `mineruClient/v4.ts`, the documented official precise API (`POST /v4/file-urls/batch` → PUT → `GET /v4/extract-results/batch/{batch_id}` → `full_zip_url`).
 - `local` → `mineruClient/v1.ts`, the self-hosted MinerU 4.0 V1 API (`/v1/health`, `/v1/uploads`, `/v1/parse/jobs`, `/v1/files/…/content`), selected per `parseTier`.
 
-Do **not** route the official cloud through V1: its output-format conversion can fail with `file_conversion_failed` (`-60015`/`-60016`, “文件转换失败”), while v4 reliably returns a single `full_zip_url`. The official cloud only exposes `standard`, so `parseManager` forces `standard` for online (v4 uses `model_version: "vlm"`).
+Do **not** route the official cloud through V1: its output-format conversion can fail with `file_conversion_failed` (`-60015`/`-60016`, "file conversion failed"), while v4 reliably returns a single `full_zip_url`. The official cloud only exposes `standard`, so `parseManager` forces `standard` for online (v4 uses `model_version: "vlm"`).
 
 API limits:
 
 - max 200 MB/file and 200 pages/file (official), up to 100 files/job.
+- The 200 MB upload limit is enforced on every parse path (batch and single attachment); oversized files report the `parse-error-file-too-large` message key.
 - Large PDFs are chunked by page range instead of being split locally; `getPdfPageCount()` uses Zotero's bundled pdf.js only. v1 sends `files[].page_range`, v4 sends `file.page_ranges`.
 - `getPdfPageCount()` must load pdf.js in a **window realm**: it runs `Zotero.getMainWindow().eval(...)` with a dynamic `import("resource://zotero/reader/pdf/build/pdf.mjs")`. Do **not** use `ChromeUtils.importESModule` — Zotero 10's system module realm has frozen built-ins and pdf.js's top-level `Map.prototype.getOrInsertComputed` polyfill throws `TypeError: Map.prototype is not extensible`. Zotero's own reader loads pdf.js the same way (module script in a content realm).
 - `MINERU_API_MAX_CONCURRENT_REQUESTS` limits cross-attachment concurrency (clamped 1-10, default 3). Tests override it via `getMaxConcurrentRequests`.
@@ -101,7 +102,7 @@ The V1 client sends exactly the `upload_method`, `upload_url`, and `upload_heade
 - V1: download `markdown`/`middle_json`/`zip` through `GET /v1/files/{file_id}/content` (may answer with a 302 to CDN).
 - V4: download the single `full_zip_url`.
 
-Prefer the `middle_json`/`layout.json` output for boxes and the `zip` output for image sidecars. New ZIP members are `markdown.md`, `middle_json.json`, `structured_content.json`, and `images/…`; keep legacy `full.md` / `layout.json` / `*_middle.json` fallbacks. ZIPs are parsed in memory first (`readZip`/`inflateRaw`), with a temp-file `nsIZipReader` fallback (`readZipFile`) for runtimes where `DecompressionStream` is unavailable; keep both paths working.
+Prefer the `middle_json`/`layout.json` output for boxes and the `zip` output for image sidecars. New ZIP members are `markdown.md`, `middle_json.json`, `structured_content.json`, and `images/…`; keep legacy `full.md` / `layout.json` / `*_middle.json` fallbacks. ZIPs are parsed in memory first (`readZip`/`inflateRaw`), with a temp-file `nsIZipReader` fallback (`readZipFile`) for runtimes where `DecompressionStream` is unavailable; keep both paths working. ZIP reads are size-capped (256 MB per entry, 512 MB total) and non-result entries are skipped before decompression.
 
 ### Task Persistence, Resume & Reconnect
 
@@ -110,6 +111,10 @@ Task records persist in `<Zotero.DataDirectory.dir>/mineru_tasks.json` via a ser
 Resume state includes `TaskRecord.resume` bookkeeping and chunk caches in `<Zotero.DataDirectory.dir>/mineru-resume/<attachmentID>/`. Caches stay until the final merged result is written, after which `cleanupTaskResume()` removes them.
 
 Transient network failures (status 0 or ≥ 500) reconnect with exponential backoff for idempotent GET stages only; submit/upload stages never retry to avoid burning quota. A local 404 during poll means the remote task was lost: only that unfinished chunk is resubmitted.
+
+Cancellation (Stop in the Task Manager) is a distinct terminal `cancelled` status, never a failure: it sets no Failed tag, shows no notice, and keeps the resume data, so the task can be resumed or retried. The pipeline checks for cancellation before every phase and inside the poll/download retry loops. A second parse of an attachment that is already running in this session is ignored (in-flight guard) instead of resetting the first parse's resume directory.
+
+`clearHistory()` (Clear History in the Task Manager) also deletes the per-attachment resume cache under `<Zotero.DataDirectory.dir>/mineru-resume/<attachmentID>/`.
 
 ### Box Normalization
 
@@ -126,7 +131,7 @@ Check supported schemas when handling missing box errors.
 
 Precise results are in `ProfD/mineru-copy/attachments/<libraryID>-<attachmentKey>/` (`manifest.json`, `mineru-result.json`, `content.md`, `boxes.normalized.json`, `images/`). Lite results are stored beside them as `lite-manifest.json` and `lite-content.md`.
 
-Use `storage.readPreferredMarkdown()` to read precise first, then lite fallback. Ignore transient `.tmp-*` and `.bak-*` files.
+Use `storage.readPreferredMarkdown()` to read precise first, then lite fallback. Ignore transient `.tmp-*` and `.bak-*` files. The Task Manager Results tab derives `hasImages`/`hasBoxes` from the stored directory (at least one `images/` entry, a non-empty `boxes.normalized.json`), not from the ready flag.
 `resolveFsRoot()` treats the first path segment as a Zotero dirsvc key (e.g. `ProfD`) and silently falls back to the literal path when the key is unknown (`readDirectoryServicePath()` swallows `NS_ERROR_FAILURE`); tests must still use roots that do not match a real dirsvc key so they never touch a real profile. `listParseStatuses()` must sort entries for stable test order.
 
 ### Agent-Friendly Sync Folder

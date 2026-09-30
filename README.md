@@ -8,7 +8,7 @@
 - Parse one or more selected PDF attachments from the Zotero item list.
 - Parse through the official online MinerU API or a self-hosted MinerU 4 server, and choose a parse tier (`flash`, `basic`, `standard`, `advanced`).
 - Automatically handles long PDFs by requesting page ranges from MinerU and seamlessly merging the results (no local PDF tool required).
-- Tracks processing jobs in the persistent **MinerU Task Manager** with live progress bars, status grouping (Running, Succeeded, Failed), history clearing, and one-click **Resume** for interrupted jobs.
+- Tracks processing jobs in the persistent **MinerU Task Manager** with live progress bars, status grouping (Running, Failed, Cancelled, Succeeded), history clearing, and one-click **Resume** for interrupted jobs.
 - Automatically adds Zotero tags (`MinerU: Precise ✅`, `MinerU: Failed ❌`, `MinerU: Processing ⏳`) based on parse status.
 - Export results to an **Agent-friendly Sync Folder**, which automatically generates structured Markdown, images, and standard BibTeX metadata (`metadata.bib`) for each parsed PDF for seamless integration with downstream AI agents.
 - Reuse an existing parse result, or reparse and replace it when needed.
@@ -69,7 +69,7 @@ For multi-box copying, hold `Shift` or `Ctrl` while clicking boxes. Then use the
 
 Open `Edit` -> `Settings` -> `MinerU for Zotero` and click `Open Data Folder` to view local parse results. The settings page also shows how many PDFs currently have usable results.
 
-You can also open the **MinerU Task Manager** from the settings page to view the real-time status of your parsing jobs, view error messages, and clear your history. Each running job shows a live progress bar.
+You can also open the **MinerU Task Manager** from the settings page to view the real-time status of your parsing jobs, view error messages, and clear your history. Each running job shows a live progress bar. Stopping a job marks it `Cancelled` instead of failed: it keeps its resume data, adds no `MinerU: Failed ❌` tag, and can be resumed or retried later. PDF files larger than 200 MB are rejected on every parse path.
 
 Parsing jobs survive Zotero restarts. If Zotero closes while a job is running, the job is marked as failed on the next start and shows a `Resume` button in the Task Manager. Resuming keeps every finished page-range part and only re-submits the missing parts, so a long parse does not have to start over. Transient network drops during polling and downloading reconnect automatically with backoff instead of failing the job.
 
@@ -94,7 +94,7 @@ This enables you to use AI Agents (like Cursor, Claude Desktop, etc.) to read th
 
 ## Local Markdown Query API
 
-The local Markdown query API lets local external tools read Markdown parse results that MinerU for Zotero has already saved through Zotero's built-in local HTTP server. It only queries existing local results. It does not submit new MinerU parsing jobs or directly expose the plugin data folder.
+The local Markdown query API lets local external tools read Markdown parse results that MinerU for Zotero has already saved through Zotero's built-in local HTTP server. It reads existing local results, can submit a reparse for an existing PDF attachment, and never opens a dialog or directly exposes the plugin data folder.
 
 Main capabilities:
 
@@ -103,14 +103,15 @@ Main capabilities:
 - Query at `full`, `headings`, `section`, or `search` granularity, so external agents can inspect structure before reading a section or keyword context.
 - Pass `attachmentKey` to select a specific PDF when a regular item has multiple PDF attachments.
 - Return precise Markdown first; if precise output is unavailable but lite output exists, return lite Markdown and mark it in `result.mode`.
+- Reparse an attachment without any interactive prompt, and list current parse tasks with their status, progress, and error text.
 
 ### Configuration
 
 1. Start Zotero and make sure MinerU for Zotero is enabled.
 2. Open `Edit` -> `Settings` -> `MinerU for Zotero`.
 3. In `Local Query API`, enable `Enable local Markdown query API`.
-4. `Require token` controls whether callers must provide a token. When it is enabled, click `Generate token`.
-5. When token validation is enabled, callers can send the token in the `Authorization: Bearer <token>` header. The API also supports a `token=<token>` query parameter.
+
+The API has no token or other authentication of its own. It relies on Zotero's local HTTP server, which binds to `127.0.0.1` and rejects requests whose `Host` header is not local, so it is reachable only from this computer. Leave the API disabled unless you need it.
 
 Zotero's local port is usually `23119`. If you changed Zotero's local server port, replace the port in the examples below with your actual port.
 
@@ -119,22 +120,19 @@ Zotero's local port is usually `23119`. If you changed Zotero's local server por
 List libraries:
 
 ```shell
-curl "http://127.0.0.1:23119/mineru-for-zotero/libraries" \
-  -H "Authorization: Bearer <token>"
+curl "http://127.0.0.1:23119/mineru-for-zotero/libraries"
 ```
 
 List collections in a library:
 
 ```shell
-curl "http://127.0.0.1:23119/mineru-for-zotero/collections?libraryID=1" \
-  -H "Authorization: Bearer <token>"
+curl "http://127.0.0.1:23119/mineru-for-zotero/collections?libraryID=1"
 ```
 
 List tags:
 
 ```shell
-curl "http://127.0.0.1:23119/mineru-for-zotero/tags?libraryID=1&limit=50" \
-  -H "Authorization: Bearer <token>"
+curl "http://127.0.0.1:23119/mineru-for-zotero/tags?libraryID=1&limit=50"
 ```
 
 Search candidate items by title and filters:
@@ -144,22 +142,19 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/search" \
   --data-urlencode "libraryID=1" \
   --data-urlencode "title=retrieval augmented generation" \
   --data-urlencode "collection=AI" \
-  --data-urlencode "parsedOnly=true" \
-  -H "Authorization: Bearer <token>"
+  --data-urlencode "parsedOnly=true"
 ```
 
 Read the full Markdown:
 
 ```shell
-curl "http://127.0.0.1:23119/mineru-for-zotero/markdown?libraryID=1&key=ABCD1234" \
-  -H "Authorization: Bearer <token>"
+curl "http://127.0.0.1:23119/mineru-for-zotero/markdown?libraryID=1&key=ABCD1234"
 ```
 
 Read only the heading hierarchy:
 
 ```shell
-curl "http://127.0.0.1:23119/mineru-for-zotero/markdown?libraryID=1&key=ABCD1234&granularity=headings" \
-  -H "Authorization: Bearer <token>"
+curl "http://127.0.0.1:23119/mineru-for-zotero/markdown?libraryID=1&key=ABCD1234&granularity=headings"
 ```
 
 Read a specific section:
@@ -169,8 +164,7 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
   --data-urlencode "libraryID=1" \
   --data-urlencode "key=ABCD1234" \
   --data-urlencode "granularity=section" \
-  --data-urlencode "sectionPath=Introduction/Background" \
-  -H "Authorization: Bearer <token>"
+  --data-urlencode "sectionPath=Introduction/Background"
 ```
 
 Search Markdown and return surrounding paragraphs:
@@ -181,43 +175,58 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
   --data-urlencode "key=ABCD1234" \
   --data-urlencode "granularity=search" \
   --data-urlencode "q=retrieval" \
-  --data-urlencode "contextParagraphs=2" \
-  -H "Authorization: Bearer <token>"
+  --data-urlencode "contextParagraphs=2"
 ```
+
+Reparse a PDF attachment (`POST` only; returns immediately and never opens a dialog):
+
+```shell
+curl -X POST "http://127.0.0.1:23119/mineru-for-zotero/parse?libraryID=1&key=ABCD1234"
+```
+
+The response is `{"status":"submitted","itemID":123,"key":"ABCD1234"}`. Pass `attachmentKey` to pick one PDF when `key` is a regular item. This endpoint always reparses and replaces any existing result, without the `Use existing result` prompt, and a request for an attachment that is already parsing in this session is ignored.
+
+List parse tasks:
+
+```shell
+curl "http://127.0.0.1:23119/mineru-for-zotero/tasks"
+```
+
+The response is `{"tasks":[...]}`. Each summary contains `id`, `attachmentID`, `libraryID`, `key`, `fileName`, `title`, `status`, `progress`, `detail`, `error`, `resumeAvailable`, `createdAt`, and `updatedAt`; absolute PDF paths are not exposed. `status` is one of `pending`, `running`, `succeeded`, `failed`, or `cancelled`.
 
 Common parameters:
 
-| Parameter            | Endpoint                                    | Description                                                                |
-| -------------------- | ------------------------------------------- | -------------------------------------------------------------------------- |
-| `libraryID`          | `collections`, `tags`, `search`, `markdown` | Zotero library ID. Personal libraries are usually `1`.                     |
-| `parentKey`          | `collections`                               | Optional parent collection key.                                            |
-| `title`              | `search`                                    | Title keyword used to find candidate Zotero items.                         |
-| `creator`            | `search`                                    | Creator/author substring to match.                                         |
-| `collection`         | `search`                                    | Collection name or key to filter within a folder.                          |
-| `tag`                | `search`                                    | Exact tag to filter.                                                       |
-| `abstract`           | `search`                                    | Abstract keyword to search.                                                |
-| `publication`        | `search`                                    | Journal or conference title to match.                                      |
-| `citekey`            | `search`                                    | Citation key to match (e.g. `vaswani2017attention`).                       |
-| `doi`                | `search`                                    | DOI substring to match.                                                    |
-| `itemType`           | `search`                                    | Item type filter (e.g. `journalArticle`, `conferencePaper`).               |
-| `since`              | `search`                                    | Date added filter (`YYYY-MM-DD`).                                          |
-| `hasPdf`             | `search`                                    | Filter items that have at least one PDF attachment (`true`).               |
-| `parsedOnly`         | `search`                                    | Filter items with ready MinerU parse results (`true`).                     |
-| `sortBy`             | `search`                                    | Sort by `dateAdded`, `dateModified`, `title`, or `year`.                   |
-| `sortOrder`          | `search`                                    | Sort direction (`asc` or `desc`).                                          |
-| `limit`              | `tags`, `search`                            | Maximum number of records to return.                                       |
-| `key`                | `markdown`                                  | Zotero regular item key or PDF attachment key.                             |
-| `attachmentKey`      | `markdown`                                  | Selects the target PDF attachment when a regular item contains PDFs.       |
-| `granularity`        | `markdown`                                  | `full`, `headings`, `section`, `search`, or `locate`. Defaults to `full`.  |
-| `sectionPath`        | `markdown`                                  | Heading path for `section` queries, for example `Introduction/Background`. |
-| `includeSubsections` | `markdown`                                  | Extend section scope to same-level numbered subsections (`true`).          |
-| `q`                  | `markdown`                                  | Keyword used by `search` or `locate` queries.                              |
-| `contextParagraphs`  | `markdown`                                  | Number of context paragraphs around each `search` match.                   |
+| Parameter            | Endpoint                                             | Description                                                                |
+| -------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------- |
+| `libraryID`          | `collections`, `tags`, `search`, `markdown`, `parse` | Zotero library ID. Personal libraries are usually `1`.                     |
+| `parentKey`          | `collections`                                        | Optional parent collection key.                                            |
+| `title`              | `search`                                             | Title keyword used to find candidate Zotero items.                         |
+| `creator`            | `search`                                             | Creator/author substring to match.                                         |
+| `collection`         | `search`                                             | Collection name or key to filter within a folder.                          |
+| `tag`                | `search`                                             | Exact tag to filter.                                                       |
+| `abstract`           | `search`                                             | Abstract keyword to search.                                                |
+| `publication`        | `search`                                             | Journal or conference title to match.                                      |
+| `citekey`            | `search`                                             | Citation key to match (e.g. `vaswani2017attention`).                       |
+| `doi`                | `search`                                             | DOI substring to match.                                                    |
+| `itemType`           | `search`                                             | Item type filter (e.g. `journalArticle`, `conferencePaper`).               |
+| `since`              | `search`                                             | Date added filter (`YYYY-MM-DD`).                                          |
+| `hasPdf`             | `search`                                             | Filter items that have at least one PDF attachment (`true`).               |
+| `parsedOnly`         | `search`                                             | Filter items with ready MinerU parse results (`true`).                     |
+| `sortBy`             | `search`                                             | Sort by `dateAdded`, `dateModified`, `title`, or `year`.                   |
+| `sortOrder`          | `search`                                             | Sort direction (`asc` or `desc`).                                          |
+| `limit`              | `tags`, `search`                                     | Maximum number of records to return.                                       |
+| `key`                | `markdown`, `parse`                                  | Zotero regular item key or PDF attachment key.                             |
+| `attachmentKey`      | `markdown`, `parse`                                  | Selects the target PDF attachment when a regular item contains PDFs.       |
+| `granularity`        | `markdown`                                           | `full`, `headings`, `section`, `search`, or `locate`. Defaults to `full`.  |
+| `sectionPath`        | `markdown`                                           | Heading path for `section` queries, for example `Introduction/Background`. |
+| `includeSubsections` | `markdown`                                           | Extend section scope to same-level numbered subsections (`true`).          |
+| `q`                  | `markdown`                                           | Keyword used by `search` or `locate` queries.                              |
+| `contextParagraphs`  | `markdown`                                           | Number of context paragraphs around each `search` match.                   |
 
 Common error codes:
 
 - `api-disabled`: the local Markdown query API is not enabled in settings.
-- `invalid-token`: the token is missing or does not match.
+- `invalid-request`: a required parameter is missing or invalid; `/parse` also returns it for non-`POST` requests.
 - `ambiguous-attachment`: the regular item has multiple PDFs; pass `attachmentKey`.
 - `parse-result-not-found`: the target PDF has no usable parse result yet; parse it in Zotero first.
 - `section-not-found`: the section path does not match; run `granularity=headings` first to inspect exact paths.
