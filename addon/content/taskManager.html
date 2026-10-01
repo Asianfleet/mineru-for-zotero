@@ -100,7 +100,8 @@
         border-radius: 4px;
         font-weight: 500;
       }
-      .status-pending {
+      .status-pending,
+      .status-cancelled {
         background: #e0e0e0;
         color: #555;
       }
@@ -551,7 +552,8 @@
           background: #334155;
           color: #90caf9;
         }
-        .status-pending {
+        .status-pending,
+        .status-cancelled {
           background: #404040;
           color: #bdbdbd;
         }
@@ -1058,11 +1060,13 @@
             Running: tmText("task-manager-group-running", "Running"),
             Failed: tmText("task-manager-group-failed", "Failed"),
             Succeeded: tmText("task-manager-group-succeeded", "Succeeded"),
+            Cancelled: tmText("task-manager-group-cancelled", "Cancelled"),
           };
 
           var groups = {
             Running: [],
             Failed: [],
+            Cancelled: [],
             Succeeded: [],
           };
 
@@ -1072,12 +1076,14 @@
               groups["Running"].push(t);
             } else if (t.status === "failed") {
               groups["Failed"].push(t);
+            } else if (t.status === "cancelled") {
+              groups["Cancelled"].push(t);
             } else {
               groups["Succeeded"].push(t);
             }
           }
 
-          var groupOrder = ["Running", "Failed", "Succeeded"];
+          var groupOrder = ["Running", "Failed", "Cancelled", "Succeeded"];
 
           for (var g = 0; g < groupOrder.length; g++) {
             var groupName = groupOrder[g];
@@ -1118,7 +1124,7 @@
               statusContainer.style.gap = "8px";
               statusContainer.style.alignItems = "center";
 
-              if (task.status === "failed") {
+              if (task.status === "failed" || task.status === "cancelled") {
                 var retryBtn = document.createElement("button");
                 retryBtn.textContent = task.resume
                   ? tmText("task-manager-resume", "Resume")
@@ -1184,7 +1190,9 @@
                     ? groupLabels.Running
                     : task.status === "failed"
                       ? groupLabels.Failed
-                      : groupLabels.Succeeded;
+                      : task.status === "cancelled"
+                        ? groupLabels.Cancelled
+                        : groupLabels.Succeeded;
               status.textContent = statusLabel.toUpperCase();
               statusContainer.appendChild(status);
 
