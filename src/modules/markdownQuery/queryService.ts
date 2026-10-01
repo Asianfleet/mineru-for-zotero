@@ -27,6 +27,48 @@ import type { NormalizedBox } from "../domain";
 /** Items whose parse status is read at once while filtering by parsedOnly. */
 const PARSED_ONLY_SCAN_BATCH = 20;
 
+/** Most BibTeX entries kept in memory for Markdown API responses. */
+const BIBTEX_CACHE_LIMIT = 500;
+
+/** Exported BibTeX per item, valid while the item's dateModified matches. */
+const bibtexCache = new Map<string, { version: string; bibtex: string }>();
+
+/**
+ * BibTeX for an item, exported once per item revision.
+ *
+ * Running Zotero's BibTeX translator takes far longer than answering a
+ * headings or search request, and agents query the same paper repeatedly.
+ * Empty exports are not cached so a failed export is retried.
+ */
+async function readCachedBibTeX(
+  item: ZoteroItemLike,
+  exporter: (item: ZoteroItemLike) => Promise<string>,
+): Promise<string> {
+  const cacheKey = `${item.libraryID}-${item.key}`;
+  const version = item.dateModified ?? "";
+  const cached = bibtexCache.get(cacheKey);
+  if (cached && cached.version === version) {
+    return cached.bibtex;
+  }
+
+  const bibtex = await exporter(item);
+  if (bibtex) {
+    bibtexCache.delete(cacheKey);
+    bibtexCache.set(cacheKey, { version, bibtex });
+    if (bibtexCache.size > BIBTEX_CACHE_LIMIT) {
+      // Maps iterate in insertion order: drop the least recently stored.
+      bibtexCache.delete(bibtexCache.keys().next().value!);
+    }
+  }
+  return bibtex;
+}
+
+/** Export BibTeX for the Zotero item behind a query result. */
+async function exportZoteroItemBibTeX(item: ZoteroItemLike): Promise<string> {
+  const zoteroItem = Zotero.Items.getByLibraryAndKey(item.libraryID, item.key);
+  return zoteroItem ? exportBibTeX(zoteroItem) : "";
+}
+
 /** One search hit: the item and the parse status of its PDF attachments. */
 interface SearchCandidate {
   item: ItemSummary;
@@ -96,6 +138,8 @@ export function createMarkdownQueryService(deps: {
     libraryID: number,
     limit?: number,
   ): Promise<TagSummary[]> | TagSummary[];
+  /** BibTeX exporter; defaults to Zotero's BibTeX translator. */
+  exportBibTeX?(item: ZoteroItemLike): Promise<string>;
 }): MarkdownQueryService {
   return {
     async getLibraries() {
@@ -330,15 +374,12 @@ export function createMarkdownQueryService(deps: {
       };
 
       try {
-        const item = Zotero.Items.getByLibraryAndKey(
-          input.libraryID,
-          resolved.item.key,
+        const bibtex = await readCachedBibTeX(
+          resolved.item,
+          deps.exportBibTeX ?? exportZoteroItemBibTeX,
         );
-        if (item) {
-          const bibtex = await exportBibTeX(item);
-          if (bibtex) {
-            (base as any).bibtex = bibtex;
-          }
+        if (bibtex) {
+          (base as any).bibtex = bibtex;
         }
       } catch (e) {
         // ignore error

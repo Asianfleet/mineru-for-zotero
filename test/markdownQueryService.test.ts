@@ -460,6 +460,36 @@ describe("markdownQueryService", function () {
     assert.deepEqual(searchLimits, [undefined]);
   });
 
+  it("exports BibTeX once per item revision across requests", async function () {
+    const pdf = fakeItem({ id: 41, key: "BIBPDF", pdf: true });
+    pdf.dateModified = "2026-01-01 00:00:00";
+    let exports = 0;
+    const service = createMarkdownQueryService({
+      ...fakeDeps({ markdown: "# Paper", items: [pdf] }),
+      exportBibTeX: async () => {
+        exports += 1;
+        return `@article{paper${exports}}`;
+      },
+    });
+    const query = { libraryID: 1, key: "BIBPDF", granularity: "headings" };
+
+    const first = (await service.queryMarkdown(
+      query as Parameters<typeof service.queryMarkdown>[0],
+    )) as { bibtex?: string };
+    const second = (await service.queryMarkdown(
+      query as Parameters<typeof service.queryMarkdown>[0],
+    )) as { bibtex?: string };
+    pdf.dateModified = "2026-02-01 00:00:00";
+    const afterEdit = (await service.queryMarkdown(
+      query as Parameters<typeof service.queryMarkdown>[0],
+    )) as { bibtex?: string };
+
+    assert.equal(first.bibtex, "@article{paper1}");
+    assert.equal(second.bibtex, "@article{paper1}");
+    assert.equal(afterEdit.bibtex, "@article{paper2}");
+    assert.equal(exports, 2);
+  });
+
   it("returns libraries through getLibraries", async function () {
     const service = createMarkdownQueryService({
       ...fakeDeps({ markdown: "# X" }),
