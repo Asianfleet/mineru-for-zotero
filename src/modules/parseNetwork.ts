@@ -74,7 +74,7 @@ export async function waitForTask(
   let retryAttempt = 0;
   for (let count = 0; count < maxPollCount; count += 1) {
     if (checkAbort?.()) {
-      throw new MinerUTaskError("MinerU task cancelled by user");
+      throw new MinerUTaskCancelledError();
     }
     try {
       const result = await client.pollTask(taskID);
