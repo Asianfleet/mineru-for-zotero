@@ -228,6 +228,7 @@ Common error codes:
 - `api-disabled`: the local Markdown query API is not enabled in settings.
 - `invalid-request`: a required parameter is missing or invalid; `/parse` also returns it for non-`POST` requests.
 - `ambiguous-attachment`: the regular item has multiple PDFs; pass `attachmentKey`.
+- `collection-not-found`: the `collection` search filter matches no collection key or name in the library; list them with `/collections`.
 - `parse-result-not-found`: the target PDF has no usable parse result yet; parse it in Zotero first.
 - `section-not-found`: the section path does not match; run `granularity=headings` first to inspect exact paths.
 - `missing-query`: `granularity=search` was used without `q`.

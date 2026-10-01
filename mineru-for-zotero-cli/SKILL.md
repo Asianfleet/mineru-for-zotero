@@ -181,6 +181,7 @@ Use full Markdown only when section or search output is insufficient.
 - `network-error`: Zotero may not be running, or nothing listens on the detected port. Ask whether Zotero is running, start it, or retry with an explicit `--port`. The CLI prints this hint automatically and exits with code 3.
 - `api-disabled`: Ask the user to enable the Markdown query API in Zotero preferences.
 - `ambiguous-attachment`: This is the signal to re-run with `--attachment-key` using one of the candidate keys. It is not a failure to prevent in advance.
+- `collection-not-found`: The `--collection` value matches no collection in that library. Run the `collections` command and retry with an exact name or key.
 - `parse-result-not-found`: Tell the user the target PDF has no available parse result yet.
 - `section-not-found`: Re-run with `--granularity headings` and use an exact full heading path, including the root title.
 - `missing-query`: Re-run the search query with a non-empty `--query` value.

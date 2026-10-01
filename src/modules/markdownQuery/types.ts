@@ -7,6 +7,7 @@ export type MarkdownQueryErrorCode =
   | "item-not-found"
   | "pdf-attachment-not-found"
   | "attachment-not-found"
+  | "collection-not-found"
   | "ambiguous-attachment"
   | "parse-result-not-found"
   | "section-not-found"

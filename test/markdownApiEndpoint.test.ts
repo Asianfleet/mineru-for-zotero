@@ -4,6 +4,7 @@ import {
   createMarkdownQueryEndpointClass,
   itemMatchesYear,
   MARKDOWN_ENDPOINT_PATHS,
+  resolveSearchCollection,
 } from "../src/modules/markdownQuery/apiEndpoint";
 import { MarkdownQueryError } from "../src/modules/markdownQuery/types";
 import type { ZoteroItemLike } from "../src/modules/markdownQuery/types";
@@ -407,6 +408,40 @@ describe("markdownApiEndpoint", function () {
     const trigger = submitted as { libraryID: number; key: string };
     assert.equal(trigger.libraryID, 1);
     assert.equal(trigger.key, "ABC1");
+  });
+
+  describe("collection filter", function () {
+    const collections = {
+      getByLibraryAndKey: (libraryID: number, key: string) =>
+        libraryID === 1 && key === "COL1"
+          ? { id: 10, key: "COL1", name: "Root" }
+          : false,
+      getByLibrary: () => [
+        { id: 10, key: "COL1", name: "Root" },
+        { id: 11, key: "COL2", name: "Reading List" },
+      ],
+    };
+
+    it("resolves a collection by key or by case-insensitive name", function () {
+      assert.equal(resolveSearchCollection(1, "COL1", collections).id, 10);
+      assert.equal(
+        resolveSearchCollection(1, "reading list", collections).id,
+        11,
+      );
+    });
+
+    it("rejects an unknown collection instead of searching the whole library", function () {
+      let error: unknown;
+      try {
+        resolveSearchCollection(1, "Missing", collections);
+      } catch (caught) {
+        error = caught;
+      }
+
+      assert.instanceOf(error, MarkdownQueryError);
+      assert.equal((error as MarkdownQueryError).code, "collection-not-found");
+      assert.equal((error as MarkdownQueryError).status, 404);
+    });
   });
 
   describe("year matching", function () {

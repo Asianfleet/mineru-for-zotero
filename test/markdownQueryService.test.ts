@@ -408,6 +408,58 @@ describe("markdownQueryService", function () {
     assert.equal(response.candidates[0].item.key, "ITEM1");
   });
 
+  it("applies the limit after the parsedOnly filter", async function () {
+    const parents = [
+      fakeItem({ id: 2, key: "ITEM1", regular: true, attachments: [1] }),
+      fakeItem({ id: 4, key: "ITEM2", regular: true, attachments: [3] }),
+      fakeItem({ id: 6, key: "ITEM3", regular: true, attachments: [5] }),
+    ];
+    const pdfs = [
+      fakeItem({ id: 1, key: "PDF1", pdf: true, parentItemID: 2 }),
+      fakeItem({ id: 3, key: "PDF2", pdf: true, parentItemID: 4 }),
+      fakeItem({ id: 5, key: "PDF3", pdf: true, parentItemID: 6 }),
+    ];
+    const searchLimits: Array<number | undefined> = [];
+    const service = createMarkdownQueryService({
+      items: fakeItems([...parents, ...pdfs]),
+      storage: {
+        async readPreferredMarkdown() {
+          return "# Ready";
+        },
+        async readBoxes() {
+          return [];
+        },
+        async readParseStatus(ref) {
+          // Only the second and third items have a parse result.
+          return {
+            preciseReady: ref.key !== "PDF1",
+            liteReady: false,
+          };
+        },
+      },
+      // Like the real search, the item search honors the limit it is given.
+      searchItems: async (input) => {
+        searchLimits.push(input.limit);
+        return input.limit === undefined
+          ? parents
+          : parents.slice(0, input.limit);
+      },
+    });
+
+    const response = await service.searchByTitle({
+      libraryID: 1,
+      title: "Item",
+      parsedOnly: true,
+      limit: 1,
+    });
+
+    assert.deepEqual(
+      response.candidates.map((candidate) => candidate.item.key),
+      ["ITEM2"],
+    );
+    assert.deepEqual(searchLimits, [undefined]);
+  });
+
   it("returns libraries through getLibraries", async function () {
     const service = createMarkdownQueryService({
       ...fakeDeps({ markdown: "# X" }),

@@ -24,6 +24,15 @@ import { exportBibTeX } from "../agentSync";
 import { extractItemYear } from "./itemYear";
 import type { NormalizedBox } from "../domain";
 
+/** Items whose parse status is read at once while filtering by parsedOnly. */
+const PARSED_ONLY_SCAN_BATCH = 20;
+
+/** One search hit: the item and the parse status of its PDF attachments. */
+interface SearchCandidate {
+  item: ItemSummary;
+  attachments: AttachmentSummary[];
+}
+
 /**
  * Storage interface capable of reading preferred Markdown results and parse statuses.
  */
@@ -220,27 +229,53 @@ export function createMarkdownQueryService(deps: {
         );
       }
 
-      const items = await deps.searchItems(input);
-      let candidates = await Promise.all(
-        items.map(async (item) => ({
-          item: summarizeItem(item),
-          attachments: item.isRegularItem()
-            ? await summarizeAttachments(item, deps.items, deps.storage)
-            : item.isPDFAttachment()
-              ? [await summarizeAttachment(item, deps.storage)]
-              : [],
-        })),
-      );
+      const summarizeCandidate = async (
+        item: ZoteroItemLike,
+      ): Promise<SearchCandidate> => ({
+        item: summarizeItem(item),
+        attachments: item.isRegularItem()
+          ? await summarizeAttachments(item, deps.items, deps.storage)
+          : item.isPDFAttachment()
+            ? [await summarizeAttachment(item, deps.storage)]
+            : [],
+      });
 
-      if (input.parsedOnly) {
-        candidates = candidates.filter((candidate) =>
-          candidate.attachments.some(
-            (att) => att.preciseReady || att.liteReady,
+      if (!input.parsedOnly) {
+        const items = await deps.searchItems(input);
+        return { candidates: await Promise.all(items.map(summarizeCandidate)) };
+      }
+
+      // `limit` counts parsed candidates, so it is applied after the parse
+      // status filter instead of cutting the item search short. Items are
+      // checked in small batches so a small limit stops the scan early.
+      const items = await deps.searchItems({ ...input, limit: undefined });
+      const candidates: SearchCandidate[] = [];
+      for (
+        let start = 0;
+        start < items.length &&
+        (input.limit === undefined || candidates.length < input.limit);
+        start += PARSED_ONLY_SCAN_BATCH
+      ) {
+        const batch = await Promise.all(
+          items
+            .slice(start, start + PARSED_ONLY_SCAN_BATCH)
+            .map(summarizeCandidate),
+        );
+        candidates.push(
+          ...batch.filter((candidate) =>
+            candidate.attachments.some(
+              (att) => att.preciseReady || att.liteReady,
+            ),
           ),
         );
       }
 
-      return { candidates };
+      return {
+        candidates:
+          input.limit === undefined
+            ? candidates
+            : candidates.slice(0, input.limit),
+      };
     },
 
     async queryMarkdown(input) {
