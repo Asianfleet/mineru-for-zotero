@@ -981,9 +981,7 @@
             tabResults.classList.add("active");
             resultsBottomBar.style.display = "flex";
 
-            if (!resultsLoaded) {
-              loadResultsData();
-            }
+            refreshResultsIfStale();
           } else {
             tabResultsBtn.classList.remove("active");
             tabTasksBtn.classList.add("active");
@@ -1248,14 +1246,68 @@
           });
         }
 
-        if (taskStore && typeof taskStore.subscribe === "function") {
-          taskStore.subscribe(function () {
+        // The store notifies on every task update (progress, detail text), so
+        // re-render at most once per short interval, and rescan the parsed
+        // results (which reads every result folder) only when the set of
+        // succeeded tasks changed, i.e. when a new result may exist.
+        var renderTimer = null;
+        var succeededSignature = getSucceededSignature();
+
+        function getSucceededSignature() {
+          try {
+            return taskStore
+              .getTasks()
+              .filter(function (task) {
+                return task.status === "succeeded";
+              })
+              .map(function (task) {
+                return task.id + ":" + task.updatedAt;
+              })
+              .join("|");
+          } catch (_) {
+            return "";
+          }
+        }
+
+        // Load the parsed results the first time, and reload them only when a
+        // task succeeded since the last load.
+        function refreshResultsIfStale() {
+          var signature = getSucceededSignature();
+          if (!resultsLoaded || signature !== succeededSignature) {
+            succeededSignature = signature;
+            loadResultsData();
+          }
+        }
+
+        function onTaskStoreChange() {
+          if (renderTimer !== null) return;
+          renderTimer = window.setTimeout(function () {
+            renderTimer = null;
             renderTasks();
             if (resultsLoaded && currentTab === "results") {
-              loadResultsData();
+              refreshResultsIfStale();
             }
-          });
+          }, 100);
         }
+
+        var unsubscribeTaskStore = null;
+        if (taskStore && typeof taskStore.subscribe === "function") {
+          unsubscribeTaskStore = taskStore.subscribe(onTaskStoreChange);
+        }
+
+        // The task store lives as long as the plugin; drop this window's
+        // listener on close so the store stops calling into a closed window
+        // and does not keep it alive.
+        window.addEventListener("unload", function () {
+          if (typeof unsubscribeTaskStore === "function") {
+            unsubscribeTaskStore();
+          }
+          unsubscribeTaskStore = null;
+          if (renderTimer !== null) {
+            window.clearTimeout(renderTimer);
+            renderTimer = null;
+          }
+        });
 
         // ==========================================
         // Tab 2: Parsed Results Management

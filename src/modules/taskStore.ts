@@ -180,8 +180,21 @@ class TaskManagerStore {
     return () => this.listeners.delete(listener);
   }
 
+  /**
+   * Call every listener. A failing listener (for example one left behind by a
+   * closed window) is logged and skipped: notify() runs before every save, so
+   * letting it throw would also drop the write to disk.
+   */
   private notify() {
-    this.listeners.forEach((l) => l());
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch (error) {
+        if (typeof ztoolkit !== "undefined") {
+          ztoolkit.log("MinerU task store listener failed", error);
+        }
+      }
+    }
   }
 }
 
