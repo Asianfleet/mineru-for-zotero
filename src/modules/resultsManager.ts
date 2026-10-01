@@ -2,10 +2,9 @@ import { config } from "../../package.json";
 import { createStorage, type StorageAdapter, toNativePath } from "./storage";
 import { syncResultToAgentFolder } from "./agentSync";
 import { refreshAttachmentParseStatus } from "./itemTreeColumn";
+import { getMinerUStorageRoot } from "./storageLocation";
 import { getSyncFolder } from "../utils/prefs";
 import { taskStore } from "./taskStore";
-
-const DEFAULT_STORAGE_ROOT = "ProfD/mineru-copy";
 
 export interface ParsedResultEntry {
   libraryID: number;
@@ -427,7 +426,7 @@ export function openResultsManagerWindow(
     }
 
     if (!service) {
-      const storage = createStorage(DEFAULT_STORAGE_ROOT);
+      const storage = createStorage(getMinerUStorageRoot());
       service = createResultsManagerService(storage);
     }
 

@@ -24,8 +24,7 @@ import {
   type ParseTier,
 } from "../utils/prefs";
 import { createStorage } from "./storage";
-
-const STORAGE_ROOT = "ProfD/mineru-copy";
+import { getMinerUStorageRoot } from "./storageLocation";
 
 interface ZoteroURLLauncher {
   launchURL(url: string): void;
@@ -108,9 +107,7 @@ export async function registerPrefsScripts(_window: Window) {
   );
 }
 
-export function getMinerUStorageRoot(): string {
-  return STORAGE_ROOT;
-}
+export { getMinerUStorageRoot };
 
 /**
  * Explicitly synchronize preferences.xhtml control values to prevent stale preferences before Zotero restarts.

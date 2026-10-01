@@ -131,7 +131,7 @@ Bump `BOX_NORMALIZER_VERSION` whenever a normalizer change alters the boxes prod
 
 ### Local Result Storage
 
-Precise results are in `ProfD/mineru-copy/attachments/<libraryID>-<attachmentKey>/` (`manifest.json`, `mineru-result.json`, `content.md`, `boxes.normalized.json`, `images/`). Lite results are stored beside them as `lite-manifest.json` and `lite-content.md`.
+Precise results are in `<Zotero.DataDirectory.dir>/mineru-copy/attachments/<libraryID>-<attachmentKey>/` (`getMinerUStorageRoot()` in `storageLocation.ts`; earlier versions used `ProfD/mineru-copy`, which `migrateResultStorage()` moves over entry by entry at startup without overwriting) (`manifest.json`, `mineru-result.json`, `content.md`, `boxes.normalized.json`, `images/`). Lite results are stored beside them as `lite-manifest.json` and `lite-content.md`.
 
 Use `storage.readPreferredMarkdown()` to read precise first, then lite fallback. Ignore transient `.tmp-*` and `.bak-*` files. The Task Manager Results tab derives `hasImages`/`hasBoxes` from the stored directory (at least one `images/` entry, a non-empty `boxes.normalized.json`), not from the ready flag.
 `resolveFsRoot()` treats the first path segment as a Zotero dirsvc key (e.g. `ProfD`) and silently falls back to the literal path when the key is unknown (`readDirectoryServicePath()` swallows `NS_ERROR_FAILURE`); tests must still use roots that do not match a real dirsvc key so they never touch a real profile. `listParseStatuses()` must sort entries for stable test order.

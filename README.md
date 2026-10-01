@@ -79,7 +79,9 @@ The result folder contains the parsed Markdown, box data used by the reader, and
 
 All MinerU parse results are saved using portable `[libraryID]-[attachmentKey]` directory names (such as `1-ABCD1234/`), which match the persistent attachment keys synced across devices via Zotero Cloud Sync.
 
-To migrate your parsed results without re-running parsing or consuming API quota:
+Parse results are stored in a `mineru-copy` folder inside your [Zotero data directory](https://www.zotero.org/support/zotero_data), so moving or copying the whole data directory carries them along. Results from older versions, which lived in the Zotero profile folder, are moved there automatically at startup.
+
+To migrate only your parsed results without re-running parsing or consuming API quota:
 
 1. **On the source computer:** Open `Edit` -> `Settings` -> `MinerU for Zotero` and click `Open Data Folder`. Copy the entire `mineru-copy` folder to an external drive or cloud storage.
 2. **On the target computer:** Ensure Zotero has finished syncing your library items. Open `Edit` -> `Settings` -> `MinerU for Zotero`, click `Open Data Folder`, and paste the `mineru-copy` folder into that location.
