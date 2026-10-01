@@ -182,6 +182,8 @@ For diagnostics, emit to `Zotero.debug` (see `readerOverlay/diagnostics.ts` and 
 
 New preferences must be registered in `addon/prefs.js` with **unprefixed** keys, then a build picks them up in `typings/prefs.d.ts`. Locale files use FTL syntax (`pref-sync-folder = Label text`) and live only under `addon/locale/en-US/`. Every key referenced from code or `data-l10n-id` must exist there; unused keys ship as dead strings, and missing keys surface as raw `mineruForZotero-…` ids in the UI. After editing FTL files, run `npm run build` to regenerate `typings/i10n.d.ts`.
 
+The build prefixes every Fluent message id with the addon ref (`mineruForZotero-…`), so code that calls `document.l10n.formatValue` must prefix the id (`preferenceScript.ts` `formatL10n` does this). The Task Manager page (`addon/content/taskManager.html`) has no Fluent DOM bindings: tag static markup with `data-tm-l10n` / `data-tm-l10n-placeholder` and route dynamic text through `tmText(id, englishFallback, args)`.
+
 ## Item Context Menu
 
 All MinerU status tag writes in `parseManager` go through `updateStatusTags()`, which does nothing when the `statusTags` preference is off. Reparse prompts must default non-destructively to `use-existing`. The context menu targets PDF attachments only. Task submission and completion do not show notifications to the user; only failures do. When registering commands, ensure lifecycle alignment with Zotero's localization resources to prevent broken right-click menus on unload.

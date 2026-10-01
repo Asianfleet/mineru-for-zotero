@@ -632,28 +632,62 @@
   <body>
     <!-- Tabs Header -->
     <div class="tabs-nav">
-      <button class="tab-btn active" id="tabTasksBtn">Task Queue</button>
-      <button class="tab-btn" id="tabResultsBtn">Parsed Results</button>
+      <button
+        class="tab-btn active"
+        id="tabTasksBtn"
+        data-tm-l10n="task-manager-tab-tasks"
+      >
+        Task Queue
+      </button>
+      <button
+        class="tab-btn"
+        id="tabResultsBtn"
+        data-tm-l10n="task-manager-tab-results"
+      >
+        Parsed Results
+      </button>
     </div>
 
     <!-- Tab 1: Task Queue -->
     <div class="tab-pane active" id="tabTasks">
       <div class="top-bar">
-        <h1 id="title">MinerU Task Manager</h1>
-        <button class="clear-btn" id="clearBtn">Clear History</button>
+        <h1 id="title" data-tm-l10n="task-manager-title">
+          MinerU Task Manager
+        </h1>
+        <button
+          class="clear-btn"
+          id="clearBtn"
+          data-tm-l10n="task-manager-clear-history"
+        >
+          Clear History
+        </button>
       </div>
       <div class="task-list" id="taskList">
-        <div class="empty-state">Loading...</div>
+        <div class="empty-state" data-tm-l10n="task-manager-loading">
+          Loading...
+        </div>
       </div>
     </div>
 
     <!-- Tab 2: Parsed Results -->
     <div class="tab-pane" id="tabResults">
       <div class="top-bar">
-        <h1 id="resultsTitle">MinerU Parsed Results</h1>
+        <h1 id="resultsTitle" data-tm-l10n="task-manager-results-title">
+          MinerU Parsed Results
+        </h1>
         <div style="display: flex; gap: 8px">
-          <button class="btn" id="btnRefreshResults">Refresh</button>
-          <button class="btn btn-primary" id="btnScanOrphans">
+          <button
+            class="btn"
+            id="btnRefreshResults"
+            data-tm-l10n="task-manager-refresh"
+          >
+            Refresh
+          </button>
+          <button
+            class="btn btn-primary"
+            id="btnScanOrphans"
+            data-tm-l10n="task-manager-scan-orphans"
+          >
             Scan & Clean Orphans
           </button>
         </div>
@@ -661,14 +695,22 @@
 
       <div class="summary-bar" id="summaryBar">
         <span
-          ><strong id="valTotal">0</strong> items parsed (<strong
-            id="valPrecise"
-            >0</strong
+          ><strong id="valTotal">0</strong>
+          <span data-tm-l10n="task-manager-summary-items-parsed"
+            >items parsed</span
           >
-          Precise, <strong id="valLite">0</strong> Lite)</span
+          (<strong id="valPrecise">0</strong>
+          <span data-tm-l10n="task-manager-badge-precise">Precise</span>,
+          <strong id="valLite">0</strong>
+          <span data-tm-l10n="task-manager-badge-lite">Lite</span>)</span
         >
         <span class="summary-dot">·</span>
-        <span><strong id="valSize">0 B</strong> total disk usage</span>
+        <span
+          ><strong id="valSize">0 B</strong>
+          <span data-tm-l10n="task-manager-summary-disk-usage"
+            >total disk usage</span
+          ></span
+        >
       </div>
 
       <div class="filter-bar">
@@ -676,6 +718,7 @@
           type="text"
           id="searchInput"
           placeholder="Search title or filename..."
+          data-tm-l10n-placeholder="task-manager-search-placeholder"
           style="flex: 1"
         />
 
@@ -687,17 +730,36 @@
             aria-haspopup="listbox"
             aria-expanded="false"
           >
-            <span class="dropdown-selected-text">All Modes</span>
+            <span
+              class="dropdown-selected-text"
+              data-tm-l10n="task-manager-filter-all-modes"
+              >All Modes</span
+            >
             <span class="dropdown-arrow">▼</span>
           </button>
           <div class="dropdown-menu" role="listbox">
-            <div class="dropdown-item selected" role="option" data-value="all">
+            <div
+              class="dropdown-item selected"
+              role="option"
+              data-value="all"
+              data-tm-l10n="task-manager-filter-all-modes"
+            >
               All Modes
             </div>
-            <div class="dropdown-item" role="option" data-value="precise">
+            <div
+              class="dropdown-item"
+              role="option"
+              data-value="precise"
+              data-tm-l10n="task-manager-filter-precise"
+            >
               Precise Only
             </div>
-            <div class="dropdown-item" role="option" data-value="lite">
+            <div
+              class="dropdown-item"
+              role="option"
+              data-value="lite"
+              data-tm-l10n="task-manager-filter-lite"
+            >
               Lite Only
             </div>
           </div>
@@ -711,17 +773,36 @@
             aria-haspopup="listbox"
             aria-expanded="false"
           >
-            <span class="dropdown-selected-text">All Content</span>
+            <span
+              class="dropdown-selected-text"
+              data-tm-l10n="task-manager-filter-all-content"
+              >All Content</span
+            >
             <span class="dropdown-arrow">▼</span>
           </button>
           <div class="dropdown-menu" role="listbox">
-            <div class="dropdown-item selected" role="option" data-value="all">
+            <div
+              class="dropdown-item selected"
+              role="option"
+              data-value="all"
+              data-tm-l10n="task-manager-filter-all-content"
+            >
               All Content
             </div>
-            <div class="dropdown-item" role="option" data-value="images">
+            <div
+              class="dropdown-item"
+              role="option"
+              data-value="images"
+              data-tm-l10n="task-manager-filter-has-images"
+            >
               Has Images
             </div>
-            <div class="dropdown-item" role="option" data-value="orphans">
+            <div
+              class="dropdown-item"
+              role="option"
+              data-value="orphans"
+              data-tm-l10n="task-manager-filter-orphans"
+            >
               Orphans Only
             </div>
           </div>
@@ -735,7 +816,11 @@
             aria-haspopup="listbox"
             aria-expanded="false"
           >
-            <span class="dropdown-selected-text">Date (Newest)</span>
+            <span
+              class="dropdown-selected-text"
+              data-tm-l10n="task-manager-sort-date-desc"
+              >Date (Newest)</span
+            >
             <span class="dropdown-arrow">▼</span>
           </button>
           <div class="dropdown-menu" role="listbox">
@@ -743,19 +828,40 @@
               class="dropdown-item selected"
               role="option"
               data-value="dateDesc"
+              data-tm-l10n="task-manager-sort-date-desc"
             >
               Date (Newest)
             </div>
-            <div class="dropdown-item" role="option" data-value="dateAsc">
+            <div
+              class="dropdown-item"
+              role="option"
+              data-value="dateAsc"
+              data-tm-l10n="task-manager-sort-date-asc"
+            >
               Date (Oldest)
             </div>
-            <div class="dropdown-item" role="option" data-value="sizeDesc">
+            <div
+              class="dropdown-item"
+              role="option"
+              data-value="sizeDesc"
+              data-tm-l10n="task-manager-sort-size-desc"
+            >
               Size (Largest)
             </div>
-            <div class="dropdown-item" role="option" data-value="sizeAsc">
+            <div
+              class="dropdown-item"
+              role="option"
+              data-value="sizeAsc"
+              data-tm-l10n="task-manager-sort-size-asc"
+            >
               Size (Smallest)
             </div>
-            <div class="dropdown-item" role="option" data-value="titleAsc">
+            <div
+              class="dropdown-item"
+              role="option"
+              data-value="titleAsc"
+              data-tm-l10n="task-manager-sort-title-asc"
+            >
               Title (A-Z)
             </div>
           </div>
@@ -765,22 +871,32 @@
       <div class="list-controls">
         <label class="checkbox-row" style="margin: 0">
           <input type="checkbox" id="selectAllCb" />
-          <span id="lblSelectAll"
-            >Select All (<span id="selectCount">0</span> selected)</span
-          >
+          <span id="lblSelectAll">Select All (0 selected)</span>
         </label>
         <span id="lblResultCount">0 results</span>
       </div>
 
       <div class="result-list" id="resultList">
-        <div class="empty-state">Loading results...</div>
+        <div class="empty-state" data-tm-l10n="task-manager-results-loading">
+          Loading parsed results...
+        </div>
       </div>
 
       <div class="bottom-bar" id="resultsBottomBar" style="display: none">
         <div id="lblBottomSelected">0 selected</div>
         <div style="display: flex; gap: 10px">
-          <button class="btn" id="btnBatchSync">Batch Sync</button>
-          <button class="btn btn-danger" id="btnBatchDelete">
+          <button
+            class="btn"
+            id="btnBatchSync"
+            data-tm-l10n="task-manager-batch-sync"
+          >
+            Batch Sync
+          </button>
+          <button
+            class="btn btn-danger"
+            id="btnBatchDelete"
+            data-tm-l10n="task-manager-batch-delete"
+          >
             Batch Delete
           </button>
         </div>
@@ -791,15 +907,29 @@
     <div class="modal-overlay" id="mdModal">
       <div class="modal">
         <div class="modal-header">
-          <h2 id="mdTitle">Markdown Preview</h2>
+          <h2 id="mdTitle" data-tm-l10n="task-manager-markdown-preview">
+            Markdown Preview
+          </h2>
           <button class="btn" id="mdCloseBtn">&times;</button>
         </div>
         <div class="modal-body">
           <div class="markdown-preview" id="mdContent">Loading...</div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-primary" id="mdCopyBtn">Copy</button>
-          <button class="btn" id="mdCloseFootBtn">Close</button>
+          <button
+            class="btn btn-primary"
+            id="mdCopyBtn"
+            data-tm-l10n="task-manager-copy"
+          >
+            Copy
+          </button>
+          <button
+            class="btn"
+            id="mdCloseFootBtn"
+            data-tm-l10n="task-manager-close"
+          >
+            Close
+          </button>
         </div>
       </div>
     </div>
@@ -808,27 +938,49 @@
     <div class="modal-overlay" id="delModal">
       <div class="modal" style="max-width: 420px">
         <div class="modal-header">
-          <h2 id="delTitle">Delete Result</h2>
+          <h2 id="delTitle" data-tm-l10n="task-manager-delete-result">
+            Delete Result
+          </h2>
         </div>
         <div class="modal-body">
-          <p id="delMessage">
+          <p id="delMessage" data-tm-l10n="task-manager-delete-message">
             Are you sure you want to delete this parsed result?
           </p>
           <p><strong id="delItemTitle"></strong></p>
           <div id="delOptions">
             <label class="checkbox-row">
               <input type="checkbox" id="cbDelTags" checked />
-              <span id="lblDelTags">Also remove MinerU tags</span>
+              <span
+                id="lblDelTags"
+                data-tm-l10n="task-manager-delete-remove-tags"
+                >Also remove MinerU tags</span
+              >
             </label>
             <label class="checkbox-row">
               <input type="checkbox" id="cbDelLayout" />
-              <span id="lblDelLayout">Also remove layout PDF attachment</span>
+              <span
+                id="lblDelLayout"
+                data-tm-l10n="task-manager-delete-remove-layout"
+                >Also remove layout PDF attachment</span
+              >
             </label>
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn" id="delCancelBtn">Cancel</button>
-          <button class="btn btn-danger" id="delConfirmBtn">Delete</button>
+          <button
+            class="btn"
+            id="delCancelBtn"
+            data-tm-l10n="task-manager-cancel"
+          >
+            Cancel
+          </button>
+          <button
+            class="btn btn-danger"
+            id="delConfirmBtn"
+            data-tm-l10n="task-manager-delete-confirm"
+          >
+            Delete
+          </button>
         </div>
       </div>
     </div>
@@ -910,7 +1062,10 @@
           try {
             if (addonApi && typeof addonApi.getString === "function") {
               var localized = addonApi.getString(id, args);
-              if (localized) return localized;
+              // A missing key comes back as the prefixed raw id.
+              if (localized && localized.slice(-id.length) !== id) {
+                return localized;
+              }
             }
           } catch (e) {}
           if (args) {
@@ -919,6 +1074,45 @@
             });
           }
           return fallback;
+        }
+
+        /** Localize the static markup tagged with `data-tm-l10n` keys. */
+        function localizeStatic() {
+          var nodes = document.querySelectorAll("[data-tm-l10n]");
+          for (var i = 0; i < nodes.length; i++) {
+            nodes[i].textContent = tmText(
+              nodes[i].getAttribute("data-tm-l10n"),
+              nodes[i].textContent.trim(),
+            );
+          }
+          var inputs = document.querySelectorAll("[data-tm-l10n-placeholder]");
+          for (var j = 0; j < inputs.length; j++) {
+            inputs[j].placeholder = tmText(
+              inputs[j].getAttribute("data-tm-l10n-placeholder"),
+              inputs[j].placeholder,
+            );
+          }
+        }
+
+        localizeStatic();
+
+        /** Replace the result list with a single message line. */
+        function showResultListMessage(text, kind) {
+          var message = document.createElement("div");
+          if (kind === "empty") {
+            message.className = "empty-state";
+          } else {
+            message.style.padding = "20px";
+            if (kind === "error") {
+              message.style.color = "#d32f2f";
+            } else {
+              message.style.textAlign = "center";
+              message.style.color = "#666";
+            }
+          }
+          message.textContent = text;
+          resultListEl.innerHTML = "";
+          resultListEl.appendChild(message);
         }
 
         function formatSize(bytes) {
@@ -1008,18 +1202,25 @@
         // ==========================================
         // Tab 1: Task Queue Management
         // ==========================================
+        function showTaskListError(text) {
+          var error = document.createElement("div");
+          error.className = "error-state";
+          error.textContent = text;
+          taskListEl.innerHTML = "";
+          taskListEl.appendChild(error);
+        }
+
         function renderTasks() {
           if (!taskListEl) return;
           taskListEl.innerHTML = "";
 
           if (!taskStore) {
-            taskListEl.innerHTML =
-              '<div class="error-state">' +
+            showTaskListError(
               tmText(
                 "task-manager-store-missing",
                 "TaskStore not found. Please restart Zotero and try again.",
-              ) +
-              "</div>";
+              ),
+            );
             return;
           }
 
@@ -1027,14 +1228,13 @@
           try {
             tasks = taskStore.getTasks();
           } catch (e) {
-            taskListEl.innerHTML =
-              '<div class="error-state">' +
+            showTaskListError(
               tmText(
                 "task-manager-read-error",
                 "Error reading tasks: { $message }",
                 { message: e.message },
-              ) +
-              "</div>";
+              ),
+            );
             return;
           }
 
@@ -1209,7 +1409,11 @@
                 progressTrack.className = "progress-track";
                 progressTrack.setAttribute(
                   "aria-label",
-                  "progress " + progressPct + "%",
+                  tmText(
+                    "task-manager-progress-label",
+                    "progress { $percent }%",
+                    { percent: progressPct },
+                  ),
                 );
                 var progressFill = document.createElement("div");
                 progressFill.className = "progress-fill";
@@ -1330,21 +1534,32 @@
               zotero?.MinerUForZotero?.api?.createResultsManagerService?.();
           }
           if (!resultsService) {
-            resultListEl.innerHTML =
-              "<div style='padding:20px;color:#d32f2f'>Results service unavailable.</div>";
+            showResultListMessage(
+              tmText(
+                "task-manager-results-service-unavailable",
+                "Results service unavailable.",
+              ),
+              "error",
+            );
             return;
           }
-          resultListEl.innerHTML =
-            "<div style='padding:20px;text-align:center;color:#666'>Loading parsed results...</div>";
+          showResultListMessage(
+            tmText("task-manager-results-loading", "Loading parsed results..."),
+            "loading",
+          );
           try {
             allEntries = await resultsService.scan();
             resultsLoaded = true;
             applyFilters();
           } catch (e) {
-            resultListEl.innerHTML =
-              "<div style='padding:20px;color:#d32f2f'>Error scanning results: " +
-              (e.message || e) +
-              "</div>";
+            showResultListMessage(
+              tmText(
+                "task-manager-results-scan-error",
+                "Error scanning results: { $message }",
+                { message: e.message || String(e) },
+              ),
+              "error",
+            );
           }
         }
 
@@ -1423,8 +1638,10 @@
           resultListEl.innerHTML = "";
 
           if (filteredEntries.length === 0) {
-            resultListEl.innerHTML =
-              "<div class='empty-state'>No parsed results found.</div>";
+            showResultListMessage(
+              tmText("task-manager-results-empty", "No parsed results found."),
+              "empty",
+            );
           } else {
             for (var i = 0; i < filteredEntries.length; i++) {
               var entry = filteredEntries[i];
@@ -1453,10 +1670,14 @@
               title.className = "result-title";
               if (entry.isOrphan) {
                 title.textContent =
-                  "⚠️ ORPHAN - " + (entry.parentTitle || "Unknown");
+                  tmText("task-manager-orphan-label", "⚠️ ORPHAN - ") +
+                  (entry.parentTitle ||
+                    tmText("task-manager-unknown-title", "Unknown"));
                 title.style.color = "#d32f2f";
               } else {
-                title.textContent = entry.parentTitle || "Unknown Title";
+                title.textContent =
+                  entry.parentTitle ||
+                  tmText("task-manager-unknown-parent-title", "Unknown Title");
               }
 
               var filename = document.createElement("div");
@@ -1468,31 +1689,31 @@
               if (entry.hasPrecise) {
                 var b = document.createElement("span");
                 b.className = "badge precise";
-                b.textContent = "Precise";
+                b.textContent = tmText("task-manager-badge-precise", "Precise");
                 badges.appendChild(b);
               }
               if (entry.hasLite) {
                 var b = document.createElement("span");
                 b.className = "badge lite";
-                b.textContent = "Lite";
+                b.textContent = tmText("task-manager-badge-lite", "Lite");
                 badges.appendChild(b);
               }
               if (entry.hasImages) {
                 var b = document.createElement("span");
                 b.className = "badge";
-                b.textContent = "Images";
+                b.textContent = tmText("task-manager-badge-images", "Images");
                 badges.appendChild(b);
               }
               if (entry.hasBoxes) {
                 var b = document.createElement("span");
                 b.className = "badge";
-                b.textContent = "Boxes";
+                b.textContent = tmText("task-manager-badge-boxes", "Boxes");
                 badges.appendChild(b);
               }
               if (entry.isOrphan) {
                 var b = document.createElement("span");
                 b.className = "badge orphan";
-                b.textContent = "Orphan";
+                b.textContent = tmText("task-manager-badge-orphan", "Orphan");
                 badges.appendChild(b);
               }
 
@@ -1500,7 +1721,7 @@
               meta.className = "result-meta";
               var dateStr = entry.parsedAtMs
                 ? new Date(entry.parsedAtMs).toLocaleString()
-                : "Unknown date";
+                : tmText("task-manager-unknown-date", "Unknown date");
               meta.textContent =
                 formatSize(entry.totalSizeBytes || entry.sizeBytes) +
                 " • " +
@@ -1512,7 +1733,10 @@
 
               var btnFolder = document.createElement("button");
               btnFolder.className = "btn";
-              btnFolder.textContent = "📂 Open Folder";
+              btnFolder.textContent = tmText(
+                "task-manager-open-folder",
+                "📂 Open Folder",
+              );
               btnFolder.onclick = (function (ent) {
                 return function () {
                   if (resultsService && ent.attachmentDir) {
@@ -1525,7 +1749,10 @@
               if (!entry.isOrphan && entry.attachmentID) {
                 var btnLocate = document.createElement("button");
                 btnLocate.className = "btn";
-                btnLocate.textContent = "🔍 Locate";
+                btnLocate.textContent = tmText(
+                  "task-manager-locate",
+                  "🔍 Locate",
+                );
                 btnLocate.onclick = (function (ent) {
                   return function () {
                     if (resultsService && ent.attachmentID) {
@@ -1538,7 +1765,10 @@
 
               var btnPreview = document.createElement("button");
               btnPreview.className = "btn";
-              btnPreview.textContent = "👁 Preview";
+              btnPreview.textContent = tmText(
+                "task-manager-preview",
+                "👁 Preview",
+              );
               btnPreview.onclick = (function (ent) {
                 return function () {
                   openPreview(ent);
@@ -1548,7 +1778,7 @@
 
               var btnDel = document.createElement("button");
               btnDel.className = "btn btn-danger";
-              btnDel.textContent = "🗑 Delete";
+              btnDel.textContent = tmText("task-manager-delete", "🗑 Delete");
               btnDel.onclick = (function (ent) {
                 return function () {
                   confirmDelete([ent]);
@@ -1568,16 +1798,26 @@
             }
           }
 
-          document.getElementById("lblResultCount").textContent =
-            filteredEntries.length + " results";
+          document.getElementById("lblResultCount").textContent = tmText(
+            "task-manager-result-count",
+            "{ $count } results",
+            { count: filteredEntries.length },
+          );
           updateSelectionUI();
         }
 
         function updateSelectionUI() {
           var selCount = selectedIds.size;
-          document.getElementById("selectCount").textContent = selCount;
-          document.getElementById("lblBottomSelected").textContent =
-            selCount + " selected";
+          document.getElementById("lblSelectAll").textContent = tmText(
+            "task-manager-select-all",
+            "Select All ({ $count } selected)",
+            { count: selCount },
+          );
+          document.getElementById("lblBottomSelected").textContent = tmText(
+            "task-manager-selected-count",
+            "{ $count } selected",
+            { count: selCount },
+          );
 
           var selectAllCb = document.getElementById("selectAllCb");
           if (
@@ -1693,20 +1933,33 @@
               var freed =
                 typeof res === "object"
                   ? formatSize(res.freedBytes)
-                  : "disk space";
+                  : tmText("task-manager-disk-space", "disk space");
               alert(
-                "Cleaned " + count + " orphaned results (freed " + freed + ").",
+                tmText(
+                  "task-manager-orphans-cleaned",
+                  "Cleaned { $count } orphaned results (freed { $freed }).",
+                  { count: count, freed: freed },
+                ),
               );
               loadResultsData();
             } catch (e) {
-              alert("Error cleaning orphans: " + (e.message || e));
+              alert(
+                tmText(
+                  "task-manager-orphans-clean-error",
+                  "Error cleaning orphans: { $message }",
+                  { message: e.message || String(e) },
+                ),
+              );
             }
           });
 
         var currentMarkdown = "";
         async function openPreview(entry) {
           document.getElementById("mdModal").style.display = "flex";
-          document.getElementById("mdContent").textContent = "Loading...";
+          document.getElementById("mdContent").textContent = tmText(
+            "task-manager-loading",
+            "Loading...",
+          );
           try {
             currentMarkdown = await resultsService.readMarkdown({
               libraryID: entry.libraryID,
@@ -1714,8 +1967,11 @@
             });
             document.getElementById("mdContent").textContent = currentMarkdown;
           } catch (e) {
-            document.getElementById("mdContent").textContent =
-              "Error loading markdown: " + (e.message || e);
+            document.getElementById("mdContent").textContent = tmText(
+              "task-manager-markdown-error",
+              "Error loading markdown: { $message }",
+              { message: e.message || String(e) },
+            );
           }
         }
 
@@ -1729,7 +1985,7 @@
           copyToClipboard(currentMarkdown).then(function () {
             var btn = document.getElementById("mdCopyBtn");
             var oldText = btn.textContent;
-            btn.textContent = "Copied!";
+            btn.textContent = tmText("task-manager-copied", "Copied!");
             setTimeout(function () {
               btn.textContent = oldText;
             }, 2000);
@@ -1744,7 +2000,9 @@
               ? entries[0].parentTitle ||
                 entries[0].attachmentName ||
                 entries[0].fileName
-              : entries.length + " items";
+              : tmText("task-manager-delete-item-count", "{ $count } items", {
+                  count: entries.length,
+                });
           document.getElementById("delItemTitle").textContent = titleText;
 
           var hasTagsOrLayout = entries.some(function (e) {
@@ -1773,7 +2031,13 @@
             }
             loadResultsData();
           } catch (e) {
-            alert("Error deleting results: " + (e.message || e));
+            alert(
+              tmText(
+                "task-manager-delete-error",
+                "Error deleting results: { $message }",
+                { message: e.message || String(e) },
+              ),
+            );
           }
         };
 
@@ -1796,19 +2060,32 @@
           var btn = document.getElementById("btnBatchSync");
           btn.disabled = true;
           var oldText = btn.textContent;
-          btn.textContent = "Syncing...";
+          btn.textContent = tmText("task-manager-syncing", "Syncing...");
           try {
             if (
               resultsService &&
               typeof resultsService.syncSelected === "function"
             ) {
               var count = await resultsService.syncSelected(targets);
-              btn.textContent = "Synced (" + count + ")";
+              btn.textContent = tmText(
+                "task-manager-synced-count",
+                "Synced ({ $count })",
+                { count: count },
+              );
             } else {
-              alert("Sync service unavailable or no sync folder configured.");
+              alert(
+                tmText(
+                  "task-manager-sync-unavailable",
+                  "Sync service unavailable or no sync folder configured.",
+                ),
+              );
             }
           } catch (err) {
-            alert("Error syncing: " + (err.message || err));
+            alert(
+              tmText("task-manager-sync-error", "Error syncing: { $message }", {
+                message: err.message || String(err),
+              }),
+            );
           }
           setTimeout(function () {
             btn.textContent = oldText;

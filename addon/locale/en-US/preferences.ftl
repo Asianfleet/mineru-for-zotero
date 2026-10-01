@@ -34,6 +34,10 @@ pref-status-tags =
 pref-data-storage-title = Data Storage
 pref-sync-folder = Agent-friendly Sync Folder
 pref-sync-all-button = Sync All Results Now
+pref-sync-all-syncing = Syncing...
+pref-sync-all-progress = Syncing... ({ $synced }/{ $total })
+pref-sync-all-done = Done ({ $count })
+pref-sync-all-error = Sync failed
 pref-auto-parse-page-limit = Auto-parse if pages <= (0 = disable)
 pref-data-folder-title = Data Folder
 pref-open-task-manager = Open Task Manager
