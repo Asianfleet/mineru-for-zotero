@@ -1117,6 +1117,14 @@ async function runParseAttachment(
 
     if (error instanceof MinerUFileAccessError) {
       logFileAccessFailure(attachment, filePath, dependencies, error);
+      await markAttachmentFailed(attachment);
+      // Store the localized message, not error.message: it contains the
+      // absolute PDF path, which the task API must not disclose.
+      await taskStore.updateTaskStatus(
+        String(attachment.id),
+        "failed",
+        getSafeMessageText("parse-error-file-access"),
+      );
       dependencies.showMessage("parse-error-file-access");
       return;
     }

@@ -956,6 +956,30 @@ describe("parseManager", function () {
     });
   });
 
+  it("fails the task and clears the processing tag when the PDF read fails during submit", async function () {
+    const messages: string[] = [];
+    const tags: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      client: {
+        submitPdf: async () => {
+          throw new MinerUFileAccessError("C:/tmp/a.pdf", "EACCES");
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7109, tags }));
+
+    const task = taskStore.getTask("7109");
+    assert.equal(task?.status, "failed");
+    assert.notInclude(task?.error ?? "", "a.pdf");
+    assert.include(tags, "-MinerU: Processing ⏳");
+    assert.include(tags, "+MinerU: Failed ❌");
+    assert.deepEqual(messages, ["parse-error-file-access"]);
+  });
+
   it("does not report unexpected submit errors as file access failures", async function () {
     const messages: string[] = [];
     const manager = createParseManager({
