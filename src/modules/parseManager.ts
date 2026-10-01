@@ -1553,10 +1553,16 @@ function logFileAccessFailure(
   });
 }
 
-async function isFileReadable(filePath: string): Promise<boolean> {
+/**
+ * Default readability check: the PDF exists. A path IOUtils cannot parse
+ * counts as unreadable instead of rejecting.
+ * Exported for tests.
+ */
+export async function isFileReadable(filePath: string): Promise<boolean> {
   try {
     if (typeof IOUtils !== "undefined") {
-      return IOUtils.exists(toNativePath(filePath));
+      // Await inside the try: a returned promise would reject past the catch.
+      return await IOUtils.exists(toNativePath(filePath));
     }
     if (typeof OS !== "undefined") {
       return Boolean(await OS.File.exists(toNativePath(filePath)));

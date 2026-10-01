@@ -3,6 +3,7 @@ import {
   clearTaskCancelled,
   createProgressWindowTexts,
   createParseManager,
+  isFileReadable,
   markTaskCancelled,
   resolveReparseChoiceFromPromptButton,
   type ParseManagerDependencies,
@@ -978,6 +979,11 @@ describe("parseManager", function () {
     assert.include(tags, "-MinerU: Processing ⏳");
     assert.include(tags, "+MinerU: Failed ❌");
     assert.deepEqual(messages, ["parse-error-file-access"]);
+  });
+
+  it("treats a path IOUtils cannot parse as an unreadable file", async function () {
+    // IOUtils rejects relative paths instead of answering false.
+    assert.isFalse(await isFileReadable("relative/a.pdf"));
   });
 
   it("does not report unexpected submit errors as file access failures", async function () {
