@@ -524,23 +524,75 @@ export function getPrimaryScrollContainer(doc: Document): Element | null {
 
 /** Synchronizes overlay page layers according to the positions of PDF.js page elements. */
 export function positionPageLayers(doc: Document, root: HTMLDivElement): void {
-  for (const layer of Array.from(
+  const layers = Array.from(
     root.querySelectorAll(".mineru-copy-page-layer"),
-  ) as HTMLElement[]) {
+  ) as HTMLElement[];
+  let pages = pageElementsByRoot.get(root);
+  if (!pages) {
+    pages = new Map();
+    pageElementsByRoot.set(root, pages);
+  }
+
+  // Read every page position before writing any style: interleaving reads
+  // and writes would force a synchronous layout for each layer, which is
+  // expensive on long documents and runs on every scroll frame.
+  const placements = layers.map((layer) => {
     const pageNumber = Number(layer.dataset.pageNumber ?? 1);
-    const pageElement = findPageElement(doc, pageNumber);
-    if (!pageElement) {
+    const pageElement = getCachedPageElement(doc, pages!, pageNumber);
+    return { layer, rect: pageElement?.getBoundingClientRect() ?? null };
+  });
+
+  for (const { layer, rect } of placements) {
+    if (!rect) {
       layer.hidden = true;
+      appliedLayerGeometry.delete(layer);
       continue;
     }
-
-    const rect = pageElement.getBoundingClientRect();
+    const left = `${rect.left}px`;
+    const top = `${rect.top}px`;
+    const width = `${Math.max(1, rect.width)}px`;
+    const height = `${Math.max(1, rect.height)}px`;
+    const geometry = `${left} ${top} ${width} ${height}`;
+    // The positioning interval also fires while nothing moves; leave
+    // unchanged layers alone so it does not invalidate styles.
+    if (!layer.hidden && appliedLayerGeometry.get(layer) === geometry) {
+      continue;
+    }
     layer.hidden = false;
-    layer.style.left = `${rect.left}px`;
-    layer.style.top = `${rect.top}px`;
-    layer.style.width = `${Math.max(1, rect.width)}px`;
-    layer.style.height = `${Math.max(1, rect.height)}px`;
+    layer.style.left = left;
+    layer.style.top = top;
+    layer.style.width = width;
+    layer.style.height = height;
+    appliedLayerGeometry.set(layer, geometry);
   }
+}
+
+/** PDF page elements found for each overlay root, keyed by page number. */
+const pageElementsByRoot = new WeakMap<HTMLElement, Map<number, Element>>();
+
+/** Last geometry written to each page layer. */
+const appliedLayerGeometry = new WeakMap<HTMLElement, string>();
+
+/**
+ * Look up a page element once and reuse it while it stays in the document,
+ * instead of running up to four selector queries per layer on every pass.
+ */
+function getCachedPageElement(
+  doc: Document,
+  pages: Map<number, Element>,
+  pageNumber: number,
+): Element | null {
+  const cached = pages.get(pageNumber);
+  if (cached && cached.isConnected !== false) {
+    return cached;
+  }
+  const found = findPageElement(doc, pageNumber);
+  if (found) {
+    pages.set(pageNumber, found);
+  } else {
+    pages.delete(pageNumber);
+  }
+  return found;
 }
 
 /** Finds the most suitable PDF page element in the reader document by page number. */
