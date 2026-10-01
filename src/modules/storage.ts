@@ -5,7 +5,7 @@ import type {
   NormalizedBox,
   ParseManifest,
 } from "./domain";
-import { normalizeMinerUBoxes } from "./boxNormalizer";
+import { BOX_NORMALIZER_VERSION, normalizeMinerUBoxes } from "./boxNormalizer";
 import {
   computeDirSize,
   exists,
@@ -173,10 +173,26 @@ export function createStorage(rootDir: string): StorageAdapter {
       if (!Array.isArray(boxes)) {
         throw new Error("boxes.normalized.json is not an array");
       }
-      return repairDuplicateRawIndexes(
+      if (manifest.boxesVersion === BOX_NORMALIZER_VERSION) {
+        return boxes as NormalizedBox[];
+      }
+
+      // Boxes from an older normalizer: refresh them from the raw result once
+      // and stamp the manifest, instead of re-reading and re-normalizing the
+      // (possibly tens of MB) raw result on every read.
+      const refreshed = await repairDuplicateRawIndexes(
         dir,
         await refreshStaleBoxes(dir, boxes as NormalizedBox[]),
       );
+      try {
+        await writeJson(joinPath(dir, MANIFEST_FILE), {
+          ...manifest,
+          boxesVersion: BOX_NORMALIZER_VERSION,
+        });
+      } catch {
+        // A read-only result folder is refreshed again on the next read.
+      }
+      return refreshed;
     },
 
     async readImageDataURL(ref, imageMarkdownPath) {
@@ -201,6 +217,7 @@ export function createStorage(rootDir: string): StorageAdapter {
         mineruTaskID: input.mineruTaskID,
         resultVersion: 1,
         status: "ready",
+        boxesVersion: BOX_NORMALIZER_VERSION,
       };
 
       await writeAttachmentResultDir(fsRoot, input.attachment, {

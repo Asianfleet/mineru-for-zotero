@@ -46,6 +46,11 @@ export interface ParseManifest {
   resultVersion: 1;
   status: "ready" | "failed";
   error?: string;
+  /**
+   * BOX_NORMALIZER_VERSION the stored boxes were produced with; absent in
+   * results written before the stamp existed.
+   */
+  boxesVersion?: number;
 }
 
 export interface LiteParseManifest {

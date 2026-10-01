@@ -125,6 +125,8 @@ Cancellation (Stop in the Task Manager) is a distinct terminal `cancelled` statu
 
 Check supported schemas when handling missing box errors.
 
+Bump `BOX_NORMALIZER_VERSION` whenever a normalizer change alters the boxes produced from the same raw result. Manifests record the version their boxes were made with; `storage.readBoxes()` re-normalizes an older result from its raw JSON once and stamps it, and otherwise serves `boxes.normalized.json` as is.
+
 ## Storage & Agent Sync
 
 ### Local Result Storage

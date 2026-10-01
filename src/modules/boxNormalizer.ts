@@ -72,6 +72,15 @@ const V2_ANNOTATION_TYPES = new Set([
   "code_footnote",
 ]);
 
+/**
+ * Version of the normalized box output, stamped into result manifests.
+ *
+ * Bump it whenever a change here alters the boxes produced from the same raw
+ * result: stored results with an older stamp are re-normalized from their raw
+ * result once, the next time they are read.
+ */
+export const BOX_NORMALIZER_VERSION = 1;
+
 export function normalizeMinerUBoxes(result: unknown): NormalizedBox[] {
   return isDocumentV2(result)
     ? normalizeDocumentV2(result as { pages?: V2Page[] })
