@@ -8,6 +8,7 @@ import {
   type ParseManagerDependencies,
 } from "../src/modules/parseManager";
 import {
+  createV1MinerUClient,
   MinerUFileAccessError,
   MinerURequestError,
 } from "../src/modules/mineruClient";
@@ -1258,7 +1259,7 @@ describe("parseManager", function () {
       {
         client: {
           submitPdf: async () => {
-            throw new MinerURequestError("agent-upload", 403, "bad signature");
+            throw new MinerURequestError("submit", 422, "invalid page range");
           },
           pollTask: async () => ({ status: "succeeded" }),
           downloadResult: async () => ({ kind: "lite", markdown: "# Lite" }),
@@ -1344,7 +1345,7 @@ describe("parseManager", function () {
       getParseSource: () => "local",
       client: {
         submitPdf: async () => {
-          throw new MinerURequestError("local-health", 503, "offline");
+          throw new MinerURequestError("submit", 0, "connection refused");
         },
         pollTask: async () => ({ status: "succeeded" }),
         downloadResult: async () => ({ kind: "lite", markdown: "# Lite" }),
@@ -1373,7 +1374,7 @@ describe("parseManager", function () {
         pollTask: async () => {
           pollCount += 1;
           if (pollCount === 1) {
-            throw new MinerURequestError("local-poll", 0, "offline");
+            throw new MinerURequestError("poll", 0, "offline");
           }
           return { status: "succeeded" };
         },
@@ -1386,6 +1387,65 @@ describe("parseManager", function () {
     assert.equal(submitCount, 1);
     assert.equal(pollCount, 2);
     assert.isEmpty(messages);
+  });
+
+  it("retries dropped local polls through the real V1 client", async function () {
+    const messages: string[] = [];
+    const server = createLocalV1Server();
+    server.failJobPolls(
+      () => {
+        throw new TypeError("NetworkError when attempting to fetch resource.");
+      },
+      () => jsonResponse({ error: { message: "busy" } }, 503),
+    );
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getParseSource: () => "local",
+      getLocalApiTimeoutMinutes: () => 1,
+      client: server.client,
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7105 }));
+
+    assert.isEmpty(messages);
+    assert.deepEqual(server.submittedJobs, ["job-1"]);
+    assert.equal(taskStore.getTask("7105")?.status, "succeeded");
+  });
+
+  it("resubmits a task the local V1 server lost", async function () {
+    const messages: string[] = [];
+    const server = createLocalV1Server();
+    server.loseJob("job-1");
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getParseSource: () => "local",
+      getLocalApiTimeoutMinutes: () => 1,
+      client: server.client,
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7106 }));
+
+    assert.isEmpty(messages);
+    assert.deepEqual(server.submittedJobs, ["job-1", "job-2"]);
+    assert.equal(taskStore.getTask("7106")?.status, "succeeded");
+  });
+
+  it("reports a local task as lost when the V1 server keeps forgetting it", async function () {
+    const messages: string[] = [];
+    const server = createLocalV1Server();
+    server.loseJob("job-1");
+    server.loseJob("job-2");
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getParseSource: () => "local",
+      getLocalApiTimeoutMinutes: () => 1,
+      client: server.client,
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7107 }));
+
+    assert.deepEqual(messages, ["parse-error-local-task-lost"]);
+    assert.equal(taskStore.getTask("7107")?.status, "failed");
   });
 
   it("retries transient online polling failures without resubmitting", async function () {
@@ -1461,11 +1521,7 @@ describe("parseManager", function () {
         },
         pollTask: async (taskID) => {
           if (taskID === "split-task-1" && shouldFailSecondChunk) {
-            throw new MinerURequestError(
-              "local-poll",
-              400,
-              "temporary test failure",
-            );
+            throw new MinerURequestError("poll", 400, "temporary test failure");
           }
           return { status: "succeeded" };
         },
@@ -1752,6 +1808,91 @@ function preciseResultFixture(): {
     },
     markdown: "A",
   };
+}
+
+/**
+ * In-memory MinerU V1 server behind the real local client, so the tests see
+ * the request stages the client actually reports ("poll", "download", ...).
+ */
+function createLocalV1Server() {
+  const submittedJobs: string[] = [];
+  const lostJobs = new Set<string>();
+  const pollFailures: Array<() => Response> = [];
+  const middleJson = preciseResultFixture().rawResult;
+  const client = createV1MinerUClient({
+    apiKey: "",
+    baseURL: "http://127.0.0.1:8000",
+    fetch: async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/v1/health")) {
+        return jsonResponse({
+          status: "ok",
+          features: {
+            sources: ["local"],
+            output_formats: ["markdown", "middle_json"],
+          },
+        });
+      }
+      if (method === "POST" && url.endsWith("/v1/parse/jobs")) {
+        const jobID = `job-${submittedJobs.length + 1}`;
+        submittedJobs.push(jobID);
+        return jsonResponse({ job_id: jobID }, 202);
+      }
+      const jobID = /\/v1\/parse\/jobs\/([^/]+)$/.exec(url)?.[1];
+      if (jobID) {
+        if (lostJobs.has(jobID)) {
+          return jsonResponse(
+            { error: { code: "job_not_found", message: "job not found" } },
+            404,
+          );
+        }
+        const failure = pollFailures.shift();
+        if (failure) {
+          return failure();
+        }
+        return jsonResponse({
+          job_id: jobID,
+          status: "completed",
+          files: [
+            {
+              status: "completed",
+              output_files: {
+                markdown: { file_id: "md" },
+                middle_json: { file_id: "mj" },
+              },
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/v1/files/md/content")) {
+        return new Response("A", { status: 200 });
+      }
+      if (url.endsWith("/v1/files/mj/content")) {
+        return new Response(JSON.stringify(middleJson), { status: 200 });
+      }
+      throw new Error(`unexpected ${method} ${url}`);
+    },
+  });
+  return {
+    client,
+    submittedJobs,
+    /** Answer the next job status requests with these failures, in order. */
+    failJobPolls(...failures: Array<() => Response>) {
+      pollFailures.push(...failures);
+    },
+    /** Make the server answer 404 for this job, as after a restart. */
+    loseJob(jobID: string) {
+      lostJobs.add(jobID);
+    },
+  };
+}
+
+function jsonResponse(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 function baseDependencies(messages: string[]): ParseManagerDependencies {

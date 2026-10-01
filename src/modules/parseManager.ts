@@ -1119,6 +1119,7 @@ async function runParseAttachment(
       error,
       phase,
       mode === "precise" && hasExistingResult,
+      source,
     );
 
     // Persist the failure before alerting, so the failed state does not depend
@@ -1504,21 +1505,19 @@ function getParseFailureMessage(
   error: unknown,
   phase: ParsePhase,
   hasReadyResult: boolean,
+  source: ParseSource,
 ): { id: FluentMessageId; args?: Record<string, string> } {
   const message = error instanceof Error ? error.message : String(error);
-  if (
-    error instanceof MinerURequestError &&
-    ["local-poll", "local-download"].includes(error.stage) &&
-    error.status === 404
-  ) {
-    return { id: "parse-error-local-task-lost", args: { message } };
-  }
-  if (error instanceof MinerURequestError && error.stage.startsWith("local-")) {
-    return { id: "parse-error-local-api-unavailable", args: { message } };
+  // The local (V1) client names its request stages like the online one
+  // ("submit", "poll", ...), so local failures are recognized by the source.
+  if (source === "local" && error instanceof MinerURequestError) {
+    return isTaskNotFoundError(error, source)
+      ? { id: "parse-error-local-task-lost", args: { message } }
+      : { id: "parse-error-local-api-unavailable", args: { message } };
   }
   if (
     error instanceof MinerURequestError &&
-    ["submit", "upload", "agent-submit", "agent-upload"].includes(error.stage)
+    ["submit", "upload"].includes(error.stage)
   ) {
     return { id: "parse-error-upload", args: { message } };
   }
