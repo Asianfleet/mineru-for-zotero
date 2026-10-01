@@ -1569,6 +1569,26 @@ describe("parseManager", function () {
     assert.equal(taskStore.getTask("7106")?.status, "succeeded");
   });
 
+  it("resubmits only the lost chunk of a split PDF", async function () {
+    const messages: string[] = [];
+    const server = createLocalV1Server();
+    server.loseJob("job-2");
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getParseSource: () => "local",
+      getLocalApiTimeoutMinutes: () => 1,
+      getPdfPageCount: async () => 250,
+      client: server.client,
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7117 }));
+
+    assert.isEmpty(messages);
+    // Chunk 1 (job-1) succeeds, chunk 2 (job-2) is lost and resubmitted.
+    assert.deepEqual(server.submittedJobs, ["job-1", "job-2", "job-3"]);
+    assert.equal(taskStore.getTask("7117")?.status, "succeeded");
+  });
+
   it("reports a local task as lost when the V1 server keeps forgetting it", async function () {
     const messages: string[] = [];
     const server = createLocalV1Server();

@@ -718,267 +718,159 @@ async function runParseAttachment(
     }
     await ensureTaskResumeDirectory(resumeDirectory);
 
-    if (pageCount > CHUNK_SIZE) {
-      const chunkTasks = Array.from({ length: chunks }, (_, i) => async () => {
-        throwIfCancelled(attachmentTaskID);
-        const chunk = resume.chunks[i];
-        const startPage = chunk.startPage;
-        const endPage = chunk.endPage;
-        const cachePath = chunk.resultPath
-          ? toNativePath(chunk.resultPath)
-          : joinNativePath(
-              resumeDirectory,
-              `mineru-part-${attachment.id}-${i}-result.json`,
-            );
-        chunk.resultPath = cachePath;
-
-        const cached = await readChunkResult(cachePath);
-        if (cached) {
-          results[i] = cached;
-          taskIDs[i] = chunk.taskID ?? "";
-          chunk.status = "succeeded";
-          await persistTaskResume(task, resume);
-          return;
-        }
-
-        await updateTaskDetail(
-          String(attachment.id),
-          `[Auto-Split] Processing part ${i + 1}/${chunks} (Pages ${startPage}-${endPage})`,
-        );
-
-        const submitChunk = async (): Promise<void> => {
-          throwIfCancelled(attachmentTaskID);
-          const submitResult = await client.submitPdf(filePath, {
-            pageRange: `${startPage}-${endPage}`,
-          });
-          chunk.taskID = submitResult.taskID;
-          chunk.status = "submitted";
-          taskIDs[i] = chunk.taskID;
-          await persistTaskResume(task, resume);
-        };
-
-        // If the previous Zotero run already submitted this chunk, keep the
-        // original task ID and reconnect instead of uploading the chunk again.
-        if (!chunk.taskID) {
-          await submitChunk();
-        } else {
-          taskIDs[i] = chunk.taskID;
-        }
-
-        const pollChunk = async (): Promise<void> => {
-          const taskID = chunk.taskID;
-          if (!taskID) {
-            throw new MinerUTaskError("Missing MinerU task ID for chunk");
-          }
-          phase = "poll";
-          await waitForTask(
-            client,
-            taskID,
-            dependencies.delay,
-            getPollTimeoutMs(source, dependencies),
-            () => isTaskAborted(attachment),
-            source,
-            dependencies.log,
-            async (attempt, waitMs) =>
-              updateTaskDetail(
-                String(attachment.id),
-                getSafeMessageText("parse-task-reconnect", {
-                  attempt: String(attempt),
-                  seconds: String(Math.ceil(waitMs / 1000)),
-                }),
-              ),
+    // One pipeline for every chunk. A PDF within the page limit is a single
+    // chunk submitted without a page range.
+    const split = chunks > 1;
+    const processChunk = async (i: number): Promise<void> => {
+      throwIfCancelled(attachmentTaskID);
+      const chunk = resume.chunks[i];
+      const { startPage, endPage } = chunk;
+      const cachePath = chunk.resultPath
+        ? toNativePath(chunk.resultPath)
+        : joinNativePath(
+            resumeDirectory,
+            `mineru-part-${attachment.id}-${i}-result.json`,
           );
-        };
+      chunk.resultPath = cachePath;
 
-        try {
-          await pollChunk();
-        } catch (error) {
-          if (!isTaskNotFoundError(error, source)) {
-            throw error;
-          }
-          // The remote service lost this task (usually after a restart). Only
-          // this unfinished chunk is resubmitted; completed chunks stay cached.
-          chunk.taskID = undefined;
-          chunk.status = "pending";
-          await persistTaskResume(task, resume);
-          await submitChunk();
-          await pollChunk();
-        }
-
-        const downloadChunk = async (): Promise<any> => {
-          const taskID = chunk.taskID;
-          if (!taskID) {
-            throw new MinerUTaskError("Missing MinerU task ID for chunk");
-          }
-          phase = "download";
-          return downloadTaskResultWithRetry(
-            client,
-            taskID,
-            dependencies.delay,
-            getPollTimeoutMs(source, dependencies),
-            source,
-            dependencies.log,
-            async (attempt, waitMs) =>
-              updateTaskDetail(
-                String(attachment.id),
-                getSafeMessageText("parse-task-download-reconnect", {
-                  attempt: String(attempt),
-                  seconds: String(Math.ceil(waitMs / 1000)),
-                }),
-              ),
-            () => isTaskAborted(attachment),
-          );
-        };
-
-        let res: any;
-        try {
-          res = await downloadChunk();
-        } catch (error) {
-          if (!isTaskNotFoundError(error, source)) {
-            throw error;
-          }
-          chunk.taskID = undefined;
-          chunk.status = "pending";
-          await persistTaskResume(task, resume);
-          await submitChunk();
-          await pollChunk();
-          res = await downloadChunk();
-        }
-        (res as any)._chunkPageCount = endPage - startPage + 1;
-
-        // The cache is written before the chunk is marked succeeded. If the
-        // process fails later, this chunk can be skipped safely on resume.
-        await writeChunkResult(cachePath, res);
-        results[i] = res;
+      const cached = await readChunkResult(cachePath);
+      if (cached) {
+        results[i] = cached;
+        taskIDs[i] = chunk.taskID ?? "";
         chunk.status = "succeeded";
         await persistTaskResume(task, resume);
-      });
-
-      for (const task of chunkTasks) {
-        await task();
+        return;
       }
 
+      await updateTaskDetail(
+        String(attachment.id),
+        split
+          ? `[Auto-Split] Processing part ${i + 1}/${chunks} (Pages ${startPage}-${endPage})`
+          : `Uploading full document (${pageCount} pages)...`,
+      );
+
+      const submit = async (): Promise<void> => {
+        throwIfCancelled(attachmentTaskID);
+        const submitResult = split
+          ? await client.submitPdf(filePath, {
+              pageRange: `${startPage}-${endPage}`,
+            })
+          : await client.submitPdf(filePath);
+        chunk.taskID = submitResult.taskID;
+        chunk.status = "submitted";
+        taskIDs[i] = chunk.taskID;
+        await persistTaskResume(task, resume);
+      };
+
+      const requireTaskID = (): string => {
+        if (!chunk.taskID) {
+          throw new MinerUTaskError("Missing MinerU task ID for chunk");
+        }
+        return chunk.taskID;
+      };
+
+      const poll = async (): Promise<void> => {
+        const taskID = requireTaskID();
+        phase = "poll";
+        await waitForTask(
+          client,
+          taskID,
+          dependencies.delay,
+          getPollTimeoutMs(source, dependencies),
+          () => isTaskAborted(attachment),
+          source,
+          dependencies.log,
+          async (attempt, waitMs) =>
+            updateTaskDetail(
+              String(attachment.id),
+              getSafeMessageText("parse-task-reconnect", {
+                attempt: String(attempt),
+                seconds: String(Math.ceil(waitMs / 1000)),
+              }),
+            ),
+        );
+      };
+
+      const download = async (): Promise<any> => {
+        const taskID = requireTaskID();
+        phase = "download";
+        return downloadTaskResultWithRetry(
+          client,
+          taskID,
+          dependencies.delay,
+          getPollTimeoutMs(source, dependencies),
+          source,
+          dependencies.log,
+          async (attempt, waitMs) =>
+            updateTaskDetail(
+              String(attachment.id),
+              getSafeMessageText("parse-task-download-reconnect", {
+                attempt: String(attempt),
+                seconds: String(Math.ceil(waitMs / 1000)),
+              }),
+            ),
+          () => isTaskAborted(attachment),
+        );
+      };
+
+      // The remote service lost this task (usually after a restart). Only
+      // this unfinished chunk is resubmitted; completed chunks stay cached.
+      const resubmitLostTask = async (error: unknown): Promise<void> => {
+        if (!isTaskNotFoundError(error, source)) {
+          throw error;
+        }
+        chunk.taskID = undefined;
+        chunk.status = "pending";
+        await persistTaskResume(task, resume);
+        await submit();
+        await poll();
+      };
+
+      // If the previous Zotero run already submitted this chunk, keep the
+      // original task ID and reconnect instead of uploading it again.
+      if (!chunk.taskID) {
+        await submit();
+      } else {
+        taskIDs[i] = chunk.taskID;
+      }
+
+      try {
+        await poll();
+      } catch (error) {
+        await resubmitLostTask(error);
+      }
+
+      if (!split) {
+        await updateTaskDetail(String(attachment.id), "Downloading result...");
+      }
+      let res: any;
+      try {
+        res = await download();
+      } catch (error) {
+        await resubmitLostTask(error);
+        res = await download();
+      }
+      res._chunkPageCount = split ? endPage - startPage + 1 : pageCount;
+
+      // The cache is written before the chunk is marked succeeded. If the
+      // process fails later, this chunk can be skipped safely on resume.
+      await writeChunkResult(cachePath, res);
+      results[i] = res;
+      chunk.status = "succeeded";
+      await persistTaskResume(task, resume);
+    };
+
+    for (let i = 0; i < chunks; i++) {
+      await processChunk(i);
+    }
+
+    if (split) {
       // Keep chunk result caches until the final merged result has been
       // written. A later Resume can therefore skip every completed chunk.
       await updateTaskDetail(
         String(attachment.id),
         `[Auto-Split] Finished processing ${chunks} parts. Merging...`,
       );
-    } else {
-      const chunk = resume.chunks[0];
-      const cachePath = chunk.resultPath
-        ? toNativePath(chunk.resultPath)
-        : joinNativePath(
-            resumeDirectory,
-            `mineru-part-${attachment.id}-0-result.json`,
-          );
-      chunk.resultPath = cachePath;
-      const cached = await readChunkResult(cachePath);
-      if (cached) {
-        results[0] = cached;
-        taskIDs[0] = chunk.taskID ?? "";
-        chunk.status = "succeeded";
-        await persistTaskResume(task, resume);
-      } else {
-        await updateTaskDetail(
-          String(attachment.id),
-          `Uploading full document (${pageCount} pages)...`,
-        );
-        const submitSingle = async (): Promise<void> => {
-          throwIfCancelled(attachmentTaskID);
-          const submitResult = await client.submitPdf(filePath);
-          chunk.taskID = submitResult.taskID;
-          chunk.status = "submitted";
-          taskIDs[0] = chunk.taskID;
-          await persistTaskResume(task, resume);
-        };
-        if (!chunk.taskID) {
-          await submitSingle();
-        } else {
-          taskIDs[0] = chunk.taskID;
-        }
-
-        const pollSingle = async (): Promise<void> => {
-          const taskID = chunk.taskID;
-          if (!taskID) {
-            throw new MinerUTaskError("Missing MinerU task ID");
-          }
-          phase = "poll";
-          await waitForTask(
-            client,
-            taskID,
-            dependencies.delay,
-            getPollTimeoutMs(source, dependencies),
-            () => isTaskAborted(attachment),
-            source,
-            dependencies.log,
-            async (attempt, waitMs) =>
-              updateTaskDetail(
-                String(attachment.id),
-                getSafeMessageText("parse-task-reconnect", {
-                  attempt: String(attempt),
-                  seconds: String(Math.ceil(waitMs / 1000)),
-                }),
-              ),
-          );
-        };
-        try {
-          await pollSingle();
-        } catch (error) {
-          if (!isTaskNotFoundError(error, source)) {
-            throw error;
-          }
-          chunk.taskID = undefined;
-          chunk.status = "pending";
-          await persistTaskResume(task, resume);
-          await submitSingle();
-          await pollSingle();
-        }
-        await updateTaskDetail(String(attachment.id), "Downloading result...");
-        const downloadSingle = async (): Promise<any> => {
-          const taskID = chunk.taskID;
-          if (!taskID) {
-            throw new MinerUTaskError("Missing MinerU task ID");
-          }
-          phase = "download";
-          return downloadTaskResultWithRetry(
-            client,
-            taskID,
-            dependencies.delay,
-            getPollTimeoutMs(source, dependencies),
-            source,
-            dependencies.log,
-            async (attempt, waitMs) =>
-              updateTaskDetail(
-                String(attachment.id),
-                getSafeMessageText("parse-task-download-reconnect", {
-                  attempt: String(attempt),
-                  seconds: String(Math.ceil(waitMs / 1000)),
-                }),
-              ),
-            () => isTaskAborted(attachment),
-          );
-        };
-        let result: any;
-        try {
-          result = await downloadSingle();
-        } catch (error) {
-          if (!isTaskNotFoundError(error, source)) {
-            throw error;
-          }
-          chunk.taskID = undefined;
-          chunk.status = "pending";
-          await persistTaskResume(task, resume);
-          await submitSingle();
-          await pollSingle();
-          result = await downloadSingle();
-        }
-        (result as any)._chunkPageCount = pageCount;
-        await writeChunkResult(cachePath, result);
-        results[0] = result;
-        chunk.status = "succeeded";
-        await persistTaskResume(task, resume);
-      }
     }
 
     await taskStore.upsertTask({
