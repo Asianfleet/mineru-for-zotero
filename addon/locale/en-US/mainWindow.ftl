@@ -14,6 +14,7 @@ parse-error-mineru = MinerU parsing failed: { $message }
 parse-error-download = Result download failed: { $message }. You can download again or reparse.
 parse-error-overwrite = Reparse overwrite failed. The old result was kept: { $message }
 parse-error-generic = MinerU parsing failed: { $message }
+parse-error-batch = { $count } of { $total } PDFs could not be parsed. The Task Manager lists each error. First error: { $message }
 parse-notice-mode-lite = Lite
 parse-notice-mode-precise = Precise
 parse-notice-source-local = Local API

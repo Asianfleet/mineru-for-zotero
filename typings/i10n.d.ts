@@ -12,6 +12,7 @@ export type FluentMessageId =
   | 'parse-confirm-reparse'
   | 'parse-confirm-title'
   | 'parse-confirm-use-existing'
+  | 'parse-error-batch'
   | 'parse-error-download'
   | 'parse-error-empty-boxes'
   | 'parse-error-empty-lite-markdown'

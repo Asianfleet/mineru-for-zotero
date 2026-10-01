@@ -279,38 +279,38 @@ async function parseAttachmentsWithDependencies(
     return;
   }
 
-  if (options?.force === true) {
-    const attachmentsToParse = await getSubmittableAttachments(
+  // Collect the failure notices of the whole batch: each is a modal alert, so
+  // a batch with a bad API key or a dozen missing files used to need one
+  // click per PDF. The Task Manager still shows every failure as it happens.
+  const notices = createBatchNoticeCollector(dependencies);
+  try {
+    await parseBatch(pdfAttachments, options, mode, notices.dependencies);
+  } finally {
+    notices.flush(pdfAttachments.length);
+  }
+}
+
+async function parseBatch(
+  pdfAttachments: Zotero.Item[],
+  options: ParseAttachmentOptions | undefined,
+  mode: ParseMode,
+  dependencies: ParseManagerDependencies,
+): Promise<void> {
+  let attachmentsToParse = pdfAttachments;
+  if (options?.force !== true) {
+    const readyAttachmentIDs = await getReadyAttachmentIDs(
       pdfAttachments,
+      mode,
       dependencies,
     );
-    if (attachmentsToParse.length === 0) {
-      return;
-    }
-
-    try {
-      (dependencies.openTaskManager ?? openTaskManagerWindow)();
-    } catch (e) {
-      ztoolkit.log("Failed to open Task Manager window", e);
-    }
-
-    await runParseQueue(attachmentsToParse, options, dependencies);
-    return;
-  }
-
-  const readyAttachmentIDs = await getReadyAttachmentIDs(
-    pdfAttachments,
-    mode,
-    dependencies,
-  );
-  let attachmentsToParse = pdfAttachments;
-  if (readyAttachmentIDs.size > 0) {
-    const choice = await dependencies.confirmReparse();
-    if (choice === "use-existing") {
-      dependencies.showMessage("parse-use-existing-result");
-      attachmentsToParse = pdfAttachments.filter(
-        (attachment) => !readyAttachmentIDs.has(attachment.id),
-      );
+    if (readyAttachmentIDs.size > 0) {
+      const choice = await dependencies.confirmReparse();
+      if (choice === "use-existing") {
+        dependencies.showMessage("parse-use-existing-result");
+        attachmentsToParse = pdfAttachments.filter(
+          (attachment) => !readyAttachmentIDs.has(attachment.id),
+        );
+      }
     }
   }
 
@@ -318,7 +318,6 @@ async function parseAttachmentsWithDependencies(
     attachmentsToParse,
     dependencies,
   );
-
   if (attachmentsToParse.length === 0) {
     return;
   }
@@ -335,6 +334,49 @@ async function parseAttachmentsWithDependencies(
     { ...options, force: true },
     dependencies,
   );
+}
+
+/**
+ * Hold back the failure notices of a batch and show them as one notice.
+ *
+ * Informational notices (such as "using the existing result") pass through
+ * right away. A single failure keeps its own message; several are summarized
+ * with the count and the first error.
+ */
+function createBatchNoticeCollector(dependencies: ParseManagerDependencies): {
+  dependencies: ParseManagerDependencies;
+  flush: (total: number) => void;
+} {
+  const failures: Array<{
+    id: FluentMessageId;
+    args?: Record<string, string>;
+  }> = [];
+  return {
+    dependencies: {
+      ...dependencies,
+      showMessage: (id, args) => {
+        if (id.startsWith("parse-error-")) {
+          failures.push({ id, args });
+        } else {
+          dependencies.showMessage(id, args);
+        }
+      },
+    },
+    flush(total) {
+      if (failures.length === 0) {
+        return;
+      }
+      if (failures.length === 1) {
+        dependencies.showMessage(failures[0].id, failures[0].args);
+        return;
+      }
+      dependencies.showMessage("parse-error-batch", {
+        count: String(failures.length),
+        total: String(total),
+        message: getSafeMessageText(failures[0].id, failures[0].args),
+      });
+    },
+  };
 }
 
 /**

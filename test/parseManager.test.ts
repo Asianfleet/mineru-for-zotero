@@ -1496,6 +1496,83 @@ describe("parseManager", function () {
     }
   });
 
+  it("shows one notice for several failures in a batch", async function () {
+    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+      },
+      client: {
+        ...successfulPreciseClient(),
+        submitPdf: async () => {
+          throw new MinerURequestError("upload", 401, "invalid token");
+        },
+      },
+    });
+
+    await manager.parseAttachments([
+      pdfAttachment({ id: 7121, filePath: "C:/tmp/a.pdf" }),
+      pdfAttachment({ id: 7122, filePath: "C:/tmp/b.pdf" }),
+      pdfAttachment({ id: 7123, filePath: "C:/tmp/c.pdf" }),
+    ]);
+
+    assert.lengthOf(notices, 1);
+    assert.equal(notices[0].id, "parse-error-batch");
+    assert.include(notices[0].args, { count: "3", total: "3" });
+  });
+
+  it("keeps the own notice of a single failure in a batch", async function () {
+    const messages: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      client: {
+        ...successfulPreciseClient(),
+        submitPdf: async (filePath) => {
+          if (filePath.endsWith("b.pdf")) {
+            throw new MinerURequestError("upload", 403, "denied");
+          }
+          return { taskID: `task-${filePath}` };
+        },
+      },
+    });
+
+    await manager.parseAttachments([
+      pdfAttachment({ id: 7124, filePath: "C:/tmp/a.pdf" }),
+      pdfAttachment({ id: 7125, filePath: "C:/tmp/b.pdf" }),
+    ]);
+
+    assert.deepEqual(messages, ["parse-error-upload"]);
+  });
+
+  it("counts unreadable files in the batch notice", async function () {
+    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+      },
+      isFileReadable: async (filePath) => !filePath.endsWith("missing.pdf"),
+      client: {
+        ...successfulPreciseClient(),
+        submitPdf: async () => {
+          throw new MinerURequestError("upload", 403, "denied");
+        },
+      },
+    });
+
+    await manager.parseAttachments([
+      pdfAttachment({ id: 7126, filePath: "C:/tmp/missing.pdf" }),
+      pdfAttachment({ id: 7127, filePath: "C:/tmp/b.pdf" }),
+    ]);
+
+    assert.deepEqual(
+      notices.map((notice) => notice.id),
+      ["parse-error-batch"],
+    );
+    assert.include(notices[0].args, { count: "2", total: "2" });
+  });
+
   it("reports failure notice when a batch task fails", async function () {
     const notices: Array<{ id: string; args?: Record<string, string> }> = [];
     const manager = createParseManager({
