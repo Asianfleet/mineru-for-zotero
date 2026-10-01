@@ -120,6 +120,23 @@ export async function resetTaskResumeDirectory(path: string): Promise<void> {
     // A first parse has no resume directory yet.
   }
 }
+/**
+ * Marker of chunk caches that keep image bytes in sidecar files instead of
+ * inline JSON number arrays (which made a 20 MB chunk a ~70 MB JSON file that
+ * took tens of seconds to parse on the main thread).
+ */
+const CHUNK_CACHE_FORMAT = 2;
+
+/** Image entry of a chunk cache; the bytes live in `<cache>.image-<index>`. */
+interface CachedChunkImage {
+  path: string;
+  index: number;
+}
+
+function chunkImagePath(cachePath: string, index: number): string {
+  return `${cachePath}.image-${index}`;
+}
+
 export async function readChunkResult(path: string): Promise<any | null> {
   if (typeof IOUtils === "undefined") {
     return null;
@@ -129,12 +146,37 @@ export async function readChunkResult(path: string): Promise<any | null> {
       return null;
     }
     const content = await IOUtils.readUTF8(path);
-    const result = JSON.parse(content, reviveChunkValue);
-    return result && typeof result === "object" ? result : null;
+    // Caches written before CHUNK_CACHE_FORMAT 2 inline bytes as number arrays.
+    const parsed = content.includes('"__mineruUint8Array"')
+      ? JSON.parse(content, reviveChunkValue)
+      : JSON.parse(content);
+    if (parsed?.__mineruChunkCache !== CHUNK_CACHE_FORMAT) {
+      return parsed && typeof parsed === "object" ? parsed : null;
+    }
+
+    const result = parsed.result;
+    if (!result || typeof result !== "object") {
+      return null;
+    }
+    if (Array.isArray(result.images)) {
+      // A missing sidecar rejects, which turns the cache into a miss.
+      result.images = await Promise.all(
+        (result.images as CachedChunkImage[]).map(async (image) => ({
+          path: image.path,
+          bytes: await IOUtils.read(chunkImagePath(path, image.index)),
+        })),
+      );
+    }
+    return result;
   } catch {
     return null;
   }
 }
+
+/**
+ * Cache one chunk result for Resume. Image bytes are written to sidecar files
+ * first and the JSON last, so an existing cache file implies complete images.
+ */
 export async function writeChunkResult(
   path: string,
   result: unknown,
@@ -142,7 +184,22 @@ export async function writeChunkResult(
   if (typeof IOUtils === "undefined") {
     throw new MinerUTaskError("IOUtils is unavailable for MinerU resume data");
   }
-  await IOUtils.writeUTF8(path, JSON.stringify(result, serializeChunkValue), {
+  const value = (result ?? {}) as {
+    images?: Array<{ path: string; bytes: Uint8Array }>;
+  };
+  let images: CachedChunkImage[] | undefined;
+  if (Array.isArray(value.images)) {
+    images = [];
+    for (const [index, image] of value.images.entries()) {
+      await IOUtils.write(chunkImagePath(path, index), image.bytes);
+      images.push({ path: image.path, index });
+    }
+  }
+  const cache = {
+    __mineruChunkCache: CHUNK_CACHE_FORMAT,
+    result: images ? { ...value, images } : value,
+  };
+  await IOUtils.writeUTF8(path, JSON.stringify(cache, serializeChunkValue), {
     tmpPath: `${path}.tmp`,
   });
 }
