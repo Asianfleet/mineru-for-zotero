@@ -1,4 +1,4 @@
-import { getSyncFolder } from "../utils/prefs";
+import { getStatusTagsEnabled, getSyncFolder } from "../utils/prefs";
 import { joinNativePath, toNativePath } from "./mineruClient/path";
 import { taskStore } from "./taskStore";
 
@@ -332,20 +332,22 @@ export async function syncAllToAgentFolder(
   for (const ref of readyKeys) {
     const attachment = Zotero.Items.getByLibraryAndKey(ref.libraryID, ref.key);
     if (attachment && attachment.isAttachment()) {
-      // 1. Update Tags
-      try {
-        attachment.removeTag("MinerU: Processing ⏳");
-        attachment.removeTag("MinerU: Failed ❌");
-        if (ref.preciseReady) {
-          attachment.removeTag("MinerU: Lite ✅");
-          attachment.addTag("MinerU: Precise ✅", 1);
-        } else if (ref.liteReady) {
-          attachment.removeTag("MinerU: Precise ✅");
-          attachment.addTag("MinerU: Lite ✅", 1);
+      // 1. Update Tags (unless the user turned MinerU status tags off)
+      if (getStatusTagsEnabled()) {
+        try {
+          attachment.removeTag("MinerU: Processing ⏳");
+          attachment.removeTag("MinerU: Failed ❌");
+          if (ref.preciseReady) {
+            attachment.removeTag("MinerU: Lite ✅");
+            attachment.addTag("MinerU: Precise ✅", 1);
+          } else if (ref.liteReady) {
+            attachment.removeTag("MinerU: Precise ✅");
+            attachment.addTag("MinerU: Lite ✅", 1);
+          }
+          await attachment.saveTx();
+        } catch (e) {
+          // ignore tag errors
         }
-        await attachment.saveTx();
-      } catch (e) {
-        // ignore tag errors
       }
 
       // 2. Sync to agent folder

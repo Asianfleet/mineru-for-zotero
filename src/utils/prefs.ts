@@ -134,6 +134,19 @@ export function setSaveImages(value: boolean) {
   return setPref("saveImages", value);
 }
 
+/**
+ * Read whether MinerU status tags ("MinerU: Precise ✅", ...) are written to
+ * attachments. They sync to zotero.org and into shared group libraries, so
+ * users can turn them off; the item tree column shows the status either way.
+ */
+export function getStatusTagsEnabled(): boolean {
+  return getPref("statusTags") !== false;
+}
+
+export function setStatusTagsEnabled(value: boolean) {
+  return setPref("statusTags", value);
+}
+
 export function getSyncFolder(): string {
   const value = getPref("syncFolder" as keyof PluginPrefsMap);
   return typeof value === "string" ? value : DEFAULT_SYNC_FOLDER;

@@ -33,6 +33,7 @@ import {
   getParseTier,
   getParseSource,
   getSaveImages,
+  getStatusTagsEnabled,
   type ParseMode,
   type ParseSource,
   type ParseTier,
@@ -138,6 +139,8 @@ export interface ParseManagerDependencies {
   getLocalApiBaseURL?: () => string;
   getLocalApiTimeoutMinutes?: () => number;
   getSaveImages?: () => boolean;
+  /** Whether MinerU status tags are written; defaults to true. */
+  getStatusTagsEnabled?: () => boolean;
   getMaxConcurrentRequests?: () => number;
   getPdfPageCount?: (filePath: string) => Promise<number>;
   /** Read the on-disk size of a PDF; used to enforce the upload limit. */
@@ -389,7 +392,7 @@ async function getSubmittableAttachments(
 
       // Check the MinerU upload size limit on every path that submits a PDF.
       if (await isAttachmentTooLarge(filePath, dependencies)) {
-        await markAttachmentFailed(attachment);
+        await markAttachmentFailed(attachment, dependencies);
         dependencies.showMessage("parse-error-file-too-large");
         return null;
       }
@@ -441,17 +444,54 @@ async function defaultGetFileSize(
   return stat.size ?? 0;
 }
 
-/** Tag an attachment as failed and clear any in-progress or stale ready marker. */
-async function markAttachmentFailed(attachment: Zotero.Item): Promise<void> {
+/** MinerU status tags written to parsed attachments. */
+const STATUS_TAGS = {
+  processing: "MinerU: Processing ⏳",
+  precise: "MinerU: Precise ✅",
+  lite: "MinerU: Lite ✅",
+  failed: "MinerU: Failed ❌",
+} as const;
+
+type StatusTag = keyof typeof STATUS_TAGS;
+
+/**
+ * Change the MinerU status tags of an attachment.
+ *
+ * Tags sync to zotero.org and into shared group libraries, so nothing is
+ * written when the user turned status tags off. Tag errors (for example in a
+ * read-only group library) never fail a parse.
+ */
+async function updateStatusTags(
+  attachment: Zotero.Item,
+  change: { remove: StatusTag[]; add?: StatusTag },
+  dependencies: Pick<ParseManagerDependencies, "getStatusTagsEnabled">,
+): Promise<void> {
+  if (dependencies.getStatusTagsEnabled?.() === false) {
+    return;
+  }
   try {
-    attachment.removeTag("MinerU: Processing ⏳");
-    attachment.removeTag("MinerU: Precise ✅");
-    attachment.removeTag("MinerU: Lite ✅");
-    attachment.addTag("MinerU: Failed ❌", 1);
+    for (const tag of change.remove) {
+      attachment.removeTag(STATUS_TAGS[tag]);
+    }
+    if (change.add) {
+      attachment.addTag(STATUS_TAGS[change.add], 1);
+    }
     await attachment.saveTx();
   } catch (e) {
     // Ignore tag update errors
   }
+}
+
+/** Tag an attachment as failed and clear any in-progress or stale ready marker. */
+async function markAttachmentFailed(
+  attachment: Zotero.Item,
+  dependencies: Pick<ParseManagerDependencies, "getStatusTagsEnabled">,
+): Promise<void> {
+  await updateStatusTags(
+    attachment,
+    { remove: ["processing", "precise", "lite"], add: "failed" },
+    dependencies,
+  );
 }
 
 /**
@@ -469,14 +509,13 @@ async function failEmptyParse(
   dependencies: ParseManagerDependencies,
 ): Promise<void> {
   if (keepsExistingResult) {
-    try {
-      attachment.removeTag("MinerU: Processing ⏳");
-      await attachment.saveTx();
-    } catch (e) {
-      // Ignore tag update errors
-    }
+    await updateStatusTags(
+      attachment,
+      { remove: ["processing"] },
+      dependencies,
+    );
   } else {
-    await markAttachmentFailed(attachment);
+    await markAttachmentFailed(attachment, dependencies);
   }
 
   const message = getSafeMessageText(messageID);
@@ -602,7 +641,7 @@ async function runParseAttachment(
   }
 
   if (await isAttachmentTooLarge(filePath, dependencies)) {
-    await markAttachmentFailed(attachment);
+    await markAttachmentFailed(attachment, dependencies);
     await failPendingTask(attachmentTaskID, "parse-error-file-too-large");
     dependencies.showMessage("parse-error-file-too-large");
     return;
@@ -680,6 +719,11 @@ async function runParseAttachment(
   await taskStore.upsertTask(task);
 
   try {
+    await updateStatusTags(
+      attachment,
+      { remove: ["failed"], add: "processing" },
+      dependencies,
+    );
     await updateParseColumnStatus(dependencies, "running", attachmentRef, mode);
     parseColumnRunning = true;
     phase = "submit";
@@ -928,16 +972,11 @@ async function runParseAttachment(
       );
       parseColumnRunning = false;
 
-      // Update Tags
-      try {
-        attachment.removeTag("MinerU: Processing ⏳");
-        attachment.removeTag("MinerU: Failed ❌");
-        attachment.removeTag("MinerU: Precise ✅");
-        attachment.addTag("MinerU: Lite ✅", 1);
-        await attachment.saveTx();
-      } catch (e) {
-        dependencies.log("Failed to update Zotero tags", e);
-      }
+      await updateStatusTags(
+        attachment,
+        { remove: ["processing", "failed", "precise"], add: "lite" },
+        dependencies,
+      );
 
       await taskStore.updateTaskStatus(String(attachment.id), "succeeded");
 
@@ -1003,16 +1042,11 @@ async function runParseAttachment(
     );
     parseColumnRunning = false;
 
-    // Update Tags
-    try {
-      attachment.removeTag("MinerU: Processing ⏳");
-      attachment.removeTag("MinerU: Failed ❌");
-      attachment.removeTag("MinerU: Lite ✅");
-      attachment.addTag("MinerU: Precise ✅", 1);
-      await attachment.saveTx();
-    } catch (e) {
-      dependencies.log("Failed to update Zotero tags", e);
-    }
+    await updateStatusTags(
+      attachment,
+      { remove: ["processing", "failed", "lite"], add: "precise" },
+      dependencies,
+    );
 
     await taskStore.updateTaskStatus(String(attachment.id), "succeeded");
   } catch (error) {
@@ -1033,13 +1067,11 @@ async function runParseAttachment(
       isTaskCancelled(attachmentTaskID)
     ) {
       dependencies.log("MinerU parse cancelled by user", attachment.id);
-      try {
-        attachment.removeTag("MinerU: Processing ⏳");
-        attachment.removeTag("MinerU: Failed ❌");
-        await attachment.saveTx();
-      } catch (e) {
-        // Ignore tag update errors
-      }
+      await updateStatusTags(
+        attachment,
+        { remove: ["processing", "failed"] },
+        dependencies,
+      );
       await taskStore.updateTaskStatus(
         String(attachment.id),
         "cancelled",
@@ -1050,7 +1082,7 @@ async function runParseAttachment(
 
     if (error instanceof MinerUFileAccessError) {
       logFileAccessFailure(attachment, filePath, dependencies, error);
-      await markAttachmentFailed(attachment);
+      await markAttachmentFailed(attachment, dependencies);
       // Store the localized message, not error.message: it contains the
       // absolute PDF path, which the task API must not disclose.
       await taskStore.updateTaskStatus(
@@ -1063,15 +1095,7 @@ async function runParseAttachment(
     }
 
     dependencies.log("MinerU parse failed", attachment.id, error);
-    try {
-      attachment.removeTag("MinerU: Processing ⏳");
-      attachment.removeTag("MinerU: Precise ✅");
-      attachment.removeTag("MinerU: Lite ✅");
-      attachment.addTag("MinerU: Failed ❌", 1);
-      await attachment.saveTx();
-    } catch (e) {
-      // Ignore tag update errors
-    }
+    await markAttachmentFailed(attachment, dependencies);
 
     const failure = getParseFailureMessage(
       error,
@@ -1108,14 +1132,12 @@ async function resolveAttachmentTitle(
   }
 
   try {
-    const parentTitle = (
-      await Zotero.Items.getAsync(attachment.id)
-    )?.parentItem?.getField?.("title");
+    const parentTitle = attachment.parentItem?.getField?.("title");
     if (parentTitle) {
       return String(parentTitle);
     }
   } catch {
-    // Fall back to the attachment's own title if Zotero item query fails.
+    // Fall back to the attachment's own title.
   }
 
   try {
@@ -1142,16 +1164,6 @@ async function updateParseColumnStatus(
 ): Promise<void> {
   try {
     if (action === "running") {
-      try {
-        const item = await Zotero.Items.getAsync(attachment.id);
-        if (item) {
-          item.removeTag("MinerU: Failed ❌");
-          item.addTag("MinerU: Processing ⏳", 1);
-          await item.saveTx();
-        }
-      } catch (e) {
-        // Ignore tag update errors
-      }
       await dependencies.onParseColumnRunning?.(attachment, mode);
       return;
     }
@@ -1335,6 +1347,7 @@ function createDefaultDependencies(): ParseManagerDependencies {
     getLocalApiBaseURL,
     getLocalApiTimeoutMinutes,
     getSaveImages,
+    getStatusTagsEnabled,
     getMaxConcurrentRequests: () =>
       resolveEnvConcurrentRequestLimit(MAX_CONCURRENT_REQUESTS_DEFAULT),
     createStorage: () => createStorage(getMinerUStorageRoot()),

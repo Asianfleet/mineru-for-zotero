@@ -12,6 +12,8 @@ import {
   setParseTier,
   setParseSource,
   setSaveImages,
+  getStatusTagsEnabled,
+  setStatusTagsEnabled,
   getSyncFolder,
   setSyncFolder,
   getAutoParsePageLimit,
@@ -153,6 +155,12 @@ export function registerPreferenceValueSync(document: Document): void {
     `zotero-prefpane-${config.addonRef}-save-images`,
     getSaveImages,
     setSaveImages,
+  );
+  registerCheckboxPreferenceSync(
+    document,
+    `zotero-prefpane-${config.addonRef}-status-tags`,
+    getStatusTagsEnabled,
+    setStatusTagsEnabled,
   );
   registerTextPreferenceSync(
     document,

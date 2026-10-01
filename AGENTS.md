@@ -184,7 +184,7 @@ New preferences must be registered in `addon/prefs.js` with **unprefixed** keys,
 
 ## Item Context Menu
 
-Reparse prompts must default non-destructively to `use-existing`. The context menu targets PDF attachments only. Task submission and completion do not show notifications to the user; only failures do. When registering commands, ensure lifecycle alignment with Zotero's localization resources to prevent broken right-click menus on unload.
+All MinerU status tag writes in `parseManager` go through `updateStatusTags()`, which does nothing when the `statusTags` preference is off. Reparse prompts must default non-destructively to `use-existing`. The context menu targets PDF attachments only. Task submission and completion do not show notifications to the user; only failures do. When registering commands, ensure lifecycle alignment with Zotero's localization resources to prevent broken right-click menus on unload.
 
 ## Reader Toolbar & Overlay
 

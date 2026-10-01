@@ -9,7 +9,7 @@
 - Parse through the official online MinerU API or a self-hosted MinerU 4 server, and choose a parse tier (`flash`, `basic`, `standard`, `advanced`).
 - Automatically handles long PDFs by requesting page ranges from MinerU and seamlessly merging the results (no local PDF tool required).
 - Tracks processing jobs in the persistent **MinerU Task Manager** with live progress bars, status grouping (Running, Failed, Cancelled, Succeeded), history clearing, and one-click **Resume** for interrupted jobs.
-- Automatically adds Zotero tags (`MinerU: Precise ✅`, `MinerU: Failed ❌`, `MinerU: Processing ⏳`) based on parse status.
+- Automatically adds Zotero tags (`MinerU: Precise ✅`, `MinerU: Failed ❌`, `MinerU: Processing ⏳`) based on parse status. Tags sync to zotero.org and group libraries, so they can be turned off in the settings; the MinerU item column shows the status either way.
 - Export results to an **Agent-friendly Sync Folder**, which automatically generates structured Markdown, images, and standard BibTeX metadata (`metadata.bib`) for each parsed PDF for seamless integration with downstream AI agents.
 - Reuse an existing parse result, or reparse and replace it when needed.
 - Show MinerU boxes in the Zotero PDF Reader.

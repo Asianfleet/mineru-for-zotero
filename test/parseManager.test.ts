@@ -957,6 +957,52 @@ describe("parseManager", function () {
     });
   });
 
+  it("tags the attachment while it parses and when it succeeds", async function () {
+    const messages: string[] = [];
+    const tags: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      client: successfulPreciseClient(),
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7118, tags }));
+
+    assert.deepEqual(tags, [
+      "-MinerU: Failed ❌",
+      "+MinerU: Processing ⏳",
+      "-MinerU: Processing ⏳",
+      "-MinerU: Failed ❌",
+      "-MinerU: Lite ✅",
+      "+MinerU: Precise ✅",
+    ]);
+  });
+
+  it("writes no status tags when they are turned off", async function () {
+    const messages: string[] = [];
+    const tags: string[] = [];
+    const succeeding = createParseManager({
+      ...baseDependencies(messages),
+      getStatusTagsEnabled: () => false,
+      client: successfulPreciseClient(),
+    });
+    const failing = createParseManager({
+      ...baseDependencies(messages),
+      getStatusTagsEnabled: () => false,
+      client: {
+        ...successfulPreciseClient(),
+        submitPdf: async () => {
+          throw new MinerURequestError("upload", 403, "denied");
+        },
+      },
+    });
+
+    await succeeding.parseAttachment(pdfAttachment({ id: 7119, tags }));
+    await failing.parseAttachment(pdfAttachment({ id: 7120, tags }));
+
+    assert.isEmpty(tags);
+    assert.deepEqual(messages, ["parse-error-upload"]);
+  });
+
   it("fails the task and clears the processing tag when the PDF read fails during submit", async function () {
     const messages: string[] = [];
     const tags: string[] = [];
@@ -1114,7 +1160,12 @@ describe("parseManager", function () {
 
     await manager.parseAttachment(pdfAttachment({ id: 7111, tags }));
 
-    assert.deepEqual(tags, ["-MinerU: Processing ⏳"]);
+    // Only the running markers change; the earlier result's tags stay.
+    assert.deepEqual(tags, [
+      "-MinerU: Failed ❌",
+      "+MinerU: Processing ⏳",
+      "-MinerU: Processing ⏳",
+    ]);
     assert.deepEqual(messages, ["parse-error-overwrite"]);
     assert.equal(taskStore.getTask("7111")?.status, "failed");
   });

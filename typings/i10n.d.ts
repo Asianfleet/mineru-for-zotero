@@ -66,6 +66,7 @@ export type FluentMessageId =
   | 'pref-query-api-enabled'
   | 'pref-query-api-title'
   | 'pref-save-images'
+  | 'pref-status-tags'
   | 'pref-sync-all-button'
   | 'pref-sync-folder'
   | 'prefs-title'

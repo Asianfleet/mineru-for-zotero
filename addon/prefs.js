@@ -7,3 +7,4 @@ pref("apiEnabled", false);
 pref("saveImages", true);
 pref("syncFolder", "");
 pref("autoParsePageLimit", 0);
+pref("statusTags", true);

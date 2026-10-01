@@ -11,12 +11,14 @@ import {
   getParseTier,
   getParseSource,
   getSaveImages,
+  getStatusTagsEnabled,
   setMarkdownApiEnabled,
   setLocalApiBaseURL,
   setLocalApiTimeoutMinutes,
   setParseTier,
   setParseSource,
   setSaveImages,
+  setStatusTagsEnabled,
 } from "../src/utils/prefs";
 
 describe("preferenceScript", function () {
@@ -93,6 +95,27 @@ describe("preferenceScript", function () {
       assert.isFalse(getSaveImages());
     } finally {
       setSaveImages(true);
+    }
+  });
+
+  it("initializes and persists the status-tags checkbox", function () {
+    const statusTags = fakePreferenceElement("true", "", "checkbox");
+    const document = fakePreferenceDocument({
+      "zotero-prefpane-mineruForZotero-status-tags": statusTags,
+    });
+
+    try {
+      setStatusTagsEnabled(true);
+      registerPreferenceValueSync(document);
+
+      assert.isTrue(statusTags.checked);
+
+      statusTags.checked = false;
+      statusTags.emit("command");
+
+      assert.isFalse(getStatusTagsEnabled());
+    } finally {
+      setStatusTagsEnabled(true);
     }
   });
 
