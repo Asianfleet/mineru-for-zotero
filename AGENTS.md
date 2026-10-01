@@ -144,6 +144,10 @@ Large PDFs are chunked by passing `page_range` (for example `201-400`) to `POST 
 
 ## Cross-Platform Compatibility
 
+### Windows Paths
+
+Gecko's `IOUtils` rejects any Windows path that contains a `/`, so never append `/segment` to a native base such as `Zotero.DataDirectory.dir` or the user's sync folder (`C:\Zotero/x` fails). Build paths with `joinNativePath()` from `mineruClient/path.ts`, or pass them through `toNativePath()`, which rewrites drive and UNC paths to backslashes only.
+
 ### Zero External Binary Dependencies
 
 File downloads rely purely on `Zotero.File.download` with fallback to global `fetch`. The plugin has zero external system binary dependencies (no `curl.exe`, no subprocess spawns).

@@ -1,5 +1,5 @@
 import { getSyncFolder } from "../utils/prefs";
-import { toNativePath } from "./mineruClient/path";
+import { joinNativePath, toNativePath } from "./mineruClient/path";
 import { taskStore } from "./taskStore";
 
 const INDEX_FILE = "_index.json";
@@ -46,8 +46,8 @@ export async function syncResultToAgentFolder(
   const prefix = citationKey ? citationKey : year ? year : "Item";
   const folderName = `[${prefix}] - ${safeTitle}`;
 
-  const targetDir = toNativePath(`${syncFolder}/${folderName}`);
-  const syncRoot = toNativePath(syncFolder);
+  const syncRoot = joinNativePath(syncFolder);
+  const targetDir = joinNativePath(syncRoot, folderName);
 
   try {
     // 1. Copy directory
@@ -75,17 +75,23 @@ export async function syncResultToAgentFolder(
       for (const child of children) {
         if (child.endsWith("images")) {
           // copy images dir
-          const targetImagesDir = `${targetDir}/images`;
+          const targetImagesDir = joinNativePath(targetDir, "images");
           await IOUtils.makeDirectory(targetImagesDir, {
             createAncestors: true,
             ignoreExisting: true,
           });
           const images = await IOUtils.getChildren(child);
           for (const img of images) {
-            await IOUtils.copy(img, `${targetImagesDir}/${getBasename(img)}`);
+            await IOUtils.copy(
+              img,
+              joinNativePath(targetImagesDir, getBasename(img)),
+            );
           }
         } else {
-          await IOUtils.copy(child, `${targetDir}/${getBasename(child)}`);
+          await IOUtils.copy(
+            child,
+            joinNativePath(targetDir, getBasename(child)),
+          );
         }
       }
     }
@@ -94,7 +100,10 @@ export async function syncResultToAgentFolder(
     try {
       const bibtex = await exportBibTeX(parent);
       if (bibtex) {
-        await IOUtils.writeUTF8(`${targetDir}/metadata.bib`, bibtex);
+        await IOUtils.writeUTF8(
+          joinNativePath(targetDir, "metadata.bib"),
+          bibtex,
+        );
       }
     } catch (e) {
       ztoolkit.log("Failed to export BibTeX", e);
@@ -120,7 +129,7 @@ async function updateGlobalIndex(
   syncRoot: string,
   newItem: AgentSyncItem,
 ): Promise<void> {
-  const indexPath = `${syncRoot}/${INDEX_FILE}`;
+  const indexPath = joinNativePath(syncRoot, INDEX_FILE);
   let indexData: AgentSyncItem[] = [];
 
   try {

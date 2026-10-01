@@ -1,4 +1,5 @@
 import { AttachmentRef } from "./domain";
+import { joinNativePath } from "./mineruClient/path";
 import { removeTaskResumeDirectory } from "./taskResumeDirectory";
 
 export type TaskStatus =
@@ -50,7 +51,7 @@ class TaskManagerStore {
   private loadPromise: Promise<void>;
 
   constructor() {
-    this.dataFile = Zotero.DataDirectory.dir + "/mineru_tasks.json";
+    this.dataFile = getTaskStoreFilePath();
     this.loadPromise = this.load();
   }
 
@@ -182,6 +183,15 @@ class TaskManagerStore {
   private notify() {
     this.listeners.forEach((l) => l());
   }
+}
+
+/**
+ * Native path of the persisted task list inside the Zotero data directory.
+ */
+export function getTaskStoreFilePath(
+  dataDirectory: string = Zotero.DataDirectory.dir,
+): string {
+  return joinNativePath(dataDirectory, "mineru_tasks.json");
 }
 
 export const taskStore = new TaskManagerStore();

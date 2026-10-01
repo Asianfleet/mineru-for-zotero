@@ -10,7 +10,7 @@ import {
   MinerUTaskError,
   type MinerUClient,
 } from "./mineruClient";
-import { toNativePath } from "./mineruClient/path";
+import { joinNativePath, toNativePath } from "./mineruClient/path";
 import {
   clearAttachmentParseRunning,
   markAttachmentParseReady,
@@ -674,11 +674,12 @@ async function runParseAttachment(
         const chunk = resume.chunks[i];
         const startPage = chunk.startPage;
         const endPage = chunk.endPage;
-        const cachePath =
-          chunk.resultPath ??
-          toNativePath(
-            `${resumeDirectory}/mineru-part-${attachment.id}-${i}-result.json`,
-          );
+        const cachePath = chunk.resultPath
+          ? toNativePath(chunk.resultPath)
+          : joinNativePath(
+              resumeDirectory,
+              `mineru-part-${attachment.id}-${i}-result.json`,
+            );
         chunk.resultPath = cachePath;
 
         const cached = await readChunkResult(cachePath);
@@ -815,11 +816,12 @@ async function runParseAttachment(
       );
     } else {
       const chunk = resume.chunks[0];
-      const cachePath =
-        chunk.resultPath ??
-        toNativePath(
-          `${getTaskResumeDirectory(attachment.id)}/mineru-part-${attachment.id}-0-result.json`,
-        );
+      const cachePath = chunk.resultPath
+        ? toNativePath(chunk.resultPath)
+        : joinNativePath(
+            resumeDirectory,
+            `mineru-part-${attachment.id}-0-result.json`,
+          );
       chunk.resultPath = cachePath;
       const cached = await readChunkResult(cachePath);
       if (cached) {

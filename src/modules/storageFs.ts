@@ -7,19 +7,16 @@
  * keeps `storage.ts` focused on result layout and manifest handling.
  */
 
+import { toNativePath } from "./mineruClient/path";
+
+export { toNativePath };
+
 export function joinPath(...parts: string[]): string {
   return normalizePath(parts.filter(Boolean).join("/"));
 }
 
 export function normalizePath(path: string): string {
   return path.replace(/\\/g, "/").replace(/\/+/g, "/").replace(/\/$/, "");
-}
-
-export function toNativePath(path: string): string {
-  if (/^[a-z]:\//i.test(path)) {
-    return path.replace(/\//g, "\\");
-  }
-  return path;
 }
 
 export function dirname(path: string): string {
