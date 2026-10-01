@@ -1,6 +1,7 @@
 import { assert } from "chai";
+import { BOX_NORMALIZER_VERSION } from "../src/modules/boxNormalizer";
 import { createStorage } from "../src/modules/storage";
-import { normalizedBoxes } from "./domainFixtures";
+import { mineruResultFixture, normalizedBoxes } from "./domainFixtures";
 
 const rootDir = `TmpD/mineru-copy-${Date.now()}-${Math.random()
   .toString(36)
@@ -720,6 +721,98 @@ describe("storage", function () {
     assert.equal(await storage.countReadyResults(), 1);
   });
 
+  it("repairs duplicate rawIndex values left by older chunk merges", async function () {
+    const storage = createStorage(rootDir);
+    const attachment = {
+      id: 1,
+      key: "MERGED",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    // Two chunks merged by an older version: rawIndex restarts at 0.
+    const legacyBoxes = [
+      ...normalizedBoxes,
+      ...normalizedBoxes.map((box) => ({ ...box, page: box.page + 200 })),
+    ];
+
+    await writeResultOrFail(storage, {
+      attachment,
+      mineruTaskID: "task-1,task-2",
+      // A merged raw result is an array, which the stale-box refresh skips.
+      rawResult: [mineruResultFixture, mineruResultFixture],
+      markdown: "one\n\n---\n\ntwo",
+      boxes: legacyBoxes,
+    });
+
+    await markWrittenByOlderVersion(storage, attachment);
+    const boxes = await storage.readBoxes(attachment);
+
+    assert.deepEqual(
+      boxes.map((box) => box.rawIndex),
+      [0, 1, 2, 3, 4, 5],
+    );
+    assert.deepEqual(
+      boxes.map((box) => box.page),
+      legacyBoxes.map((box) => box.page),
+    );
+    const dir = resolveTmpPath(storage.getAttachmentDir(attachment));
+    const stored = (await readJson(
+      joinPath(dir, "boxes.normalized.json"),
+    )) as Array<{ rawIndex: number }>;
+    assert.deepEqual(
+      stored.map((box) => box.rawIndex),
+      [0, 1, 2, 3, 4, 5],
+    );
+  });
+
+  it("serves boxes from the current normalizer without re-reading the raw result", async function () {
+    const storage = createStorage(rootDir);
+    const attachment = {
+      id: 1,
+      key: "CURRENT",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    await writeResultOrFail(storage, {
+      attachment,
+      mineruTaskID: "task-1",
+      // The raw result would normalize to three boxes.
+      rawResult: mineruResultFixture,
+      markdown: "Body",
+      boxes: [normalizedBoxes[0]],
+    });
+
+    assert.deepEqual(await storage.readBoxes(attachment), [normalizedBoxes[0]]);
+  });
+
+  it("stamps the normalizer version after refreshing an older result", async function () {
+    const storage = createStorage(rootDir);
+    const attachment = {
+      id: 1,
+      key: "STAMPED",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    await writeResultOrFail(storage, {
+      attachment,
+      mineruTaskID: "task-1",
+      rawResult: mineruResultFixture,
+      markdown: "Body",
+      boxes: [normalizedBoxes[0]],
+    });
+    await markWrittenByOlderVersion(storage, attachment);
+
+    assert.lengthOf(await storage.readBoxes(attachment), 3);
+    const manifest = await storage.readManifest(attachment);
+    assert.equal(manifest.boxesVersion, BOX_NORMALIZER_VERSION);
+  });
+
   it("refreshes stale normalized boxes from the raw MinerU result", async function () {
     const storage = createStorage(rootDir);
     const attachment = {
@@ -760,6 +853,7 @@ describe("storage", function () {
       boxes: [normalizedBoxes[0]],
     });
 
+    await markWrittenByOlderVersion(storage, attachment);
     const boxes = await storage.readBoxes(attachment);
 
     assert.isAbove(boxes.length, 1);
@@ -825,6 +919,7 @@ describe("storage", function () {
       images: [{ path: "figure.jpg", bytes: new Uint8Array([255, 216, 255]) }],
     });
 
+    await markWrittenByOlderVersion(storage, attachment);
     const boxes = await storage.readBoxes(attachment);
 
     assert.equal(boxes[0].imagePath, "figure.jpg");
@@ -890,6 +985,7 @@ describe("storage", function () {
       images: [{ path: "table.png", bytes: new Uint8Array([137, 80, 78, 71]) }],
     });
 
+    await markWrittenByOlderVersion(storage, attachment);
     const boxes = await storage.readBoxes(attachment);
 
     assert.deepEqual(boxes[0].tableFormats, {
@@ -949,6 +1045,7 @@ describe("storage", function () {
       ],
     });
 
+    await markWrittenByOlderVersion(storage, attachment);
     const boxes = await storage.readBoxes(attachment);
 
     assert.deepEqual(
@@ -1199,4 +1296,21 @@ function dirname(path: string): string {
   const normalized = path.replace(/\\/g, "/");
   const index = normalized.lastIndexOf("/");
   return toNativePath(index === -1 ? "." : normalized.slice(0, index));
+}
+
+/**
+ * Drop the normalizer stamp so the stored result looks like one written before
+ * BOX_NORMALIZER_VERSION existed, which readBoxes() refreshes once.
+ */
+async function markWrittenByOlderVersion(
+  storage: ReturnType<typeof createStorage>,
+  ref: { libraryID: number; key: string },
+): Promise<void> {
+  const manifestPath = joinPath(
+    resolveTmpPath(storage.getAttachmentDir(ref)),
+    "manifest.json",
+  );
+  const manifest = (await readJson(manifestPath)) as Record<string, unknown>;
+  delete manifest.boxesVersion;
+  await writeText(manifestPath, JSON.stringify(manifest));
 }

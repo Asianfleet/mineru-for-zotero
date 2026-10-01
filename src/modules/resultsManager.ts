@@ -1,10 +1,10 @@
 import { config } from "../../package.json";
 import { createStorage, type StorageAdapter, toNativePath } from "./storage";
 import { syncResultToAgentFolder } from "./agentSync";
+import { refreshAttachmentParseStatus } from "./itemTreeColumn";
+import { getMinerUStorageRoot } from "./storageLocation";
 import { getSyncFolder } from "../utils/prefs";
 import { taskStore } from "./taskStore";
-
-const DEFAULT_STORAGE_ROOT = "ProfD/mineru-copy";
 
 export interface ParsedResultEntry {
   libraryID: number;
@@ -41,6 +41,8 @@ export interface ResultsManagerDependencies {
   removeItemTag(id: number, tag: string): Promise<void>;
   eraseItem(id: number): Promise<void>;
   revealFolder(path: string): Promise<void>;
+  /** Called after a stored result was deleted, to refresh dependent UI. */
+  onResultDeleted?(ref: { libraryID: number; key: string }): Promise<void>;
 }
 
 export interface ResultsManagerService {
@@ -206,6 +208,12 @@ export async function deleteResultEntry(
     key: entry.key || entry.attachmentKey!,
   };
   await deps.storage.deleteResult(ref);
+  try {
+    // Keep the item tree's parse column in step with what is now on disk.
+    await deps.onResultDeleted?.(ref);
+  } catch {
+    // A UI refresh failure must not turn a completed deletion into an error.
+  }
 
   if (!entry.isOrphan && entry.attachmentID) {
     if (options.removeTags) {
@@ -309,6 +317,9 @@ export function createResultsManagerService(
         await Zotero.launchFile(nativePath);
       }
     },
+    async onResultDeleted(ref) {
+      await refreshAttachmentParseStatus(ref, { storage });
+    },
   };
 
   return {
@@ -351,8 +362,7 @@ export function createResultsManagerService(
         libraryID: entry.libraryID,
         key: entry.key || entry.attachmentKey!,
       });
-      await syncResultToAgentFolder(item, sourceDir);
-      return true;
+      return syncResultToAgentFolder(item, sourceDir);
     },
     syncSelected: async (entries) => {
       const syncFolder = getSyncFolder().trim();
@@ -368,8 +378,9 @@ export function createResultsManagerService(
               libraryID: entry.libraryID,
               key: entry.key || entry.attachmentKey!,
             });
-            await syncResultToAgentFolder(item, sourceDir);
-            count++;
+            if (await syncResultToAgentFolder(item, sourceDir)) {
+              count++;
+            }
           }
         }
       }
@@ -415,7 +426,7 @@ export function openResultsManagerWindow(
     }
 
     if (!service) {
-      const storage = createStorage(DEFAULT_STORAGE_ROOT);
+      const storage = createStorage(getMinerUStorageRoot());
       service = createResultsManagerService(storage);
     }
 

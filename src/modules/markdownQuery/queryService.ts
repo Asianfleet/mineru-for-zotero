@@ -24,6 +24,57 @@ import { exportBibTeX } from "../agentSync";
 import { extractItemYear } from "./itemYear";
 import type { NormalizedBox } from "../domain";
 
+/** Items whose parse status is read at once while filtering by parsedOnly. */
+const PARSED_ONLY_SCAN_BATCH = 20;
+
+/** Most BibTeX entries kept in memory for Markdown API responses. */
+const BIBTEX_CACHE_LIMIT = 500;
+
+/** Exported BibTeX per item, valid while the item's dateModified matches. */
+const bibtexCache = new Map<string, { version: string; bibtex: string }>();
+
+/**
+ * BibTeX for an item, exported once per item revision.
+ *
+ * Running Zotero's BibTeX translator takes far longer than answering a
+ * headings or search request, and agents query the same paper repeatedly.
+ * Empty exports are not cached so a failed export is retried.
+ */
+async function readCachedBibTeX(
+  item: ZoteroItemLike,
+  exporter: (item: ZoteroItemLike) => Promise<string>,
+): Promise<string> {
+  const cacheKey = `${item.libraryID}-${item.key}`;
+  const version = item.dateModified ?? "";
+  const cached = bibtexCache.get(cacheKey);
+  if (cached && cached.version === version) {
+    return cached.bibtex;
+  }
+
+  const bibtex = await exporter(item);
+  if (bibtex) {
+    bibtexCache.delete(cacheKey);
+    bibtexCache.set(cacheKey, { version, bibtex });
+    if (bibtexCache.size > BIBTEX_CACHE_LIMIT) {
+      // Maps iterate in insertion order: drop the least recently stored.
+      bibtexCache.delete(bibtexCache.keys().next().value!);
+    }
+  }
+  return bibtex;
+}
+
+/** Export BibTeX for the Zotero item behind a query result. */
+async function exportZoteroItemBibTeX(item: ZoteroItemLike): Promise<string> {
+  const zoteroItem = Zotero.Items.getByLibraryAndKey(item.libraryID, item.key);
+  return zoteroItem ? exportBibTeX(zoteroItem) : "";
+}
+
+/** One search hit: the item and the parse status of its PDF attachments. */
+interface SearchCandidate {
+  item: ItemSummary;
+  attachments: AttachmentSummary[];
+}
+
 /**
  * Storage interface capable of reading preferred Markdown results and parse statuses.
  */
@@ -87,6 +138,8 @@ export function createMarkdownQueryService(deps: {
     libraryID: number,
     limit?: number,
   ): Promise<TagSummary[]> | TagSummary[];
+  /** BibTeX exporter; defaults to Zotero's BibTeX translator. */
+  exportBibTeX?(item: ZoteroItemLike): Promise<string>;
 }): MarkdownQueryService {
   return {
     async getLibraries() {
@@ -150,13 +203,11 @@ export function createMarkdownQueryService(deps: {
         return { libraryID: input.libraryID, tags };
       }
       if (typeof Zotero !== "undefined" && (Zotero as any).Tags?.getAll) {
-        const rawTags = (Zotero as any).Tags.getAll(input.libraryID);
-        let tags: TagSummary[] = (Array.isArray(rawTags) ? rawTags : [])
-          .map((t: any) => ({
-            tag: typeof t === "string" ? t : String(t.tag || t.name || ""),
-            numItems: typeof t === "object" ? Number(t.numItems) : undefined,
-          }))
-          .filter((t: TagSummary) => Boolean(t.tag));
+        // Zotero.Tags.getAll is asynchronous (it queries the database).
+        const rawTags: unknown = await (Zotero as any).Tags.getAll(
+          input.libraryID,
+        );
+        let tags = summarizeTags(Array.isArray(rawTags) ? rawTags : []);
         if (input.limit !== undefined && input.limit > 0) {
           tags = tags.slice(0, input.limit);
         }
@@ -222,27 +273,53 @@ export function createMarkdownQueryService(deps: {
         );
       }
 
-      const items = await deps.searchItems(input);
-      let candidates = await Promise.all(
-        items.map(async (item) => ({
-          item: summarizeItem(item),
-          attachments: item.isRegularItem()
-            ? await summarizeAttachments(item, deps.items, deps.storage)
-            : item.isPDFAttachment()
-              ? [await summarizeAttachment(item, deps.storage)]
-              : [],
-        })),
-      );
+      const summarizeCandidate = async (
+        item: ZoteroItemLike,
+      ): Promise<SearchCandidate> => ({
+        item: summarizeItem(item),
+        attachments: item.isRegularItem()
+          ? await summarizeAttachments(item, deps.items, deps.storage)
+          : item.isPDFAttachment()
+            ? [await summarizeAttachment(item, deps.storage)]
+            : [],
+      });
 
-      if (input.parsedOnly) {
-        candidates = candidates.filter((candidate) =>
-          candidate.attachments.some(
-            (att) => att.preciseReady || att.liteReady,
+      if (!input.parsedOnly) {
+        const items = await deps.searchItems(input);
+        return { candidates: await Promise.all(items.map(summarizeCandidate)) };
+      }
+
+      // `limit` counts parsed candidates, so it is applied after the parse
+      // status filter instead of cutting the item search short. Items are
+      // checked in small batches so a small limit stops the scan early.
+      const items = await deps.searchItems({ ...input, limit: undefined });
+      const candidates: SearchCandidate[] = [];
+      for (
+        let start = 0;
+        start < items.length &&
+        (input.limit === undefined || candidates.length < input.limit);
+        start += PARSED_ONLY_SCAN_BATCH
+      ) {
+        const batch = await Promise.all(
+          items
+            .slice(start, start + PARSED_ONLY_SCAN_BATCH)
+            .map(summarizeCandidate),
+        );
+        candidates.push(
+          ...batch.filter((candidate) =>
+            candidate.attachments.some(
+              (att) => att.preciseReady || att.liteReady,
+            ),
           ),
         );
       }
 
-      return { candidates };
+      return {
+        candidates:
+          input.limit === undefined
+            ? candidates
+            : candidates.slice(0, input.limit),
+      };
     },
 
     async queryMarkdown(input) {
@@ -297,15 +374,12 @@ export function createMarkdownQueryService(deps: {
       };
 
       try {
-        const item = Zotero.Items.getByLibraryAndKey(
-          input.libraryID,
-          resolved.item.key,
+        const bibtex = await readCachedBibTeX(
+          resolved.item,
+          deps.exportBibTeX ?? exportZoteroItemBibTeX,
         );
-        if (item) {
-          const bibtex = await exportBibTeX(item);
-          if (bibtex) {
-            (base as any).bibtex = bibtex;
-          }
+        if (bibtex) {
+          (base as any).bibtex = bibtex;
         }
       } catch (e) {
         // ignore error
@@ -363,6 +437,35 @@ export function createMarkdownQueryService(deps: {
       );
     },
   };
+}
+
+/**
+ * Turn Zotero tag records into unique tag summaries.
+ *
+ * Zotero lists a tag once per type (manual and automatic), so names are
+ * de-duplicated. Item counts are only reported when Zotero provides them.
+ */
+function summarizeTags(rawTags: unknown[]): TagSummary[] {
+  const seen = new Set<string>();
+  const tags: TagSummary[] = [];
+  for (const raw of rawTags) {
+    const record =
+      raw && typeof raw === "object"
+        ? (raw as { tag?: unknown; name?: unknown; numItems?: unknown })
+        : undefined;
+    const tag = record
+      ? String(record.tag || record.name || "")
+      : typeof raw === "string"
+        ? raw
+        : "";
+    if (!tag || seen.has(tag)) {
+      continue;
+    }
+    seen.add(tag);
+    const numItems = Number(record?.numItems);
+    tags.push(Number.isFinite(numItems) ? { tag, numItems } : { tag });
+  }
+  return tags;
 }
 
 /**

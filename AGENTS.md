@@ -72,7 +72,7 @@ API limits:
 - The 200 MB upload limit is enforced on every parse path (batch and single attachment); oversized files report the `parse-error-file-too-large` message key.
 - Large PDFs are chunked by page range instead of being split locally; `getPdfPageCount()` uses Zotero's bundled pdf.js only. v1 sends `files[].page_range`, v4 sends `file.page_ranges`.
 - `getPdfPageCount()` must load pdf.js in a **window realm**: it runs `Zotero.getMainWindow().eval(...)` with a dynamic `import("resource://zotero/reader/pdf/build/pdf.mjs")`. Do **not** use `ChromeUtils.importESModule` — Zotero 10's system module realm has frozen built-ins and pdf.js's top-level `Map.prototype.getOrInsertComputed` polyfill throws `TypeError: Map.prototype is not extensible`. Zotero's own reader loads pdf.js the same way (module script in a content realm).
-- `MINERU_API_MAX_CONCURRENT_REQUESTS` limits cross-attachment concurrency (clamped 1-10, default 3). Tests override it via `getMaxConcurrentRequests`.
+- `MINERU_API_MAX_CONCURRENT_REQUESTS` limits cross-attachment concurrency (clamped 1-10, default 3). One shared limiter in `parseManager` applies it to every entry point (context-menu batches, Retry/Resume, auto-parse, the HTTP API); waiting parses start in request order. Tests override it via `getMaxConcurrentRequests`.
 
 ### V1 Parsing Flow (local)
 
@@ -125,24 +125,30 @@ Cancellation (Stop in the Task Manager) is a distinct terminal `cancelled` statu
 
 Check supported schemas when handling missing box errors.
 
+Bump `BOX_NORMALIZER_VERSION` whenever a normalizer change alters the boxes produced from the same raw result. Manifests record the version their boxes were made with; `storage.readBoxes()` re-normalizes an older result from its raw JSON once and stamps it, and otherwise serves `boxes.normalized.json` as is.
+
 ## Storage & Agent Sync
 
 ### Local Result Storage
 
-Precise results are in `ProfD/mineru-copy/attachments/<libraryID>-<attachmentKey>/` (`manifest.json`, `mineru-result.json`, `content.md`, `boxes.normalized.json`, `images/`). Lite results are stored beside them as `lite-manifest.json` and `lite-content.md`.
+Precise results are in `<Zotero.DataDirectory.dir>/mineru-copy/attachments/<libraryID>-<attachmentKey>/` (`getMinerUStorageRoot()` in `storageLocation.ts`; earlier versions used `ProfD/mineru-copy`, which `migrateResultStorage()` moves over entry by entry at startup without overwriting) (`manifest.json`, `mineru-result.json`, `content.md`, `boxes.normalized.json`, `images/`). Lite results are stored beside them as `lite-manifest.json` and `lite-content.md`.
 
 Use `storage.readPreferredMarkdown()` to read precise first, then lite fallback. Ignore transient `.tmp-*` and `.bak-*` files. The Task Manager Results tab derives `hasImages`/`hasBoxes` from the stored directory (at least one `images/` entry, a non-empty `boxes.normalized.json`), not from the ready flag.
 `resolveFsRoot()` treats the first path segment as a Zotero dirsvc key (e.g. `ProfD`) and silently falls back to the literal path when the key is unknown (`readDirectoryServicePath()` swallows `NS_ERROR_FAILURE`); tests must still use roots that do not match a real dirsvc key so they never touch a real profile. `listParseStatuses()` must sort entries for stable test order.
 
 ### Agent-Friendly Sync Folder
 
-The optional sync folder copies results into `[CitationKey] - [Title]` format. Sync happens on demand when the user triggers "Sync All Results Now" in Preferences. `_index.json` maintains the list of synced entries.
+The optional sync folder copies results into `[CitationKey] - [Title]` format. Sync happens on demand when the user triggers "Sync All Results Now" in Preferences. `_index.json` keeps one entry per synced attachment (`attachmentKey`), and `markdownPath` points at `lite-content.md` for lite-only results. A folder is only replaced when its copied manifest belongs to the same attachment; on a name collision (two PDFs of one item, or same year and title) the attachment key is appended: `[CitationKey] - [Title] [ATTACHMENTKEY]`.
 
 ### Large PDFs
 
 Large PDFs are chunked by passing `page_range` (for example `201-400`) to `POST /v1/parse/jobs`; the plugin never splits the PDF locally. `getPdfPageCount()` (Zotero bundled pdf.js) decides the chunk count. Do not reintroduce `pdftk`, `parallelSplit`, or local chunk files.
 
 ## Cross-Platform Compatibility
+
+### Windows Paths
+
+Gecko's `IOUtils` rejects any Windows path that contains a `/`, so never append `/segment` to a native base such as `Zotero.DataDirectory.dir` or the user's sync folder (`C:\Zotero/x` fails). Build paths with `joinNativePath()` from `mineruClient/path.ts`, or pass them through `toNativePath()`, which rewrites drive and UNC paths to backslashes only.
 
 ### Zero External Binary Dependencies
 
@@ -176,9 +182,11 @@ For diagnostics, emit to `Zotero.debug` (see `readerOverlay/diagnostics.ts` and 
 
 New preferences must be registered in `addon/prefs.js` with **unprefixed** keys, then a build picks them up in `typings/prefs.d.ts`. Locale files use FTL syntax (`pref-sync-folder = Label text`) and live only under `addon/locale/en-US/`. Every key referenced from code or `data-l10n-id` must exist there; unused keys ship as dead strings, and missing keys surface as raw `mineruForZotero-…` ids in the UI. After editing FTL files, run `npm run build` to regenerate `typings/i10n.d.ts`.
 
+The build prefixes every Fluent message id with the addon ref (`mineruForZotero-…`), so code that calls `document.l10n.formatValue` must prefix the id (`preferenceScript.ts` `formatL10n` does this). The Task Manager page (`addon/content/taskManager.html`) has no Fluent DOM bindings: tag static markup with `data-tm-l10n` / `data-tm-l10n-placeholder` and route dynamic text through `tmText(id, englishFallback, args)`.
+
 ## Item Context Menu
 
-Reparse prompts must default non-destructively to `use-existing`. The context menu targets PDF attachments only. Task submission and completion do not show notifications to the user; only failures do. When registering commands, ensure lifecycle alignment with Zotero's localization resources to prevent broken right-click menus on unload.
+All MinerU status tag writes in `parseManager` go through `updateStatusTags()`, which does nothing when the `statusTags` preference is off. Reparse prompts must default non-destructively to `use-existing`. The context menu targets PDF attachments only. Task submission and completion do not show notifications to the user; only failures do. When registering commands, ensure lifecycle alignment with Zotero's localization resources to prevent broken right-click menus on unload.
 
 ## Reader Toolbar & Overlay
 

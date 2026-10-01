@@ -7,6 +7,7 @@ import {
 } from "../src/modules/mineruClient";
 import { fallbackDownloadBinary } from "../src/modules/mineruClient/http";
 import { extractJobError } from "../src/modules/mineruClient/v1";
+import { createFallbackUpload } from "../src/modules/mineruClient/v4";
 import { readZip } from "../src/modules/mineruClient/zip";
 
 const ONLINE_BASE = "https://mineru.net/api";
@@ -545,6 +546,77 @@ describe("mineruClient (V1)", function () {
     }
     assert.instanceOf(error, MinerUTaskError);
     assert.match((error as Error).message, /missing job_id/);
+  });
+
+  describe("V4 upload fallback", function () {
+    const pdf = new Uint8Array([37, 80, 68, 70]);
+    const transport =
+      (calls: string[], name: string, result: Response | Error) => async () => {
+        calls.push(name);
+        if (result instanceof Error) {
+          throw result;
+        }
+        return result;
+      };
+
+    it("does not resend the PDF after a definitive 4xx answer", async function () {
+      const calls: string[] = [];
+      const upload = createFallbackUpload([
+        transport(
+          calls,
+          "fetch",
+          new Response("SignatureDoesNotMatch", { status: 403 }),
+        ),
+        transport(calls, "xhr", new Response(null, { status: 200 })),
+      ]);
+
+      const response = await upload("https://oss.example/put", pdf);
+
+      assert.equal(response.status, 403);
+      assert.deepEqual(calls, ["fetch"]);
+    });
+
+    it("tries the next transport when one throws", async function () {
+      const calls: string[] = [];
+      const upload = createFallbackUpload([
+        transport(calls, "fetch", new TypeError("NetworkError")),
+        transport(calls, "xhr", new Response(null, { status: 200 })),
+      ]);
+
+      const response = await upload("https://oss.example/put", pdf);
+
+      assert.equal(response.status, 200);
+      assert.deepEqual(calls, ["fetch", "xhr"]);
+    });
+
+    it("tries the next transport after a 5xx and reports the last answer", async function () {
+      const calls: string[] = [];
+      const upload = createFallbackUpload([
+        transport(calls, "fetch", new Response(null, { status: 503 })),
+        transport(calls, "xhr", new Response(null, { status: 502 })),
+      ]);
+
+      const response = await upload("https://oss.example/put", pdf);
+
+      assert.equal(response.status, 502);
+      assert.deepEqual(calls, ["fetch", "xhr"]);
+    });
+
+    it("rethrows the last error when no transport got an answer", async function () {
+      const upload = createFallbackUpload([
+        transport([], "fetch", new TypeError("first")),
+        transport([], "xhr", new TypeError("second")),
+      ]);
+
+      let error: unknown;
+      try {
+        await upload("https://oss.example/put", pdf);
+      } catch (caught) {
+        error = caught;
+      }
+
+      assert.equal((error as Error).message, "second");
+    });
   });
 });
 

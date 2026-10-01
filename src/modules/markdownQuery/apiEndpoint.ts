@@ -204,10 +204,8 @@ async function searchItems(input: ItemSearchInput): Promise<ZoteroItemLike[]> {
     search.addCondition("itemType", "is", input.itemType);
   }
   if (input.collection) {
-    const col = resolveCollection(input.libraryID, input.collection);
-    if (col) {
-      search.addCondition("collectionID", "is", col.id);
-    }
+    const col = resolveSearchCollection(input.libraryID, input.collection);
+    search.addCondition("collectionID", "is", col.id);
   }
 
   const ids = await search.search();
@@ -283,34 +281,56 @@ async function searchItems(input: ItemSearchInput): Promise<ZoteroItemLike[]> {
   return items;
 }
 
-function resolveCollection(
+interface SearchCollection {
+  id: number;
+  key: string;
+  name?: string;
+}
+
+/** The parts of `Zotero.Collections` used to resolve a collection filter. */
+export interface SearchCollectionLookup {
+  getByLibraryAndKey?(
+    libraryID: number,
+    key: string,
+  ): SearchCollection | false | undefined;
+  getByLibrary?(libraryID: number): SearchCollection[];
+}
+
+/**
+ * Resolve the `collection` search filter by key or case-insensitive name.
+ *
+ * An unknown collection is an error: dropping the filter would silently
+ * search the whole library and present those items as the folder's contents.
+ * Exported for tests.
+ */
+export function resolveSearchCollection(
   libraryID: number,
   collectionParam: string,
-): { id: number; key: string } | undefined {
-  if (
-    typeof Zotero === "undefined" ||
-    !(Zotero as any).Collections?.getByLibrary
-  ) {
-    return undefined;
+  collections: SearchCollectionLookup | undefined = typeof Zotero ===
+  "undefined"
+    ? undefined
+    : (Zotero as unknown as { Collections?: SearchCollectionLookup })
+        .Collections,
+): { id: number; key: string } {
+  const byKey = collections?.getByLibraryAndKey?.(libraryID, collectionParam);
+  if (byKey) {
+    return byKey;
   }
-  if ((Zotero as any).Collections.getByLibraryAndKey) {
-    const byKey = (Zotero as any).Collections.getByLibraryAndKey(
-      libraryID,
-      collectionParam,
-    );
-    if (byKey) return byKey;
+  const all = collections?.getByLibrary?.(libraryID);
+  const target = collectionParam.toLowerCase();
+  const byName = (Array.isArray(all) ? all : []).find(
+    (collection) =>
+      String(collection.key).toLowerCase() === target ||
+      String(collection.name).toLowerCase() === target,
+  );
+  if (byName) {
+    return byName;
   }
-  const cols = (Zotero as any).Collections.getByLibrary(libraryID);
-  if (Array.isArray(cols)) {
-    const target = collectionParam.toLowerCase();
-    const matched = cols.find(
-      (c: any) =>
-        String(c.key).toLowerCase() === target ||
-        String(c.name).toLowerCase() === target,
-    );
-    return matched;
-  }
-  return undefined;
+  throw new MarkdownQueryError(
+    "collection-not-found",
+    404,
+    `Collection was not found: ${collectionParam}`,
+  );
 }
 
 /**

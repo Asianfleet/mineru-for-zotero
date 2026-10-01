@@ -26,8 +26,10 @@ export type MergedParseResult =
  *
  * Lite results only concatenate Markdown. Precise results either pass through
  * a single chunk or stitch multiple chunks together: image paths are namespaced
- * per part, and box page numbers are offset by the preceding chunk page counts
- * so overlays keep pointing at the right page.
+ * per part, box page numbers are offset by the preceding chunk page counts so
+ * overlays keep pointing at the right page, and box `rawIndex` values are
+ * offset by the preceding box counts so they stay unique. The overlay uses
+ * `rawIndex` as the box identity for selection and copy.
  */
 export function mergeChunkResults(
   results: MinerUChunkResult[],
@@ -74,8 +76,10 @@ export function mergeChunkResults(
       markdown + (index < results.length - 1 ? "\n\n---\n\n" : "");
 
     const boxes = normalizeMinerUBoxes(result.rawResult);
+    const rawIndexOffset = mergedBoxes.length;
     for (const box of boxes) {
       box.page += pageOffset;
+      box.rawIndex += rawIndexOffset;
     }
     mergedBoxes.push(...boxes);
 

@@ -9,7 +9,7 @@
 - Parse through the official online MinerU API or a self-hosted MinerU 4 server, and choose a parse tier (`flash`, `basic`, `standard`, `advanced`).
 - Automatically handles long PDFs by requesting page ranges from MinerU and seamlessly merging the results (no local PDF tool required).
 - Tracks processing jobs in the persistent **MinerU Task Manager** with live progress bars, status grouping (Running, Failed, Cancelled, Succeeded), history clearing, and one-click **Resume** for interrupted jobs.
-- Automatically adds Zotero tags (`MinerU: Precise ✅`, `MinerU: Failed ❌`, `MinerU: Processing ⏳`) based on parse status.
+- Automatically adds Zotero tags (`MinerU: Precise ✅`, `MinerU: Failed ❌`, `MinerU: Processing ⏳`) based on parse status. Tags sync to zotero.org and group libraries, so they can be turned off in the settings; the MinerU item column shows the status either way.
 - Export results to an **Agent-friendly Sync Folder**, which automatically generates structured Markdown, images, and standard BibTeX metadata (`metadata.bib`) for each parsed PDF for seamless integration with downstream AI agents.
 - Reuse an existing parse result, or reparse and replace it when needed.
 - Show MinerU boxes in the Zotero PDF Reader.
@@ -79,7 +79,9 @@ The result folder contains the parsed Markdown, box data used by the reader, and
 
 All MinerU parse results are saved using portable `[libraryID]-[attachmentKey]` directory names (such as `1-ABCD1234/`), which match the persistent attachment keys synced across devices via Zotero Cloud Sync.
 
-To migrate your parsed results without re-running parsing or consuming API quota:
+Parse results are stored in a `mineru-copy` folder inside your [Zotero data directory](https://www.zotero.org/support/zotero_data), so moving or copying the whole data directory carries them along. Results from older versions, which lived in the Zotero profile folder, are moved there automatically at startup.
+
+To migrate only your parsed results without re-running parsing or consuming API quota:
 
 1. **On the source computer:** Open `Edit` -> `Settings` -> `MinerU for Zotero` and click `Open Data Folder`. Copy the entire `mineru-copy` folder to an external drive or cloud storage.
 2. **On the target computer:** Ensure Zotero has finished syncing your library items. Open `Edit` -> `Settings` -> `MinerU for Zotero`, click `Open Data Folder`, and paste the `mineru-copy` folder into that location.
@@ -87,7 +89,7 @@ To migrate your parsed results without re-running parsing or consuming API quota
 
 ### Agent-friendly Sync Folder
 
-For AI workflows, you can configure an **Agent-friendly Sync Folder** in the settings. When enabled, MinerU for Zotero will automatically copy parsed results (Markdown + images) into a clean, flat directory structure named after the citation key and title (`[CitationKey] - Title/`).
+For AI workflows, you can configure an **Agent-friendly Sync Folder** in the settings. When enabled, MinerU for Zotero will automatically copy parsed results (Markdown + images) into a clean, flat directory structure named after the citation key and title (`[CitationKey] - Title/`). When two PDFs would share a folder name (for example a paper and its supplement), the attachment key is appended to keep them apart (`[CitationKey] - Title [ATTACHMENTKEY]/`).
 It will also automatically generate a `metadata.bib` file containing the BibTeX metadata for each item. You can click `Sync All Results Now` in the settings to bulk-export all existing historical results to this folder.
 
 This enables you to use AI Agents (like Cursor, Claude Desktop, etc.) to read the high-quality Markdown output directly. You can even equip your agent with the included CLI script (see below) to dynamically search and read files directly from the Zotero database!
@@ -228,6 +230,7 @@ Common error codes:
 - `api-disabled`: the local Markdown query API is not enabled in settings.
 - `invalid-request`: a required parameter is missing or invalid; `/parse` also returns it for non-`POST` requests.
 - `ambiguous-attachment`: the regular item has multiple PDFs; pass `attachmentKey`.
+- `collection-not-found`: the `collection` search filter matches no collection key or name in the library; list them with `/collections`.
 - `parse-result-not-found`: the target PDF has no usable parse result yet; parse it in Zotero first.
 - `section-not-found`: the section path does not match; run `granularity=headings` first to inspect exact paths.
 - `missing-query`: `granularity=search` was used without `q`.

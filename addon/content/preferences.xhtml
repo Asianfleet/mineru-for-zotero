@@ -21,6 +21,21 @@
     </hbox>
     <hbox align="center" style="gap: 6px">
       <label
+        for="zotero-prefpane-__addonRef__-online-api-timeout-minutes"
+        data-l10n-id="pref-online-api-timeout-minutes"
+      ></label>
+      <html:input
+        type="number"
+        min="1"
+        step="1"
+        id="zotero-prefpane-__addonRef__-online-api-timeout-minutes"
+        preference="onlineApiTimeoutMinutes"
+        style="width: 72px; text-align: left"
+      >
+      </html:input>
+    </hbox>
+    <hbox align="center" style="gap: 6px">
+      <label
         for="zotero-prefpane-__addonRef__-local-api-base-url"
         data-l10n-id="pref-local-api-base-url"
       ></label>
@@ -105,6 +120,12 @@
       data-l10n-id="pref-save-images"
       native="true"
       preference="saveImages"
+    />
+    <checkbox
+      id="zotero-prefpane-__addonRef__-status-tags"
+      data-l10n-id="pref-status-tags"
+      native="true"
+      preference="statusTags"
     />
     <vbox>
       <hbox align="center" style="gap: 6px; margin-top: 8px">

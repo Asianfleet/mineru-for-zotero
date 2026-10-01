@@ -408,6 +408,88 @@ describe("markdownQueryService", function () {
     assert.equal(response.candidates[0].item.key, "ITEM1");
   });
 
+  it("applies the limit after the parsedOnly filter", async function () {
+    const parents = [
+      fakeItem({ id: 2, key: "ITEM1", regular: true, attachments: [1] }),
+      fakeItem({ id: 4, key: "ITEM2", regular: true, attachments: [3] }),
+      fakeItem({ id: 6, key: "ITEM3", regular: true, attachments: [5] }),
+    ];
+    const pdfs = [
+      fakeItem({ id: 1, key: "PDF1", pdf: true, parentItemID: 2 }),
+      fakeItem({ id: 3, key: "PDF2", pdf: true, parentItemID: 4 }),
+      fakeItem({ id: 5, key: "PDF3", pdf: true, parentItemID: 6 }),
+    ];
+    const searchLimits: Array<number | undefined> = [];
+    const service = createMarkdownQueryService({
+      items: fakeItems([...parents, ...pdfs]),
+      storage: {
+        async readPreferredMarkdown() {
+          return "# Ready";
+        },
+        async readBoxes() {
+          return [];
+        },
+        async readParseStatus(ref) {
+          // Only the second and third items have a parse result.
+          return {
+            preciseReady: ref.key !== "PDF1",
+            liteReady: false,
+          };
+        },
+      },
+      // Like the real search, the item search honors the limit it is given.
+      searchItems: async (input) => {
+        searchLimits.push(input.limit);
+        return input.limit === undefined
+          ? parents
+          : parents.slice(0, input.limit);
+      },
+    });
+
+    const response = await service.searchByTitle({
+      libraryID: 1,
+      title: "Item",
+      parsedOnly: true,
+      limit: 1,
+    });
+
+    assert.deepEqual(
+      response.candidates.map((candidate) => candidate.item.key),
+      ["ITEM2"],
+    );
+    assert.deepEqual(searchLimits, [undefined]);
+  });
+
+  it("exports BibTeX once per item revision across requests", async function () {
+    const pdf = fakeItem({ id: 41, key: "BIBPDF", pdf: true });
+    pdf.dateModified = "2026-01-01 00:00:00";
+    let exports = 0;
+    const service = createMarkdownQueryService({
+      ...fakeDeps({ markdown: "# Paper", items: [pdf] }),
+      exportBibTeX: async () => {
+        exports += 1;
+        return `@article{paper${exports}}`;
+      },
+    });
+    const query = { libraryID: 1, key: "BIBPDF", granularity: "headings" };
+
+    const first = (await service.queryMarkdown(
+      query as Parameters<typeof service.queryMarkdown>[0],
+    )) as { bibtex?: string };
+    const second = (await service.queryMarkdown(
+      query as Parameters<typeof service.queryMarkdown>[0],
+    )) as { bibtex?: string };
+    pdf.dateModified = "2026-02-01 00:00:00";
+    const afterEdit = (await service.queryMarkdown(
+      query as Parameters<typeof service.queryMarkdown>[0],
+    )) as { bibtex?: string };
+
+    assert.equal(first.bibtex, "@article{paper1}");
+    assert.equal(second.bibtex, "@article{paper1}");
+    assert.equal(afterEdit.bibtex, "@article{paper2}");
+    assert.equal(exports, 2);
+  });
+
   it("returns libraries through getLibraries", async function () {
     const service = createMarkdownQueryService({
       ...fakeDeps({ markdown: "# X" }),
@@ -463,6 +545,44 @@ describe("markdownQueryService", function () {
       libraryID: 1,
       tags: [{ tag: "ai", numItems: 10 }],
     });
+  });
+
+  it("reads tags from Zotero's asynchronous tag list without an injected reader", async function () {
+    const zotero = Zotero as unknown as {
+      Tags?: { getAll?: (libraryID: number) => Promise<unknown> };
+    };
+    const originalTags = zotero.Tags;
+    const originalGetAll = originalTags?.getAll;
+    const tagsApi = originalTags ?? {};
+    zotero.Tags = tagsApi;
+    tagsApi.getAll = async (libraryID) => {
+      assert.equal(libraryID, 1);
+      // Zotero lists a tag once per type (manual and automatic).
+      return [
+        { tag: "ai", type: 0 },
+        { tag: "ml", type: 0 },
+        { tag: "ai", type: 1 },
+      ];
+    };
+
+    try {
+      const service = createMarkdownQueryService(fakeDeps({ markdown: "# X" }));
+
+      assert.deepEqual(await service.getTags({ libraryID: 1 }), {
+        libraryID: 1,
+        tags: [{ tag: "ai" }, { tag: "ml" }],
+      });
+      assert.deepEqual(await service.getTags({ libraryID: 1, limit: 1 }), {
+        libraryID: 1,
+        tags: [{ tag: "ai" }],
+      });
+    } finally {
+      if (originalTags) {
+        originalTags.getAll = originalGetAll;
+      } else {
+        delete zotero.Tags;
+      }
+    }
   });
 });
 

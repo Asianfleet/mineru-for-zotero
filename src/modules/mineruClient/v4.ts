@@ -98,28 +98,7 @@ export function createV4MinerUClient(
     uploadCandidates.push((url, body) => fetchLikeUpload(url, body));
     uploadCandidates.push((url, body) => xhrUploadBinary(url, body));
   }
-  const uploadBinary = async (
-    url: string,
-    body: Uint8Array,
-  ): Promise<Response> => {
-    let lastError: unknown;
-    for (const candidate of uploadCandidates) {
-      try {
-        const response = await candidate(url, body);
-        if (response.ok) {
-          return response;
-        }
-        lastError = new MinerUTaskError(
-          `MinerU v4 upload failed with status ${response.status}`,
-        );
-      } catch (error) {
-        lastError = error;
-      }
-    }
-    throw lastError instanceof Error
-      ? lastError
-      : new MinerUTaskError("MinerU v4 upload failed");
-  };
+  const uploadBinary = createFallbackUpload(uploadCandidates);
   const downloadBinary =
     options.downloadBinary ??
     (options.fetch
@@ -262,6 +241,44 @@ export function createV4MinerUClient(
       }
       return { kind: "precise", rawResult, markdown, images };
     },
+  };
+}
+
+type UploadTransport = (url: string, body: Uint8Array) => Promise<Response>;
+
+/**
+ * Upload through the first transport that gets an answer from the server.
+ *
+ * The next transport is tried only when one throws (a sandbox cross-origin or
+ * network failure) or answers 5xx (Zotero.HTTP reports a dropped connection
+ * as a synthetic 500). A 4xx answer such as an expired signature or a file
+ * that is too large is final: sending the whole PDF again through another
+ * transport would only repeat the rejection. The final response is returned
+ * so the caller can report its real status.
+ */
+export function createFallbackUpload(
+  transports: UploadTransport[],
+): UploadTransport {
+  return async (url, body) => {
+    let lastResponse: Response | undefined;
+    let lastError: unknown;
+    for (const transport of transports) {
+      try {
+        const response = await transport(url, body);
+        if (response.ok || (response.status >= 400 && response.status < 500)) {
+          return response;
+        }
+        lastResponse = response;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (lastResponse) {
+      return lastResponse;
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new MinerUTaskError("MinerU v4 upload failed");
   };
 }
 

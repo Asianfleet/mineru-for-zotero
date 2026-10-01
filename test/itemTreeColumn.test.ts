@@ -7,6 +7,7 @@ import {
   getMinerUParseColumnToken,
   markAttachmentParseReady,
   markAttachmentParseRunning,
+  refreshAttachmentParseStatus,
   registerItemTreeColumn,
   renderMinerUParseCell,
   unregisterItemTreeColumn,
@@ -410,6 +411,59 @@ describe("itemTreeColumn", function () {
 
     assert.deepEqual(getAddonData().itemTreeColumn?.statuses.get("12-ABC123"), {
       precise: "ready",
+      lite: "none",
+    });
+  });
+
+  it("drops the column badges of an attachment whose result was deleted", async function () {
+    ensureAddonRuntime();
+    let refreshed = 0;
+    getAddonData().itemTreeColumn = {
+      statuses: new Map([["12-ABC123", { precise: "ready", lite: "ready" }]]),
+    };
+
+    await refreshAttachmentParseStatus(
+      { libraryID: 12, key: "ABC123" },
+      {
+        itemTreeManager: fakeItemTreeManager(() => {
+          refreshed += 1;
+        }),
+        storage: {
+          ...fakeStorage(),
+          readParseStatus: async () => ({
+            preciseReady: false,
+            liteReady: false,
+          }),
+        },
+      },
+    );
+
+    assert.isFalse(getAddonData().itemTreeColumn?.statuses.has("12-ABC123"));
+    assert.equal(refreshed, 1);
+  });
+
+  it("keeps a running badge when refreshing an attachment from disk", async function () {
+    ensureAddonRuntime();
+    getAddonData().itemTreeColumn = {
+      statuses: new Map([["12-ABC123", { precise: "running", lite: "ready" }]]),
+    };
+
+    await refreshAttachmentParseStatus(
+      { libraryID: 12, key: "ABC123" },
+      {
+        itemTreeManager: fakeItemTreeManager(),
+        storage: {
+          ...fakeStorage(),
+          readParseStatus: async () => ({
+            preciseReady: false,
+            liteReady: false,
+          }),
+        },
+      },
+    );
+
+    assert.deepEqual(getAddonData().itemTreeColumn?.statuses.get("12-ABC123"), {
+      precise: "running",
       lite: "none",
     });
   });

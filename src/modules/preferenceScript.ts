@@ -3,15 +3,19 @@ import {
   getMarkdownApiEnabled,
   getSaveImages,
   getLocalApiTimeoutMinutes,
+  getOnlineApiTimeoutMinutes,
   getParseTier,
   getParseSource,
   setMarkdownApiEnabled,
   setApiKey,
   setLocalApiBaseURL,
   setLocalApiTimeoutMinutes,
+  setOnlineApiTimeoutMinutes,
   setParseTier,
   setParseSource,
   setSaveImages,
+  getStatusTagsEnabled,
+  setStatusTagsEnabled,
   getSyncFolder,
   setSyncFolder,
   getAutoParsePageLimit,
@@ -20,8 +24,7 @@ import {
   type ParseTier,
 } from "../utils/prefs";
 import { createStorage } from "./storage";
-
-const STORAGE_ROOT = "ProfD/mineru-copy";
+import { getMinerUStorageRoot } from "./storageLocation";
 
 interface ZoteroURLLauncher {
   launchURL(url: string): void;
@@ -67,27 +70,40 @@ export async function registerPrefsScripts(_window: Window) {
 
   const syncAllButton = document.getElementById(`${config.addonRef}-sync-all`);
   if (syncAllButton) {
+    // Labels are formatted asynchronously; only the latest request may land,
+    // so a late progress label never overwrites the final one.
+    let labelRequest = 0;
+    const setSyncLabel = (
+      id: string,
+      args?: Record<string, string | number>,
+    ): Promise<void> => {
+      const request = ++labelRequest;
+      return formatL10n(_window, id, args).then((label) => {
+        if (request === labelRequest) {
+          syncAllButton.textContent = label;
+        }
+      });
+    };
     syncAllButton.addEventListener("click", async () => {
       syncAllButton.setAttribute("disabled", "true");
-      syncAllButton.textContent = "Syncing...";
+      void setSyncLabel("pref-sync-all-syncing");
       try {
         const addonObj = (Zotero as any).MinerUForZotero;
         if (addonObj?.api?.syncAllToAgentFolder) {
           const syncedCount = await addonObj.api.syncAllToAgentFolder(
             storage,
             (synced: number, total: number) => {
-              syncAllButton.textContent = `Syncing... (${synced}/${total})`;
+              void setSyncLabel("pref-sync-all-progress", { synced, total });
             },
           );
-          syncAllButton.textContent = `Done (${syncedCount})`;
+          await setSyncLabel("pref-sync-all-done", { count: syncedCount });
         }
       } catch (e) {
-        syncAllButton.textContent = "Error";
+        await setSyncLabel("pref-sync-all-error");
       }
       setTimeout(() => {
         syncAllButton.removeAttribute("disabled");
-        // Reset label to l10n default will require reloading the pane or just hardcoding it
-        // We can just leave it as Done
+        void setSyncLabel("pref-sync-all-button");
       }, 3000);
     });
   }
@@ -104,9 +120,7 @@ export async function registerPrefsScripts(_window: Window) {
   );
 }
 
-export function getMinerUStorageRoot(): string {
-  return STORAGE_ROOT;
-}
+export { getMinerUStorageRoot };
 
 /**
  * Explicitly synchronize preferences.xhtml control values to prevent stale preferences before Zotero restarts.
@@ -138,6 +152,12 @@ export function registerPreferenceValueSync(document: Document): void {
   );
   registerNumberPreferenceSync(
     document,
+    `zotero-prefpane-${config.addonRef}-online-api-timeout-minutes`,
+    getOnlineApiTimeoutMinutes,
+    setOnlineApiTimeoutMinutes,
+  );
+  registerNumberPreferenceSync(
+    document,
     `zotero-prefpane-${config.addonRef}-local-api-timeout-minutes`,
     getLocalApiTimeoutMinutes,
     setLocalApiTimeoutMinutes,
@@ -153,6 +173,12 @@ export function registerPreferenceValueSync(document: Document): void {
     `zotero-prefpane-${config.addonRef}-save-images`,
     getSaveImages,
     setSaveImages,
+  );
+  registerCheckboxPreferenceSync(
+    document,
+    `zotero-prefpane-${config.addonRef}-status-tags`,
+    getStatusTagsEnabled,
+    setStatusTagsEnabled,
   );
   registerTextPreferenceSync(
     document,
@@ -320,6 +346,23 @@ async function updateParsedCount(
   }
 }
 
+/** English text used when Fluent cannot format a preferences string. */
+const L10N_FALLBACKS: Record<string, string> = {
+  "pref-data-folder-path": "Data folder: { $path }",
+  "pref-parsed-count": "Parsed PDFs: { $count }",
+  "pref-parsed-count-error": "Parsed PDFs: failed to read",
+  "pref-sync-all-button": "Sync All Results Now",
+  "pref-sync-all-syncing": "Syncing...",
+  "pref-sync-all-progress": "Syncing... ({ $synced }/{ $total })",
+  "pref-sync-all-done": "Done ({ $count })",
+  "pref-sync-all-error": "Sync failed",
+};
+
+/**
+ * Format a preferences string. `id` is the key as written in
+ * `preferences.ftl`; the build prefixes every message id with the addon ref,
+ * so the lookup uses the prefixed id.
+ */
 async function formatL10n(
   _window: Window,
   id: string,
@@ -327,19 +370,20 @@ async function formatL10n(
 ): Promise<string> {
   const l10n = _window.document.l10n;
   if (l10n?.formatValue) {
-    const value = await l10n.formatValue(id, args);
-    if (value) {
-      return value;
+    try {
+      const value = await l10n.formatValue(`${config.addonRef}-${id}`, args);
+      if (value) {
+        return value;
+      }
+    } catch {
+      // Fall back to the English text below.
     }
   }
 
-  if (id === "pref-data-folder-path") {
-    return `Data folder: ${args?.path ?? ""}`;
-  }
-  if (id === "pref-parsed-count") {
-    return `Parsed PDFs: ${args?.count ?? 0}`;
-  }
-  return "Parsed PDFs: failed to read";
+  return (L10N_FALLBACKS[id] ?? id).replace(
+    /\{\s*\$(\w+)\s*\}/g,
+    (_, name: string) => String(args?.[name] ?? ""),
+  );
 }
 
 function setText(document: Document, id: string, value: string): void {

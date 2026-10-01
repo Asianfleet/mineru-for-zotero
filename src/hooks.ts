@@ -22,6 +22,7 @@ import {
 } from "./modules/parseManager";
 import { getPdfPageCount } from "./modules/pdfPageCount";
 import { taskStore } from "./modules/taskStore";
+import { migrateResultStorage } from "./modules/storageLocation";
 
 let notifierID: string | null = null;
 
@@ -33,6 +34,18 @@ async function onStartup() {
   ]);
 
   initLocale();
+
+  // Before anything reads parse results (item column, query API, reader).
+  try {
+    const moved = await migrateResultStorage({
+      log: (...args) => ztoolkit.log(...args),
+    });
+    if (moved > 0) {
+      ztoolkit.log(`Moved ${moved} MinerU results into the data directory`);
+    }
+  } catch (error) {
+    ztoolkit.log("MinerU result migration failed", error);
+  }
 
   registerPreferencePane();
   registerMarkdownQueryApiEndpoint();

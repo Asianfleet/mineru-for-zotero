@@ -1727,6 +1727,45 @@ describe("readerOverlay", function () {
     });
   });
 
+  it("reads every page position before moving any layer", function () {
+    const { doc, root, events } = createPositioningFixture(3);
+
+    positionPageLayers(doc, root);
+
+    const firstWrite = events.findIndex((event) => event.startsWith("write"));
+    const lastRead = events
+      .map((event) => event.startsWith("read"))
+      .lastIndexOf(true);
+    assert.equal(events.filter((event) => event.startsWith("read")).length, 3);
+    assert.isAbove(firstWrite, lastRead);
+  });
+
+  it("reuses page lookups and skips layers that did not move", function () {
+    const { doc, root, events, queries } = createPositioningFixture(3);
+
+    positionPageLayers(doc, root);
+    const queriesAfterFirstPass = queries.count;
+    events.length = 0;
+    positionPageLayers(doc, root);
+
+    assert.equal(queries.count, queriesAfterFirstPass);
+    assert.isEmpty(events.filter((event) => event.startsWith("write")));
+  });
+
+  it("moves a layer again when its page moved", function () {
+    const { doc, root, events, pages } = createPositioningFixture(2);
+
+    positionPageLayers(doc, root);
+    pages[1].top = 900;
+    events.length = 0;
+    positionPageLayers(doc, root);
+
+    assert.deepEqual(
+      events.filter((event) => event.startsWith("write")),
+      ["write 2"],
+    );
+  });
+
   it("forwards wheel events over overlay boxes to the reader scroll container", function () {
     let wheelListener: ((event: WheelEvent) => void) | null = null;
     const target = {} as Node;
@@ -4102,4 +4141,52 @@ function dispatchWindowEvent(
       );
     }
   }
+}
+
+/**
+ * Overlay root with one layer per page plus a document whose page elements log
+ * position reads, so tests can check the read/write order of positioning.
+ */
+function createPositioningFixture(pageCount: number) {
+  const events: string[] = [];
+  const queries = { count: 0 };
+  const pages = Array.from({ length: pageCount }, (_, index) => ({
+    top: index * 1000,
+  }));
+  const pageElements = pages.map((page, index) => ({
+    isConnected: true,
+    getBoundingClientRect() {
+      events.push(`read ${index + 1}`);
+      return { left: 10, top: page.top, width: 600, height: 800 };
+    },
+  }));
+  const layers = pages.map((_, index) => {
+    const style: Record<string, string> = {};
+    return {
+      hidden: false,
+      dataset: { pageNumber: String(index + 1) },
+      style: new Proxy(style, {
+        set(target, property, value) {
+          if (property === "top") {
+            events.push(`write ${index + 1}`);
+          }
+          target[String(property)] = value;
+          return true;
+        },
+      }),
+    };
+  });
+  const doc = {
+    querySelector(selector: string) {
+      queries.count += 1;
+      const match = /^\.pdfViewer \.page\[data-page-number="(\d+)"\]$/.exec(
+        selector,
+      );
+      return match ? (pageElements[Number(match[1]) - 1] ?? null) : null;
+    },
+  } as unknown as Document;
+  const root = {
+    querySelectorAll: () => layers,
+  } as unknown as HTMLDivElement;
+  return { doc, root, events, queries, pages };
 }

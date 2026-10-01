@@ -8,15 +8,19 @@ import {
   getMarkdownApiEnabled,
   getLocalApiBaseURL,
   getLocalApiTimeoutMinutes,
+  getOnlineApiTimeoutMinutes,
   getParseTier,
   getParseSource,
   getSaveImages,
+  getStatusTagsEnabled,
   setMarkdownApiEnabled,
   setLocalApiBaseURL,
   setLocalApiTimeoutMinutes,
+  setOnlineApiTimeoutMinutes,
   setParseTier,
   setParseSource,
   setSaveImages,
+  setStatusTagsEnabled,
 } from "../src/utils/prefs";
 
 describe("preferenceScript", function () {
@@ -26,12 +30,14 @@ describe("preferenceScript", function () {
     assertIncreasingIndexes(preferences, [
       'data-l10n-id="mineruForZotero-pref-api-service-title"',
       'id="zotero-prefpane-mineruForZotero-api-key"',
+      'id="zotero-prefpane-mineruForZotero-online-api-timeout-minutes"',
       'id="zotero-prefpane-mineruForZotero-local-api-base-url"',
       'id="zotero-prefpane-mineruForZotero-local-api-timeout-minutes"',
       'id="zotero-prefpane-mineruForZotero-parse-source"',
       'id="zotero-prefpane-mineruForZotero-parse-tier"',
       'data-l10n-id="mineruForZotero-pref-data-storage-title"',
       'id="zotero-prefpane-mineruForZotero-save-images"',
+      'id="zotero-prefpane-mineruForZotero-status-tags"',
       'id="mineruForZotero-open-data-folder"',
       'data-l10n-id="mineruForZotero-pref-about-title"',
     ]);
@@ -93,6 +99,27 @@ describe("preferenceScript", function () {
       assert.isFalse(getSaveImages());
     } finally {
       setSaveImages(true);
+    }
+  });
+
+  it("initializes and persists the status-tags checkbox", function () {
+    const statusTags = fakePreferenceElement("true", "", "checkbox");
+    const document = fakePreferenceDocument({
+      "zotero-prefpane-mineruForZotero-status-tags": statusTags,
+    });
+
+    try {
+      setStatusTagsEnabled(true);
+      registerPreferenceValueSync(document);
+
+      assert.isTrue(statusTags.checked);
+
+      statusTags.checked = false;
+      statusTags.emit("command");
+
+      assert.isFalse(getStatusTagsEnabled());
+    } finally {
+      setStatusTagsEnabled(true);
     }
   });
 
@@ -215,6 +242,64 @@ describe("preferenceScript", function () {
     }
   });
 
+  it("formats preference labels through the prefixed Fluent ids", async function () {
+    const zotero = Zotero as any;
+    const originalAddon = zotero.MinerUForZotero;
+    const syncAll = fakePreferenceElement("");
+    const dataFolder = fakePreferenceElement("");
+    const document = fakePreferenceDocument({
+      "mineruForZotero-sync-all": syncAll,
+      "mineruForZotero-data-folder-path": dataFolder,
+    });
+    zotero.MinerUForZotero = {
+      api: {
+        syncAllToAgentFolder: async (
+          _storage: unknown,
+          onProgress: (synced: number, total: number) => void,
+        ) => {
+          onProgress(1, 2);
+          onProgress(2, 2);
+          return 2;
+        },
+      },
+    };
+    try {
+      await registerPrefsScripts(fakePreferenceWindow(document));
+      syncAll.emit("click");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    } finally {
+      zotero.MinerUForZotero = originalAddon;
+    }
+
+    assert.match(
+      dataFolder.textContent,
+      /^mineruForZotero-pref-data-folder-path /,
+    );
+    assert.equal(
+      syncAll.textContent,
+      'mineruForZotero-pref-sync-all-done {"count":2}',
+    );
+  });
+
+  it("persists online API timeout changes from the preferences UI", function () {
+    const timeout = fakePreferenceElement("6", "", "number");
+    const document = fakePreferenceDocument({
+      "zotero-prefpane-mineruForZotero-online-api-timeout-minutes": timeout,
+    });
+
+    try {
+      setOnlineApiTimeoutMinutes(6);
+      registerPreferenceValueSync(document);
+
+      timeout.value = "20";
+      timeout.emit("change");
+
+      assert.equal(getOnlineApiTimeoutMinutes(), 20);
+    } finally {
+      setOnlineApiTimeoutMinutes(6);
+    }
+  });
+
   it("persists local API timeout changes from the preferences UI immediately", function () {
     const timeout = fakePreferenceElement("45", "", "number");
     const document = fakePreferenceDocument({
@@ -244,6 +329,7 @@ interface FakePreferenceElement {
   addEventListener(type: string, listener: EventListener): void;
   emit(type: string): void;
   getAttribute(name: string): string | null;
+  removeAttribute(name: string): void;
   setAttribute(name: string, value: string): void;
 }
 
@@ -274,6 +360,9 @@ function fakePreferenceElement(
     getAttribute(name) {
       return attributes.get(name) ?? null;
     },
+    removeAttribute(name) {
+      attributes.delete(name);
+    },
     setAttribute(name, value) {
       attributes.set(name, value);
       if (name === "value") {
@@ -296,19 +385,13 @@ function fakePreferenceDocument(
   } as unknown as Document;
 }
 
+/** A window whose Fluent echoes the requested id and arguments. */
 function fakePreferenceWindow(document: Document): Window {
   return {
     document: Object.assign(document, {
       l10n: {
-        formatValue: async (id: string) => {
-          if (id === "pref-data-folder-path") {
-            return "Data folder: ProfD/mineru-copy";
-          }
-          if (id === "pref-parsed-count") {
-            return "Parsed PDFs: 0";
-          }
-          return "Parsed PDFs: failed to read";
-        },
+        formatValue: async (id: string, args?: Record<string, unknown>) =>
+          args ? `${id} ${JSON.stringify(args)}` : id,
       },
     }),
   } as unknown as Window;

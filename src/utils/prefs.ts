@@ -5,6 +5,7 @@ type PluginPrefsMap = _ZoteroTypes.Prefs["PluginPrefsMap"];
 const PREFS_PREFIX = config.prefsPrefix;
 const DEFAULT_LOCAL_API_BASE_URL = "http://127.0.0.1:8000";
 const DEFAULT_LOCAL_API_TIMEOUT_MINUTES = 30;
+const DEFAULT_ONLINE_API_TIMEOUT_MINUTES = 6;
 const DEFAULT_SYNC_FOLDER = "";
 const DEFAULT_AUTO_PARSE_PAGE_LIMIT = 0;
 
@@ -112,6 +113,21 @@ export function setLocalApiTimeoutMinutes(value: number) {
 }
 
 /**
+ * Read how long to wait for the official MinerU cloud to finish a task, in
+ * minutes. A parse that runs out of time can be resumed.
+ */
+export function getOnlineApiTimeoutMinutes(): number {
+  const value = getPref("onlineApiTimeoutMinutes");
+  return typeof value === "number" && Number.isFinite(value) && value >= 1
+    ? Math.floor(value)
+    : DEFAULT_ONLINE_API_TIMEOUT_MINUTES;
+}
+
+export function setOnlineApiTimeoutMinutes(value: number) {
+  return setPref("onlineApiTimeoutMinutes", value);
+}
+
+/**
  * Read whether the Markdown query API is enabled.
  */
 export function getMarkdownApiEnabled(): boolean {
@@ -132,6 +148,19 @@ export function getSaveImages(): boolean {
 
 export function setSaveImages(value: boolean) {
   return setPref("saveImages", value);
+}
+
+/**
+ * Read whether MinerU status tags ("MinerU: Precise ✅", ...) are written to
+ * attachments. They sync to zotero.org and into shared group libraries, so
+ * users can turn them off; the item tree column shows the status either way.
+ */
+export function getStatusTagsEnabled(): boolean {
+  return getPref("statusTags") !== false;
+}
+
+export function setStatusTagsEnabled(value: boolean) {
+  return setPref("statusTags", value);
 }
 
 export function getSyncFolder(): string {

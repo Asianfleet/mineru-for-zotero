@@ -3,21 +3,24 @@ import {
   clearTaskCancelled,
   createProgressWindowTexts,
   createParseManager,
+  isFileReadable,
   markTaskCancelled,
   resolveReparseChoiceFromPromptButton,
   type ParseManagerDependencies,
 } from "../src/modules/parseManager";
 import {
+  createV1MinerUClient,
   MinerUFileAccessError,
   MinerURequestError,
 } from "../src/modules/mineruClient";
 import { normalizedBoxes } from "./domainFixtures";
+import { createStorage } from "../src/modules/storage";
 import { taskStore } from "../src/modules/taskStore";
 
 describe("parseManager", function () {
   afterEach(async function () {
     // Cancellation state is process-wide; keep the suite order-independent.
-    for (const id of ["7201", "7202", "7203", "7204", "7205", "7206"]) {
+    for (const id of ["7116", "7201", "7202", "7203", "7204", "7205", "7206"]) {
       clearTaskCancelled(id);
     }
     // The task store is a process-wide singleton; drop finished records so the
@@ -954,6 +957,81 @@ describe("parseManager", function () {
     });
   });
 
+  it("tags the attachment while it parses and when it succeeds", async function () {
+    const messages: string[] = [];
+    const tags: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      client: successfulPreciseClient(),
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7118, tags }));
+
+    assert.deepEqual(tags, [
+      "-MinerU: Failed ❌",
+      "+MinerU: Processing ⏳",
+      "-MinerU: Processing ⏳",
+      "-MinerU: Failed ❌",
+      "-MinerU: Lite ✅",
+      "+MinerU: Precise ✅",
+    ]);
+  });
+
+  it("writes no status tags when they are turned off", async function () {
+    const messages: string[] = [];
+    const tags: string[] = [];
+    const succeeding = createParseManager({
+      ...baseDependencies(messages),
+      getStatusTagsEnabled: () => false,
+      client: successfulPreciseClient(),
+    });
+    const failing = createParseManager({
+      ...baseDependencies(messages),
+      getStatusTagsEnabled: () => false,
+      client: {
+        ...successfulPreciseClient(),
+        submitPdf: async () => {
+          throw new MinerURequestError("upload", 403, "denied");
+        },
+      },
+    });
+
+    await succeeding.parseAttachment(pdfAttachment({ id: 7119, tags }));
+    await failing.parseAttachment(pdfAttachment({ id: 7120, tags }));
+
+    assert.isEmpty(tags);
+    assert.deepEqual(messages, ["parse-error-upload"]);
+  });
+
+  it("fails the task and clears the processing tag when the PDF read fails during submit", async function () {
+    const messages: string[] = [];
+    const tags: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      client: {
+        submitPdf: async () => {
+          throw new MinerUFileAccessError("C:/tmp/a.pdf", "EACCES");
+        },
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7109, tags }));
+
+    const task = taskStore.getTask("7109");
+    assert.equal(task?.status, "failed");
+    assert.notInclude(task?.error ?? "", "a.pdf");
+    assert.include(tags, "-MinerU: Processing ⏳");
+    assert.include(tags, "+MinerU: Failed ❌");
+    assert.deepEqual(messages, ["parse-error-file-access"]);
+  });
+
+  it("treats a path IOUtils cannot parse as an unreadable file", async function () {
+    // IOUtils rejects relative paths instead of answering false.
+    assert.isFalse(await isFileReadable("relative/a.pdf"));
+  });
+
   it("does not report unexpected submit errors as file access failures", async function () {
     const messages: string[] = [];
     const manager = createParseManager({
@@ -1043,6 +1121,79 @@ describe("parseManager", function () {
     assert.deepEqual(events, ["precise:running", "precise:clear"]);
   });
 
+  it("clears the processing tag and stores readable text when lite Markdown is empty", async function () {
+    const messages: string[] = [];
+    const tags: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      client: {
+        submitPdf: async () => ({ taskID: "task-empty-lite" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({ kind: "lite", markdown: "  " }),
+      },
+    });
+
+    await withTestLocale(() =>
+      manager.parseAttachment(pdfAttachment({ id: 7110, tags })),
+    );
+
+    const task = taskStore.getTask("7110");
+    assert.equal(task?.status, "failed");
+    assert.equal(task?.error, "Lite parse returned no Markdown");
+    assert.include(tags, "-MinerU: Processing ⏳");
+    assert.include(tags, "+MinerU: Failed ❌");
+    assert.deepEqual(messages, ["parse-error-empty-lite-markdown"]);
+  });
+
+  it("keeps the tags of an earlier result when lite Markdown comes back empty", async function () {
+    const messages: string[] = [];
+    const tags: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      storage: { ...baseStorage(), hasLiteResult: async () => true },
+      client: {
+        submitPdf: async () => ({ taskID: "task-empty-lite" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({ kind: "lite", markdown: "" }),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7111, tags }));
+
+    // Only the running markers change; the earlier result's tags stay.
+    assert.deepEqual(tags, [
+      "-MinerU: Failed ❌",
+      "+MinerU: Processing ⏳",
+      "-MinerU: Processing ⏳",
+    ]);
+    assert.deepEqual(messages, ["parse-error-overwrite"]);
+    assert.equal(taskStore.getTask("7111")?.status, "failed");
+  });
+
+  it("stores readable text when MinerU JSON contains no boxes", async function () {
+    const messages: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      client: {
+        submitPdf: async () => ({ taskID: "task-empty" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({
+          kind: "precise",
+          rawResult: { content_list: [{ type: "text" }] },
+          markdown: "# No boxes",
+        }),
+      },
+    });
+
+    await withTestLocale(() =>
+      manager.parseAttachment(pdfAttachment({ id: 7112 })),
+    );
+
+    const task = taskStore.getTask("7112");
+    assert.equal(task?.status, "failed");
+    assert.equal(task?.error, "The parse result does not contain box data");
+  });
+
   it("passes downloaded images to storage when the preference is enabled", async function () {
     const messages: string[] = [];
     let savedImages: Array<{ path: string; bytes: Uint8Array }> | undefined;
@@ -1125,16 +1276,17 @@ describe("parseManager", function () {
     assert.isUndefined(savedImages);
   });
 
-  it("replaces an existing ready result with a failed result when reparse has no boxes", async function () {
+  it("keeps an existing ready result when a reparse returns no boxes", async function () {
     const messages: string[] = [];
-    let failedRawResult: unknown;
+    const tags: string[] = [];
+    let failedResultWritten = false;
     const manager = createParseManager({
       ...baseDependencies(messages),
       storage: {
         ...baseStorage(),
         hasReadyResult: async () => true,
-        writeFailedResult: async (input) => {
-          failedRawResult = input.rawResult;
+        writeFailedResult: async () => {
+          failedResultWritten = true;
         },
       },
       confirmReparse: async () => "reparse",
@@ -1149,10 +1301,49 @@ describe("parseManager", function () {
       },
     });
 
-    await manager.parseAttachment(pdfAttachment());
+    await manager.parseAttachment(pdfAttachment({ tags }));
 
-    assert.deepEqual(failedRawResult, { content_list: [{ type: "text" }] });
-    assert.include(messages, "parse-error-empty-boxes");
+    assert.isFalse(failedResultWritten);
+    assert.deepEqual(messages, ["parse-error-overwrite"]);
+    assert.include(tags, "-MinerU: Processing ⏳");
+    assert.notInclude(tags, "-MinerU: Precise ✅");
+    assert.notInclude(tags, "+MinerU: Failed ❌");
+  });
+
+  it("leaves the stored result readable when a reparse returns no boxes", async function () {
+    const messages: string[] = [];
+    const root = PathUtils.join(
+      PathUtils.tempDir,
+      `mineru-reparse-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    );
+    const storage = createStorage(root);
+    let returnEmptyResult = false;
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      storage,
+      client: {
+        submitPdf: async () => ({ taskID: "task-reparse" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () =>
+          returnEmptyResult
+            ? { kind: "precise", rawResult: { content_list: [] }, markdown: "" }
+            : preciseResultFixture(),
+      },
+    });
+    const attachment = pdfAttachment({ id: 7108 });
+    const ref = { libraryID: 12, key: "ABC7108" };
+
+    try {
+      await manager.parseAttachment(attachment, { force: true });
+      returnEmptyResult = true;
+      await manager.parseAttachment(attachment, { force: true });
+
+      assert.isTrue(await storage.hasReadyResult(ref));
+      assert.equal(await storage.readPreferredMarkdown(ref), "A");
+      assert.deepEqual(messages, ["parse-error-overwrite"]);
+    } finally {
+      await IOUtils.remove(root, { recursive: true, ignoreAbsent: true });
+    }
   });
 
   it("keeps the existing result when overwrite storage fails", async function () {
@@ -1258,7 +1449,7 @@ describe("parseManager", function () {
       {
         client: {
           submitPdf: async () => {
-            throw new MinerURequestError("agent-upload", 403, "bad signature");
+            throw new MinerURequestError("submit", 422, "invalid page range");
           },
           pollTask: async () => ({ status: "succeeded" }),
           downloadResult: async () => ({ kind: "lite", markdown: "# Lite" }),
@@ -1305,6 +1496,83 @@ describe("parseManager", function () {
     }
   });
 
+  it("shows one notice for several failures in a batch", async function () {
+    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+      },
+      client: {
+        ...successfulPreciseClient(),
+        submitPdf: async () => {
+          throw new MinerURequestError("upload", 401, "invalid token");
+        },
+      },
+    });
+
+    await manager.parseAttachments([
+      pdfAttachment({ id: 7121, filePath: "C:/tmp/a.pdf" }),
+      pdfAttachment({ id: 7122, filePath: "C:/tmp/b.pdf" }),
+      pdfAttachment({ id: 7123, filePath: "C:/tmp/c.pdf" }),
+    ]);
+
+    assert.lengthOf(notices, 1);
+    assert.equal(notices[0].id, "parse-error-batch");
+    assert.include(notices[0].args, { count: "3", total: "3" });
+  });
+
+  it("keeps the own notice of a single failure in a batch", async function () {
+    const messages: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      client: {
+        ...successfulPreciseClient(),
+        submitPdf: async (filePath) => {
+          if (filePath.endsWith("b.pdf")) {
+            throw new MinerURequestError("upload", 403, "denied");
+          }
+          return { taskID: `task-${filePath}` };
+        },
+      },
+    });
+
+    await manager.parseAttachments([
+      pdfAttachment({ id: 7124, filePath: "C:/tmp/a.pdf" }),
+      pdfAttachment({ id: 7125, filePath: "C:/tmp/b.pdf" }),
+    ]);
+
+    assert.deepEqual(messages, ["parse-error-upload"]);
+  });
+
+  it("counts unreadable files in the batch notice", async function () {
+    const notices: Array<{ id: string; args?: Record<string, string> }> = [];
+    const manager = createParseManager({
+      ...baseDependencies([]),
+      showMessage: (id, args) => {
+        notices.push({ id, args });
+      },
+      isFileReadable: async (filePath) => !filePath.endsWith("missing.pdf"),
+      client: {
+        ...successfulPreciseClient(),
+        submitPdf: async () => {
+          throw new MinerURequestError("upload", 403, "denied");
+        },
+      },
+    });
+
+    await manager.parseAttachments([
+      pdfAttachment({ id: 7126, filePath: "C:/tmp/missing.pdf" }),
+      pdfAttachment({ id: 7127, filePath: "C:/tmp/b.pdf" }),
+    ]);
+
+    assert.deepEqual(
+      notices.map((notice) => notice.id),
+      ["parse-error-batch"],
+    );
+    assert.include(notices[0].args, { count: "2", total: "2" });
+  });
+
   it("reports failure notice when a batch task fails", async function () {
     const notices: Array<{ id: string; args?: Record<string, string> }> = [];
     const manager = createParseManager({
@@ -1344,7 +1612,7 @@ describe("parseManager", function () {
       getParseSource: () => "local",
       client: {
         submitPdf: async () => {
-          throw new MinerURequestError("local-health", 503, "offline");
+          throw new MinerURequestError("submit", 0, "connection refused");
         },
         pollTask: async () => ({ status: "succeeded" }),
         downloadResult: async () => ({ kind: "lite", markdown: "# Lite" }),
@@ -1373,7 +1641,7 @@ describe("parseManager", function () {
         pollTask: async () => {
           pollCount += 1;
           if (pollCount === 1) {
-            throw new MinerURequestError("local-poll", 0, "offline");
+            throw new MinerURequestError("poll", 0, "offline");
           }
           return { status: "succeeded" };
         },
@@ -1386,6 +1654,85 @@ describe("parseManager", function () {
     assert.equal(submitCount, 1);
     assert.equal(pollCount, 2);
     assert.isEmpty(messages);
+  });
+
+  it("retries dropped local polls through the real V1 client", async function () {
+    const messages: string[] = [];
+    const server = createLocalV1Server();
+    server.failJobPolls(
+      () => {
+        throw new TypeError("NetworkError when attempting to fetch resource.");
+      },
+      () => jsonResponse({ error: { message: "busy" } }, 503),
+    );
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getParseSource: () => "local",
+      getLocalApiTimeoutMinutes: () => 1,
+      client: server.client,
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7105 }));
+
+    assert.isEmpty(messages);
+    assert.deepEqual(server.submittedJobs, ["job-1"]);
+    assert.equal(taskStore.getTask("7105")?.status, "succeeded");
+  });
+
+  it("resubmits a task the local V1 server lost", async function () {
+    const messages: string[] = [];
+    const server = createLocalV1Server();
+    server.loseJob("job-1");
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getParseSource: () => "local",
+      getLocalApiTimeoutMinutes: () => 1,
+      client: server.client,
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7106 }));
+
+    assert.isEmpty(messages);
+    assert.deepEqual(server.submittedJobs, ["job-1", "job-2"]);
+    assert.equal(taskStore.getTask("7106")?.status, "succeeded");
+  });
+
+  it("resubmits only the lost chunk of a split PDF", async function () {
+    const messages: string[] = [];
+    const server = createLocalV1Server();
+    server.loseJob("job-2");
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getParseSource: () => "local",
+      getLocalApiTimeoutMinutes: () => 1,
+      getPdfPageCount: async () => 250,
+      client: server.client,
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7117 }));
+
+    assert.isEmpty(messages);
+    // Chunk 1 (job-1) succeeds, chunk 2 (job-2) is lost and resubmitted.
+    assert.deepEqual(server.submittedJobs, ["job-1", "job-2", "job-3"]);
+    assert.equal(taskStore.getTask("7117")?.status, "succeeded");
+  });
+
+  it("reports a local task as lost when the V1 server keeps forgetting it", async function () {
+    const messages: string[] = [];
+    const server = createLocalV1Server();
+    server.loseJob("job-1");
+    server.loseJob("job-2");
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getParseSource: () => "local",
+      getLocalApiTimeoutMinutes: () => 1,
+      client: server.client,
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7107 }));
+
+    assert.deepEqual(messages, ["parse-error-local-task-lost"]);
+    assert.equal(taskStore.getTask("7107")?.status, "failed");
   });
 
   it("retries transient online polling failures without resubmitting", async function () {
@@ -1461,11 +1808,7 @@ describe("parseManager", function () {
         },
         pollTask: async (taskID) => {
           if (taskID === "split-task-1" && shouldFailSecondChunk) {
-            throw new MinerURequestError(
-              "local-poll",
-              400,
-              "temporary test failure",
-            );
+            throw new MinerURequestError("poll", 400, "temporary test failure");
           }
           return { status: "succeeded" };
         },
@@ -1490,6 +1833,28 @@ describe("parseManager", function () {
     assert.lengthOf(submitted, 3);
     assert.deepEqual(pageRanges, ["1-200", "201-400", "401-401"]);
     assert.deepEqual(messages, ["parse-error-local-api-unavailable"]);
+  });
+
+  it("uses the configured online API timeout", async function () {
+    const messages: string[] = [];
+    let pollCount = 0;
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getOnlineApiTimeoutMinutes: () => 1,
+      client: {
+        ...successfulPreciseClient(),
+        pollTask: async () => {
+          pollCount += 1;
+          return { status: "running" };
+        },
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7128 }));
+
+    // One minute of 3 s poll intervals.
+    assert.equal(pollCount, 20);
+    assert.deepEqual(messages, ["parse-error-mineru"]);
   });
 
   it("uses the configured local API timeout for long-running local tasks", async function () {
@@ -1601,6 +1966,91 @@ describe("parseManager", function () {
     await manager.parseAttachment(attachment, { force: true });
 
     assert.equal(taskStore.getTask("7203")?.status, "succeeded");
+    assert.isEmpty(messages);
+  });
+
+  it("shares the concurrency limit between separate parse entry points", async function () {
+    const messages: string[] = [];
+    const submitted: string[] = [];
+    let firstPolling = false;
+    let releaseFirst: (() => void) | undefined;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const dependencies = (): ParseManagerDependencies => ({
+      ...baseDependencies(messages),
+      getMaxConcurrentRequests: () => 1,
+      client: {
+        submitPdf: async (filePath) => {
+          submitted.push(filePath);
+          return { taskID: `limit-task-${submitted.length}` };
+        },
+        pollTask: async (taskID) => {
+          if (taskID === "limit-task-1") {
+            firstPolling = true;
+            await firstGate;
+          }
+          return { status: "succeeded" };
+        },
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    // Separate managers stand in for separate entry points (for example a
+    // Retry in the Task Manager and a parse request from the HTTP API).
+    const first = createParseManager(dependencies()).parseAttachment(
+      pdfAttachment({ id: 7113, filePath: "C:/tmp/first.pdf" }),
+    );
+    const second = createParseManager(dependencies()).parseAttachment(
+      pdfAttachment({ id: 7114, filePath: "C:/tmp/second.pdf" }),
+    );
+    await waitUntil(() => firstPolling);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    assert.deepEqual(submitted, ["C:\\tmp\\first.pdf"]);
+    releaseFirst?.();
+    await Promise.all([first, second]);
+    assert.deepEqual(submitted, ["C:\\tmp\\first.pdf", "C:\\tmp\\second.pdf"]);
+    assert.isEmpty(messages);
+  });
+
+  it("does not start a parse that was stopped while it waited for a slot", async function () {
+    const messages: string[] = [];
+    const submitted: string[] = [];
+    let firstPolling = false;
+    let releaseFirst: (() => void) | undefined;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getMaxConcurrentRequests: () => 1,
+      client: {
+        submitPdf: async (filePath) => {
+          submitted.push(filePath);
+          return { taskID: "queued-task" };
+        },
+        pollTask: async () => {
+          firstPolling = true;
+          await firstGate;
+          return { status: "succeeded" };
+        },
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    const first = manager.parseAttachment(
+      pdfAttachment({ id: 7115, filePath: "C:/tmp/first.pdf" }),
+    );
+    const second = manager.parseAttachment(
+      pdfAttachment({ id: 7116, filePath: "C:/tmp/second.pdf" }),
+    );
+    await waitUntil(() => firstPolling);
+    markTaskCancelled("7116");
+    releaseFirst?.();
+    await Promise.all([first, second]);
+
+    assert.deepEqual(submitted, ["C:\\tmp\\first.pdf"]);
     assert.isEmpty(messages);
   });
 
@@ -1754,6 +2204,91 @@ function preciseResultFixture(): {
   };
 }
 
+/**
+ * In-memory MinerU V1 server behind the real local client, so the tests see
+ * the request stages the client actually reports ("poll", "download", ...).
+ */
+function createLocalV1Server() {
+  const submittedJobs: string[] = [];
+  const lostJobs = new Set<string>();
+  const pollFailures: Array<() => Response> = [];
+  const middleJson = preciseResultFixture().rawResult;
+  const client = createV1MinerUClient({
+    apiKey: "",
+    baseURL: "http://127.0.0.1:8000",
+    fetch: async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/v1/health")) {
+        return jsonResponse({
+          status: "ok",
+          features: {
+            sources: ["local"],
+            output_formats: ["markdown", "middle_json"],
+          },
+        });
+      }
+      if (method === "POST" && url.endsWith("/v1/parse/jobs")) {
+        const jobID = `job-${submittedJobs.length + 1}`;
+        submittedJobs.push(jobID);
+        return jsonResponse({ job_id: jobID }, 202);
+      }
+      const jobID = /\/v1\/parse\/jobs\/([^/]+)$/.exec(url)?.[1];
+      if (jobID) {
+        if (lostJobs.has(jobID)) {
+          return jsonResponse(
+            { error: { code: "job_not_found", message: "job not found" } },
+            404,
+          );
+        }
+        const failure = pollFailures.shift();
+        if (failure) {
+          return failure();
+        }
+        return jsonResponse({
+          job_id: jobID,
+          status: "completed",
+          files: [
+            {
+              status: "completed",
+              output_files: {
+                markdown: { file_id: "md" },
+                middle_json: { file_id: "mj" },
+              },
+            },
+          ],
+        });
+      }
+      if (url.endsWith("/v1/files/md/content")) {
+        return new Response("A", { status: 200 });
+      }
+      if (url.endsWith("/v1/files/mj/content")) {
+        return new Response(JSON.stringify(middleJson), { status: 200 });
+      }
+      throw new Error(`unexpected ${method} ${url}`);
+    },
+  });
+  return {
+    client,
+    submittedJobs,
+    /** Answer the next job status requests with these failures, in order. */
+    failJobPolls(...failures: Array<() => Response>) {
+      pollFailures.push(...failures);
+    },
+    /** Make the server answer 404 for this job, as after a restart. */
+    loseJob(jobID: string) {
+      lostJobs.add(jobID);
+    },
+  };
+}
+
+function jsonResponse(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 function baseDependencies(messages: string[]): ParseManagerDependencies {
   return {
     getApiKey: () => "secret-token",
@@ -1837,6 +2372,53 @@ function regularItem(attachments: Zotero.Item[]): Zotero.Item {
     isRegularItem: () => true,
     getBestAttachments: async () => attachments,
   } as unknown as Zotero.Item;
+}
+
+/** Wait (bounded) until a condition set by a running pipeline holds. */
+async function waitUntil(condition: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 500 && !condition(); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  assert.isTrue(condition(), "condition was not reached in time");
+}
+
+/**
+ * Run with a minimal Fluent stand-in so getString() returns English text for
+ * the parse failure messages instead of falling back to the message id.
+ */
+async function withTestLocale<T>(run: () => Promise<T>): Promise<T> {
+  const texts: Record<string, string> = {
+    "mineruForZotero-parse-error-empty-boxes":
+      "The parse result does not contain box data",
+    "mineruForZotero-parse-error-empty-lite-markdown":
+      "Lite parse returned no Markdown",
+  };
+  const globals = globalThis as typeof globalThis & { addon?: unknown };
+  const hadAddon = "addon" in globals;
+  const originalAddon = globals.addon;
+  globals.addon = {
+    data: {
+      locale: {
+        current: {
+          formatMessagesSync(messages: Array<{ id: string }>) {
+            return messages.map(({ id }) => ({
+              value: texts[id] ?? null,
+              attributes: null,
+            }));
+          },
+        },
+      },
+    },
+  };
+  try {
+    return await run();
+  } finally {
+    if (hadAddon) {
+      globals.addon = originalAddon;
+    } else {
+      Reflect.deleteProperty(globals, "addon");
+    }
+  }
 }
 
 function resolveProgressWindowTestMessage(

@@ -1,4 +1,5 @@
 import { AttachmentRef } from "./domain";
+import { joinNativePath } from "./mineruClient/path";
 import { removeTaskResumeDirectory } from "./taskResumeDirectory";
 
 export type TaskStatus =
@@ -50,7 +51,7 @@ class TaskManagerStore {
   private loadPromise: Promise<void>;
 
   constructor() {
-    this.dataFile = Zotero.DataDirectory.dir + "/mineru_tasks.json";
+    this.dataFile = getTaskStoreFilePath();
     this.loadPromise = this.load();
   }
 
@@ -179,9 +180,31 @@ class TaskManagerStore {
     return () => this.listeners.delete(listener);
   }
 
+  /**
+   * Call every listener. A failing listener (for example one left behind by a
+   * closed window) is logged and skipped: notify() runs before every save, so
+   * letting it throw would also drop the write to disk.
+   */
   private notify() {
-    this.listeners.forEach((l) => l());
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch (error) {
+        if (typeof ztoolkit !== "undefined") {
+          ztoolkit.log("MinerU task store listener failed", error);
+        }
+      }
+    }
   }
+}
+
+/**
+ * Native path of the persisted task list inside the Zotero data directory.
+ */
+export function getTaskStoreFilePath(
+  dataDirectory: string = Zotero.DataDirectory.dir,
+): string {
+  return joinNativePath(dataDirectory, "mineru_tasks.json");
 }
 
 export const taskStore = new TaskManagerStore();

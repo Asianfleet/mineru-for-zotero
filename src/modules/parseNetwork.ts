@@ -70,11 +70,15 @@ export async function waitForTask(
   log: (...args: unknown[]) => void = () => {},
   onRetry?: (attempt: number, waitMs: number) => Promise<void>,
 ): Promise<void> {
-  const maxPollCount = Math.ceil(timeoutMs / POLL_INTERVAL_MS);
+  // The timeout is a budget of waiting time. Every poll interval and every
+  // reconnect delay (up to 30 s) is charged in full, so a run of reconnects
+  // cannot stretch the timeout far beyond its setting. Counting loop turns
+  // instead charged a 30 s reconnect delay as one 3 s poll.
+  let remainingMs = timeoutMs;
   let retryAttempt = 0;
-  for (let count = 0; count < maxPollCount; count += 1) {
+  while (remainingMs > 0) {
     if (checkAbort?.()) {
-      throw new MinerUTaskError("MinerU task cancelled by user");
+      throw new MinerUTaskCancelledError();
     }
     try {
       const result = await client.pollTask(taskID);
@@ -86,6 +90,7 @@ export async function waitForTask(
         throw new MinerUTaskError(result.error || "MinerU task failed");
       }
       await delay(POLL_INTERVAL_MS);
+      remainingMs -= POLL_INTERVAL_MS;
     } catch (error) {
       if (!isRetryableNetworkError(error, source)) {
         throw error;
@@ -100,10 +105,22 @@ export async function waitForTask(
       });
       await onRetry?.(retryAttempt, waitMs);
       await delay(waitMs);
+      remainingMs -= waitMs;
     }
   }
   throw new MinerUTaskError("MinerU task timed out");
 }
+/**
+ * Request stages that only read remote state, as named by both the V1 (local)
+ * and V4 (online) clients, so repeating them cannot start a duplicate job.
+ */
+const IDEMPOTENT_REQUEST_STAGES = ["poll", "download"];
+
+/**
+ * Report whether a local MinerU server lost the task (HTTP 404 while polling or
+ * downloading), usually because it restarted. Only the affected chunk needs to
+ * be resubmitted.
+ */
 export function isTaskNotFoundError(
   error: unknown,
   source: ParseSource,
@@ -111,29 +128,27 @@ export function isTaskNotFoundError(
   return (
     source === "local" &&
     error instanceof MinerURequestError &&
-    ["local-poll", "local-download"].includes(error.stage) &&
+    IDEMPOTENT_REQUEST_STAGES.includes(error.stage) &&
     error.status === 404
   );
 }
+
+/**
+ * Report whether a failed request may be retried after a reconnect delay.
+ *
+ * Both sources share one rule: only transient failures (no response or HTTP
+ * 5xx) of idempotent polling and download requests are retried. Re-submitting
+ * or re-uploading could consume the daily quota twice or start a duplicate job.
+ */
 export function isRetryableNetworkError(
   error: unknown,
-  source: ParseSource,
+  _source: ParseSource,
 ): boolean {
   if (!(error instanceof MinerURequestError)) {
     return false;
   }
   const transient = error.status === 0 || error.status >= 500;
-  if (!transient) {
-    return false;
-  }
-  if (source === "local") {
-    return error.stage.startsWith("local-");
-  }
-  // Online: only retry idempotent GET stages (polling and downloads).
-  // Re-submitting or re-uploading could consume the daily quota twice.
-  return ["poll", "agent-poll", "download", "agent-download"].includes(
-    error.stage,
-  );
+  return transient && IDEMPOTENT_REQUEST_STAGES.includes(error.stage);
 }
 export function getReconnectDelayMs(attempt: number): number {
   return Math.min(30_000, 3_000 * 2 ** Math.min(attempt - 1, 3));

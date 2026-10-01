@@ -1,4 +1,4 @@
-import { toNativePath } from "./mineruClient/path";
+import { joinNativePath } from "./mineruClient/path";
 
 /**
  * Directory holding the per-chunk resume cache of an attachment.
@@ -7,10 +7,11 @@ import { toNativePath } from "./mineruClient/path";
  * it migrates together with the library. Kept in its own module so both the
  * task store and the resume layer can use it without an import cycle.
  */
-export function getTaskResumeDirectory(attachmentID: number): string {
-  return toNativePath(
-    `${Zotero.DataDirectory.dir}/mineru-resume/${attachmentID}`,
-  );
+export function getTaskResumeDirectory(
+  attachmentID: number,
+  dataDirectory: string = Zotero.DataDirectory.dir,
+): string {
+  return joinNativePath(dataDirectory, "mineru-resume", String(attachmentID));
 }
 
 /**
