@@ -150,13 +150,11 @@ export function createMarkdownQueryService(deps: {
         return { libraryID: input.libraryID, tags };
       }
       if (typeof Zotero !== "undefined" && (Zotero as any).Tags?.getAll) {
-        const rawTags = (Zotero as any).Tags.getAll(input.libraryID);
-        let tags: TagSummary[] = (Array.isArray(rawTags) ? rawTags : [])
-          .map((t: any) => ({
-            tag: typeof t === "string" ? t : String(t.tag || t.name || ""),
-            numItems: typeof t === "object" ? Number(t.numItems) : undefined,
-          }))
-          .filter((t: TagSummary) => Boolean(t.tag));
+        // Zotero.Tags.getAll is asynchronous (it queries the database).
+        const rawTags: unknown = await (Zotero as any).Tags.getAll(
+          input.libraryID,
+        );
+        let tags = summarizeTags(Array.isArray(rawTags) ? rawTags : []);
         if (input.limit !== undefined && input.limit > 0) {
           tags = tags.slice(0, input.limit);
         }
@@ -363,6 +361,35 @@ export function createMarkdownQueryService(deps: {
       );
     },
   };
+}
+
+/**
+ * Turn Zotero tag records into unique tag summaries.
+ *
+ * Zotero lists a tag once per type (manual and automatic), so names are
+ * de-duplicated. Item counts are only reported when Zotero provides them.
+ */
+function summarizeTags(rawTags: unknown[]): TagSummary[] {
+  const seen = new Set<string>();
+  const tags: TagSummary[] = [];
+  for (const raw of rawTags) {
+    const record =
+      raw && typeof raw === "object"
+        ? (raw as { tag?: unknown; name?: unknown; numItems?: unknown })
+        : undefined;
+    const tag = record
+      ? String(record.tag || record.name || "")
+      : typeof raw === "string"
+        ? raw
+        : "";
+    if (!tag || seen.has(tag)) {
+      continue;
+    }
+    seen.add(tag);
+    const numItems = Number(record?.numItems);
+    tags.push(Number.isFinite(numItems) ? { tag, numItems } : { tag });
+  }
+  return tags;
 }
 
 /**

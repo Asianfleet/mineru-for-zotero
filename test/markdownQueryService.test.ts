@@ -464,6 +464,44 @@ describe("markdownQueryService", function () {
       tags: [{ tag: "ai", numItems: 10 }],
     });
   });
+
+  it("reads tags from Zotero's asynchronous tag list without an injected reader", async function () {
+    const zotero = Zotero as unknown as {
+      Tags?: { getAll?: (libraryID: number) => Promise<unknown> };
+    };
+    const originalTags = zotero.Tags;
+    const originalGetAll = originalTags?.getAll;
+    const tagsApi = originalTags ?? {};
+    zotero.Tags = tagsApi;
+    tagsApi.getAll = async (libraryID) => {
+      assert.equal(libraryID, 1);
+      // Zotero lists a tag once per type (manual and automatic).
+      return [
+        { tag: "ai", type: 0 },
+        { tag: "ml", type: 0 },
+        { tag: "ai", type: 1 },
+      ];
+    };
+
+    try {
+      const service = createMarkdownQueryService(fakeDeps({ markdown: "# X" }));
+
+      assert.deepEqual(await service.getTags({ libraryID: 1 }), {
+        libraryID: 1,
+        tags: [{ tag: "ai" }, { tag: "ml" }],
+      });
+      assert.deepEqual(await service.getTags({ libraryID: 1, limit: 1 }), {
+        libraryID: 1,
+        tags: [{ tag: "ai" }],
+      });
+    } finally {
+      if (originalTags) {
+        originalTags.getAll = originalGetAll;
+      } else {
+        delete zotero.Tags;
+      }
+    }
+  });
 });
 
 function fakeDeps(input: {
