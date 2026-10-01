@@ -5,6 +5,7 @@ type PluginPrefsMap = _ZoteroTypes.Prefs["PluginPrefsMap"];
 const PREFS_PREFIX = config.prefsPrefix;
 const DEFAULT_LOCAL_API_BASE_URL = "http://127.0.0.1:8000";
 const DEFAULT_LOCAL_API_TIMEOUT_MINUTES = 30;
+const DEFAULT_ONLINE_API_TIMEOUT_MINUTES = 6;
 const DEFAULT_SYNC_FOLDER = "";
 const DEFAULT_AUTO_PARSE_PAGE_LIMIT = 0;
 
@@ -109,6 +110,21 @@ export function getLocalApiTimeoutMinutes(): number {
  */
 export function setLocalApiTimeoutMinutes(value: number) {
   return setPref("localApiTimeoutMinutes", value);
+}
+
+/**
+ * Read how long to wait for the official MinerU cloud to finish a task, in
+ * minutes. A parse that runs out of time can be resumed.
+ */
+export function getOnlineApiTimeoutMinutes(): number {
+  const value = getPref("onlineApiTimeoutMinutes");
+  return typeof value === "number" && Number.isFinite(value) && value >= 1
+    ? Math.floor(value)
+    : DEFAULT_ONLINE_API_TIMEOUT_MINUTES;
+}
+
+export function setOnlineApiTimeoutMinutes(value: number) {
+  return setPref("onlineApiTimeoutMinutes", value);
 }
 
 /**

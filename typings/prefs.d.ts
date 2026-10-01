@@ -17,6 +17,7 @@ declare namespace _ZoteroTypes {
       "syncFolder": string;
       "autoParsePageLimit": number;
       "statusTags": boolean;
+      "onlineApiTimeoutMinutes": number;
     };
   }
 }

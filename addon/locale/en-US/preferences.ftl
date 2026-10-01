@@ -16,6 +16,7 @@ pref-parse-tier-advanced =
     .label = Advanced
 pref-parse-tier-help = Quality tier for local parsing. The online API always uses Standard.
 pref-local-api-base-url = Local API URL
+pref-online-api-timeout-minutes = Online API timeout (minutes)
 pref-local-api-timeout-minutes = Local API timeout (minutes)
 pref-query-api-title = Local Query API
 pref-query-api-enabled =

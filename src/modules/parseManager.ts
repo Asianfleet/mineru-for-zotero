@@ -29,6 +29,7 @@ import { getString } from "../utils/locale";
 import {
   getApiKey,
   getLocalApiTimeoutMinutes,
+  getOnlineApiTimeoutMinutes,
   getLocalApiBaseURL,
   getParseTier,
   getParseSource,
@@ -66,7 +67,6 @@ import { createConcurrencyLimiter } from "../utils/concurrency";
 
 const CHUNK_PAGE_LIMIT = 200;
 const MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024;
-const DEFAULT_ONLINE_POLL_TIMEOUT_MS = 6 * 60 * 1000;
 const MAX_CONCURRENT_REQUESTS_DEFAULT = 3;
 const MAX_CONCURRENT_REQUESTS_CEILING = 10;
 export type ReparseChoice = "use-existing" | "reparse";
@@ -138,6 +138,7 @@ export interface ParseManagerDependencies {
   getParseTier?: () => ParseTier;
   getLocalApiBaseURL?: () => string;
   getLocalApiTimeoutMinutes?: () => number;
+  getOnlineApiTimeoutMinutes?: () => number;
   getSaveImages?: () => boolean;
   /** Whether MinerU status tags are written; defaults to true. */
   getStatusTagsEnabled?: () => boolean;
@@ -1388,6 +1389,7 @@ function createDefaultDependencies(): ParseManagerDependencies {
     getParseTier,
     getLocalApiBaseURL,
     getLocalApiTimeoutMinutes,
+    getOnlineApiTimeoutMinutes,
     getSaveImages,
     getStatusTagsEnabled,
     getMaxConcurrentRequests: () =>
@@ -1455,10 +1457,11 @@ function getPollTimeoutMs(
   source: ParseSource,
   dependencies: ParseManagerDependencies,
 ): number {
-  if (source !== "local") {
-    return DEFAULT_ONLINE_POLL_TIMEOUT_MS;
-  }
-  return (dependencies.getLocalApiTimeoutMinutes?.() ?? 30) * 60 * 1000;
+  const minutes =
+    source === "local"
+      ? (dependencies.getLocalApiTimeoutMinutes?.() ?? 30)
+      : (dependencies.getOnlineApiTimeoutMinutes?.() ?? 6);
+  return minutes * 60 * 1000;
 }
 
 function requiresApiKey(source: ParseSource): boolean {

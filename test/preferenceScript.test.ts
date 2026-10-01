@@ -8,6 +8,7 @@ import {
   getMarkdownApiEnabled,
   getLocalApiBaseURL,
   getLocalApiTimeoutMinutes,
+  getOnlineApiTimeoutMinutes,
   getParseTier,
   getParseSource,
   getSaveImages,
@@ -15,6 +16,7 @@ import {
   setMarkdownApiEnabled,
   setLocalApiBaseURL,
   setLocalApiTimeoutMinutes,
+  setOnlineApiTimeoutMinutes,
   setParseTier,
   setParseSource,
   setSaveImages,
@@ -28,12 +30,14 @@ describe("preferenceScript", function () {
     assertIncreasingIndexes(preferences, [
       'data-l10n-id="mineruForZotero-pref-api-service-title"',
       'id="zotero-prefpane-mineruForZotero-api-key"',
+      'id="zotero-prefpane-mineruForZotero-online-api-timeout-minutes"',
       'id="zotero-prefpane-mineruForZotero-local-api-base-url"',
       'id="zotero-prefpane-mineruForZotero-local-api-timeout-minutes"',
       'id="zotero-prefpane-mineruForZotero-parse-source"',
       'id="zotero-prefpane-mineruForZotero-parse-tier"',
       'data-l10n-id="mineruForZotero-pref-data-storage-title"',
       'id="zotero-prefpane-mineruForZotero-save-images"',
+      'id="zotero-prefpane-mineruForZotero-status-tags"',
       'id="mineruForZotero-open-data-folder"',
       'data-l10n-id="mineruForZotero-pref-about-title"',
     ]);
@@ -235,6 +239,25 @@ describe("preferenceScript", function () {
       assert.isTrue(getMarkdownApiEnabled());
     } finally {
       setMarkdownApiEnabled(false);
+    }
+  });
+
+  it("persists online API timeout changes from the preferences UI", function () {
+    const timeout = fakePreferenceElement("6", "", "number");
+    const document = fakePreferenceDocument({
+      "zotero-prefpane-mineruForZotero-online-api-timeout-minutes": timeout,
+    });
+
+    try {
+      setOnlineApiTimeoutMinutes(6);
+      registerPreferenceValueSync(document);
+
+      timeout.value = "20";
+      timeout.emit("change");
+
+      assert.equal(getOnlineApiTimeoutMinutes(), 20);
+    } finally {
+      setOnlineApiTimeoutMinutes(6);
     }
   });
 

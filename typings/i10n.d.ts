@@ -54,6 +54,7 @@ export type FluentMessageId =
   | 'pref-help'
   | 'pref-local-api-base-url'
   | 'pref-local-api-timeout-minutes'
+  | 'pref-online-api-timeout-minutes'
   | 'pref-open-data-folder'
   | 'pref-open-task-manager'
   | 'pref-parse-tier-advanced'

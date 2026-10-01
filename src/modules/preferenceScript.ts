@@ -3,12 +3,14 @@ import {
   getMarkdownApiEnabled,
   getSaveImages,
   getLocalApiTimeoutMinutes,
+  getOnlineApiTimeoutMinutes,
   getParseTier,
   getParseSource,
   setMarkdownApiEnabled,
   setApiKey,
   setLocalApiBaseURL,
   setLocalApiTimeoutMinutes,
+  setOnlineApiTimeoutMinutes,
   setParseTier,
   setParseSource,
   setSaveImages,
@@ -137,6 +139,12 @@ export function registerPreferenceValueSync(document: Document): void {
     document,
     `zotero-prefpane-${config.addonRef}-local-api-base-url`,
     setLocalApiBaseURL,
+  );
+  registerNumberPreferenceSync(
+    document,
+    `zotero-prefpane-${config.addonRef}-online-api-timeout-minutes`,
+    getOnlineApiTimeoutMinutes,
+    setOnlineApiTimeoutMinutes,
   );
   registerNumberPreferenceSync(
     document,

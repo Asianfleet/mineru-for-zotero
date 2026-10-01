@@ -1835,6 +1835,28 @@ describe("parseManager", function () {
     assert.deepEqual(messages, ["parse-error-local-api-unavailable"]);
   });
 
+  it("uses the configured online API timeout", async function () {
+    const messages: string[] = [];
+    let pollCount = 0;
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getOnlineApiTimeoutMinutes: () => 1,
+      client: {
+        ...successfulPreciseClient(),
+        pollTask: async () => {
+          pollCount += 1;
+          return { status: "running" };
+        },
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7128 }));
+
+    // One minute of 3 s poll intervals.
+    assert.equal(pollCount, 20);
+    assert.deepEqual(messages, ["parse-error-mineru"]);
+  });
+
   it("uses the configured local API timeout for long-running local tasks", async function () {
     const messages: string[] = [];
     const delays: number[] = [];
