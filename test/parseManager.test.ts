@@ -1069,6 +1069,74 @@ describe("parseManager", function () {
     assert.deepEqual(events, ["precise:running", "precise:clear"]);
   });
 
+  it("clears the processing tag and stores readable text when lite Markdown is empty", async function () {
+    const messages: string[] = [];
+    const tags: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      client: {
+        submitPdf: async () => ({ taskID: "task-empty-lite" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({ kind: "lite", markdown: "  " }),
+      },
+    });
+
+    await withTestLocale(() =>
+      manager.parseAttachment(pdfAttachment({ id: 7110, tags })),
+    );
+
+    const task = taskStore.getTask("7110");
+    assert.equal(task?.status, "failed");
+    assert.equal(task?.error, "Lite parse returned no Markdown");
+    assert.include(tags, "-MinerU: Processing ⏳");
+    assert.include(tags, "+MinerU: Failed ❌");
+    assert.deepEqual(messages, ["parse-error-empty-lite-markdown"]);
+  });
+
+  it("keeps the tags of an earlier result when lite Markdown comes back empty", async function () {
+    const messages: string[] = [];
+    const tags: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      storage: { ...baseStorage(), hasLiteResult: async () => true },
+      client: {
+        submitPdf: async () => ({ taskID: "task-empty-lite" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({ kind: "lite", markdown: "" }),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7111, tags }));
+
+    assert.deepEqual(tags, ["-MinerU: Processing ⏳"]);
+    assert.deepEqual(messages, ["parse-error-overwrite"]);
+    assert.equal(taskStore.getTask("7111")?.status, "failed");
+  });
+
+  it("stores readable text when MinerU JSON contains no boxes", async function () {
+    const messages: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      client: {
+        submitPdf: async () => ({ taskID: "task-empty" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () => ({
+          kind: "precise",
+          rawResult: { content_list: [{ type: "text" }] },
+          markdown: "# No boxes",
+        }),
+      },
+    });
+
+    await withTestLocale(() =>
+      manager.parseAttachment(pdfAttachment({ id: 7112 })),
+    );
+
+    const task = taskStore.getTask("7112");
+    assert.equal(task?.status, "failed");
+    assert.equal(task?.error, "The parse result does not contain box data");
+  });
+
   it("passes downloaded images to storage when the preference is enabled", async function () {
     const messages: string[] = [];
     let savedImages: Array<{ path: string; bytes: Uint8Array }> | undefined;
@@ -2043,6 +2111,45 @@ function regularItem(attachments: Zotero.Item[]): Zotero.Item {
     isRegularItem: () => true,
     getBestAttachments: async () => attachments,
   } as unknown as Zotero.Item;
+}
+
+/**
+ * Run with a minimal Fluent stand-in so getString() returns English text for
+ * the parse failure messages instead of falling back to the message id.
+ */
+async function withTestLocale<T>(run: () => Promise<T>): Promise<T> {
+  const texts: Record<string, string> = {
+    "mineruForZotero-parse-error-empty-boxes":
+      "The parse result does not contain box data",
+    "mineruForZotero-parse-error-empty-lite-markdown":
+      "Lite parse returned no Markdown",
+  };
+  const globals = globalThis as typeof globalThis & { addon?: unknown };
+  const hadAddon = "addon" in globals;
+  const originalAddon = globals.addon;
+  globals.addon = {
+    data: {
+      locale: {
+        current: {
+          formatMessagesSync(messages: Array<{ id: string }>) {
+            return messages.map(({ id }) => ({
+              value: texts[id] ?? null,
+              attributes: null,
+            }));
+          },
+        },
+      },
+    },
+  };
+  try {
+    return await run();
+  } finally {
+    if (hadAddon) {
+      globals.addon = originalAddon;
+    } else {
+      Reflect.deleteProperty(globals, "addon");
+    }
+  }
 }
 
 function resolveProgressWindowTestMessage(

@@ -446,6 +446,40 @@ async function markAttachmentFailed(attachment: Zotero.Item): Promise<void> {
 }
 
 /**
+ * Resolve a parse that finished without a usable result.
+ *
+ * When an earlier result is still stored it stays in place: only the
+ * in-progress tag is removed so the tags keep describing what is on disk, and
+ * the notice says the old result was kept. Otherwise the attachment is tagged
+ * as failed. The task is failed with readable text before the (modal) notice.
+ */
+async function failEmptyParse(
+  attachment: Zotero.Item,
+  messageID: FluentMessageId,
+  keepsExistingResult: boolean,
+  dependencies: ParseManagerDependencies,
+): Promise<void> {
+  if (keepsExistingResult) {
+    try {
+      attachment.removeTag("MinerU: Processing ⏳");
+      await attachment.saveTx();
+    } catch (e) {
+      // Ignore tag update errors
+    }
+  } else {
+    await markAttachmentFailed(attachment);
+  }
+
+  const message = getSafeMessageText(messageID);
+  await taskStore.updateTaskStatus(String(attachment.id), "failed", message);
+  if (keepsExistingResult) {
+    dependencies.showMessage("parse-error-overwrite", { message });
+  } else {
+    dependencies.showMessage(messageID);
+  }
+}
+
+/**
  * Fail a task record that an early return would otherwise leave pending.
  *
  * Retry and Resume mark the record `pending`/`running` before the pipeline
@@ -959,11 +993,15 @@ async function runParseAttachment(
           );
           parseColumnRunning = false;
         }
-        dependencies.showMessage("parse-error-empty-lite-markdown");
-        await taskStore.updateTaskStatus(
-          String(attachment.id),
-          "failed",
+        // Nothing is written, so any earlier precise or lite result survives.
+        const keepsExistingResult =
+          (await storage.hasReadyResult(attachmentRef)) ||
+          (await storage.hasLiteResult(attachmentRef));
+        await failEmptyParse(
+          attachment,
           "parse-error-empty-lite-markdown",
+          keepsExistingResult,
+          dependencies,
         );
         return;
       }
@@ -1027,25 +1065,12 @@ async function runParseAttachment(
         );
         parseColumnRunning = false;
       }
-      try {
-        attachment.removeTag("MinerU: Processing ⏳");
-        if (!keepExistingResult) {
-          attachment.removeTag("MinerU: Precise ✅");
-          attachment.removeTag("MinerU: Lite ✅");
-          attachment.addTag("MinerU: Failed ❌", 1);
-        }
-        await attachment.saveTx();
-      } catch (e) {
-        // Ignore tag update errors
-      }
-      if (keepExistingResult) {
-        dependencies.showMessage("parse-error-overwrite", {
-          message: getSafeMessageText("parse-error-empty-boxes"),
-        });
-      } else {
-        dependencies.showMessage("parse-error-empty-boxes");
-      }
-      await taskStore.updateTaskStatus(String(attachment.id), "failed");
+      await failEmptyParse(
+        attachment,
+        "parse-error-empty-boxes",
+        keepExistingResult,
+        dependencies,
+      );
       return;
     }
 
