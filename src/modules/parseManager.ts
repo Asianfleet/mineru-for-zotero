@@ -1002,13 +1002,22 @@ async function runParseAttachment(
     if (boxes.length === 0) {
       phase = "write";
       throwIfCancelled(attachmentTaskID);
-      await storage.writeFailedResult({
-        attachment: attachmentRef,
-        mineruTaskID: taskID,
-        rawResult: result.rawResult,
-        markdown: result.markdown,
-        error: getSafeMessageText("parse-error-empty-boxes"),
-      });
+      // Writing the failed manifest swaps out the whole result folder, so a
+      // reparse that comes back without boxes must not replace a usable result.
+      const keepExistingResult = await hasExistingResultForMode(
+        attachmentRef,
+        mode,
+        storage,
+      );
+      if (!keepExistingResult) {
+        await storage.writeFailedResult({
+          attachment: attachmentRef,
+          mineruTaskID: taskID,
+          rawResult: result.rawResult,
+          markdown: result.markdown,
+          error: getSafeMessageText("parse-error-empty-boxes"),
+        });
+      }
       if (parseColumnRunning) {
         await updateParseColumnStatus(
           dependencies,
@@ -1020,14 +1029,22 @@ async function runParseAttachment(
       }
       try {
         attachment.removeTag("MinerU: Processing ⏳");
-        attachment.removeTag("MinerU: Precise ✅");
-        attachment.removeTag("MinerU: Lite ✅");
-        attachment.addTag("MinerU: Failed ❌", 1);
+        if (!keepExistingResult) {
+          attachment.removeTag("MinerU: Precise ✅");
+          attachment.removeTag("MinerU: Lite ✅");
+          attachment.addTag("MinerU: Failed ❌", 1);
+        }
         await attachment.saveTx();
       } catch (e) {
         // Ignore tag update errors
       }
-      dependencies.showMessage("parse-error-empty-boxes");
+      if (keepExistingResult) {
+        dependencies.showMessage("parse-error-overwrite", {
+          message: getSafeMessageText("parse-error-empty-boxes"),
+        });
+      } else {
+        dependencies.showMessage("parse-error-empty-boxes");
+      }
       await taskStore.updateTaskStatus(String(attachment.id), "failed");
       return;
     }

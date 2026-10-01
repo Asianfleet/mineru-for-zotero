@@ -13,6 +13,7 @@ import {
   MinerURequestError,
 } from "../src/modules/mineruClient";
 import { normalizedBoxes } from "./domainFixtures";
+import { createStorage } from "../src/modules/storage";
 import { taskStore } from "../src/modules/taskStore";
 
 describe("parseManager", function () {
@@ -1126,16 +1127,17 @@ describe("parseManager", function () {
     assert.isUndefined(savedImages);
   });
 
-  it("replaces an existing ready result with a failed result when reparse has no boxes", async function () {
+  it("keeps an existing ready result when a reparse returns no boxes", async function () {
     const messages: string[] = [];
-    let failedRawResult: unknown;
+    const tags: string[] = [];
+    let failedResultWritten = false;
     const manager = createParseManager({
       ...baseDependencies(messages),
       storage: {
         ...baseStorage(),
         hasReadyResult: async () => true,
-        writeFailedResult: async (input) => {
-          failedRawResult = input.rawResult;
+        writeFailedResult: async () => {
+          failedResultWritten = true;
         },
       },
       confirmReparse: async () => "reparse",
@@ -1150,10 +1152,49 @@ describe("parseManager", function () {
       },
     });
 
-    await manager.parseAttachment(pdfAttachment());
+    await manager.parseAttachment(pdfAttachment({ tags }));
 
-    assert.deepEqual(failedRawResult, { content_list: [{ type: "text" }] });
-    assert.include(messages, "parse-error-empty-boxes");
+    assert.isFalse(failedResultWritten);
+    assert.deepEqual(messages, ["parse-error-overwrite"]);
+    assert.include(tags, "-MinerU: Processing ⏳");
+    assert.notInclude(tags, "-MinerU: Precise ✅");
+    assert.notInclude(tags, "+MinerU: Failed ❌");
+  });
+
+  it("leaves the stored result readable when a reparse returns no boxes", async function () {
+    const messages: string[] = [];
+    const root = PathUtils.join(
+      PathUtils.tempDir,
+      `mineru-reparse-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    );
+    const storage = createStorage(root);
+    let returnEmptyResult = false;
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      storage,
+      client: {
+        submitPdf: async () => ({ taskID: "task-reparse" }),
+        pollTask: async () => ({ status: "succeeded" }),
+        downloadResult: async () =>
+          returnEmptyResult
+            ? { kind: "precise", rawResult: { content_list: [] }, markdown: "" }
+            : preciseResultFixture(),
+      },
+    });
+    const attachment = pdfAttachment({ id: 7108 });
+    const ref = { libraryID: 12, key: "ABC7108" };
+
+    try {
+      await manager.parseAttachment(attachment, { force: true });
+      returnEmptyResult = true;
+      await manager.parseAttachment(attachment, { force: true });
+
+      assert.isTrue(await storage.hasReadyResult(ref));
+      assert.equal(await storage.readPreferredMarkdown(ref), "A");
+      assert.deepEqual(messages, ["parse-error-overwrite"]);
+    } finally {
+      await IOUtils.remove(root, { recursive: true, ignoreAbsent: true });
+    }
   });
 
   it("keeps the existing result when overwrite storage fails", async function () {
