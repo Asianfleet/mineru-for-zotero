@@ -19,7 +19,7 @@ import { taskStore } from "../src/modules/taskStore";
 describe("parseManager", function () {
   afterEach(async function () {
     // Cancellation state is process-wide; keep the suite order-independent.
-    for (const id of ["7201", "7202", "7203", "7204", "7205", "7206"]) {
+    for (const id of ["7116", "7201", "7202", "7203", "7204", "7205", "7206"]) {
       clearTaskCancelled(id);
     }
     // The task store is a process-wide singleton; drop finished records so the
@@ -1793,6 +1793,91 @@ describe("parseManager", function () {
     assert.isEmpty(messages);
   });
 
+  it("shares the concurrency limit between separate parse entry points", async function () {
+    const messages: string[] = [];
+    const submitted: string[] = [];
+    let firstPolling = false;
+    let releaseFirst: (() => void) | undefined;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const dependencies = (): ParseManagerDependencies => ({
+      ...baseDependencies(messages),
+      getMaxConcurrentRequests: () => 1,
+      client: {
+        submitPdf: async (filePath) => {
+          submitted.push(filePath);
+          return { taskID: `limit-task-${submitted.length}` };
+        },
+        pollTask: async (taskID) => {
+          if (taskID === "limit-task-1") {
+            firstPolling = true;
+            await firstGate;
+          }
+          return { status: "succeeded" };
+        },
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    // Separate managers stand in for separate entry points (for example a
+    // Retry in the Task Manager and a parse request from the HTTP API).
+    const first = createParseManager(dependencies()).parseAttachment(
+      pdfAttachment({ id: 7113, filePath: "C:/tmp/first.pdf" }),
+    );
+    const second = createParseManager(dependencies()).parseAttachment(
+      pdfAttachment({ id: 7114, filePath: "C:/tmp/second.pdf" }),
+    );
+    await waitUntil(() => firstPolling);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    assert.deepEqual(submitted, ["C:\\tmp\\first.pdf"]);
+    releaseFirst?.();
+    await Promise.all([first, second]);
+    assert.deepEqual(submitted, ["C:\\tmp\\first.pdf", "C:\\tmp\\second.pdf"]);
+    assert.isEmpty(messages);
+  });
+
+  it("does not start a parse that was stopped while it waited for a slot", async function () {
+    const messages: string[] = [];
+    const submitted: string[] = [];
+    let firstPolling = false;
+    let releaseFirst: (() => void) | undefined;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      getMaxConcurrentRequests: () => 1,
+      client: {
+        submitPdf: async (filePath) => {
+          submitted.push(filePath);
+          return { taskID: "queued-task" };
+        },
+        pollTask: async () => {
+          firstPolling = true;
+          await firstGate;
+          return { status: "succeeded" };
+        },
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    const first = manager.parseAttachment(
+      pdfAttachment({ id: 7115, filePath: "C:/tmp/first.pdf" }),
+    );
+    const second = manager.parseAttachment(
+      pdfAttachment({ id: 7116, filePath: "C:/tmp/second.pdf" }),
+    );
+    await waitUntil(() => firstPolling);
+    markTaskCancelled("7116");
+    releaseFirst?.();
+    await Promise.all([first, second]);
+
+    assert.deepEqual(submitted, ["C:\\tmp\\first.pdf"]);
+    assert.isEmpty(messages);
+  });
+
   it("ignores a second parse while the same attachment is already running", async function () {
     const messages: string[] = [];
     let submitCount = 0;
@@ -2111,6 +2196,14 @@ function regularItem(attachments: Zotero.Item[]): Zotero.Item {
     isRegularItem: () => true,
     getBestAttachments: async () => attachments,
   } as unknown as Zotero.Item;
+}
+
+/** Wait (bounded) until a condition set by a running pipeline holds. */
+async function waitUntil(condition: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 500 && !condition(); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  assert.isTrue(condition(), "condition was not reached in time");
 }
 
 /**

@@ -72,7 +72,7 @@ API limits:
 - The 200 MB upload limit is enforced on every parse path (batch and single attachment); oversized files report the `parse-error-file-too-large` message key.
 - Large PDFs are chunked by page range instead of being split locally; `getPdfPageCount()` uses Zotero's bundled pdf.js only. v1 sends `files[].page_range`, v4 sends `file.page_ranges`.
 - `getPdfPageCount()` must load pdf.js in a **window realm**: it runs `Zotero.getMainWindow().eval(...)` with a dynamic `import("resource://zotero/reader/pdf/build/pdf.mjs")`. Do **not** use `ChromeUtils.importESModule` — Zotero 10's system module realm has frozen built-ins and pdf.js's top-level `Map.prototype.getOrInsertComputed` polyfill throws `TypeError: Map.prototype is not extensible`. Zotero's own reader loads pdf.js the same way (module script in a content realm).
-- `MINERU_API_MAX_CONCURRENT_REQUESTS` limits cross-attachment concurrency (clamped 1-10, default 3). Tests override it via `getMaxConcurrentRequests`.
+- `MINERU_API_MAX_CONCURRENT_REQUESTS` limits cross-attachment concurrency (clamped 1-10, default 3). One shared limiter in `parseManager` applies it to every entry point (context-menu batches, Retry/Resume, auto-parse, the HTTP API); waiting parses start in request order. Tests override it via `getMaxConcurrentRequests`.
 
 ### V1 Parsing Flow (local)
 

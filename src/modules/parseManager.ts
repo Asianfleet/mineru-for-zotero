@@ -61,7 +61,7 @@ import {
   getReconnectDelayMs,
   MinerUTaskCancelledError,
 } from "./parseNetwork";
-import { runWithConcurrency } from "../utils/concurrency";
+import { createConcurrencyLimiter } from "../utils/concurrency";
 
 const CHUNK_PAGE_LIMIT = 200;
 const MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024;
@@ -86,6 +86,16 @@ const activeParseIDs = new Set<string>();
  * already rewritten by the UI.
  */
 const cancelledTaskIDs = new Set<string>();
+
+/**
+ * Shared cap on parse pipelines running at the same time.
+ *
+ * Every entry point goes through it (context menu batches, Retry and Resume,
+ * auto-parse of new items, and the HTTP API), so
+ * MINERU_API_MAX_CONCURRENT_REQUESTS bounds all MinerU traffic, not only the
+ * attachments of one batch.
+ */
+const parseSlots = createConcurrencyLimiter();
 
 /** Mark a task as cancelled by the user. */
 export function markTaskCancelled(taskID: string): void {
@@ -275,16 +285,13 @@ async function parseAttachmentsWithDependencies(
       return;
     }
 
-    // Limit concurrent MinerU requests across attachments.
-    const concurrency = getMaxConcurrentRequests(dependencies);
-
     try {
       (dependencies.openTaskManager ?? openTaskManagerWindow)();
     } catch (e) {
       ztoolkit.log("Failed to open Task Manager window", e);
     }
 
-    await runParseQueue(attachmentsToParse, options, dependencies, concurrency);
+    await runParseQueue(attachmentsToParse, options, dependencies);
     return;
   }
 
@@ -313,9 +320,6 @@ async function parseAttachmentsWithDependencies(
     return;
   }
 
-  // Limit concurrent MinerU requests across attachments.
-  const concurrency = getMaxConcurrentRequests(dependencies);
-
   // Open the global Task Manager UI to view progress
   try {
     (dependencies.openTaskManager ?? openTaskManagerWindow)();
@@ -327,35 +331,40 @@ async function parseAttachmentsWithDependencies(
     attachmentsToParse,
     { ...options, force: true },
     dependencies,
-    concurrency,
   );
 }
 
 /**
- * Run the per-attachment parse pipelines with a bounded concurrency.
+ * Start the per-attachment parse pipelines of a batch.
  *
- * Failures raised before a pipeline installs its own error handling (for
- * example a task-store write failure) are logged instead of surfacing as
- * unhandled rejections, and the queue keeps draining.
+ * Every pipeline is registered right away (so the in-flight guard also covers
+ * attachments still waiting) and then waits for a slot of the shared parse
+ * limiter, which starts them in order. Failures raised before a pipeline
+ * installs its own error handling (for example a task-store write failure) are
+ * logged instead of surfacing as unhandled rejections.
  */
 async function runParseQueue(
   attachments: Zotero.Item[],
   options: ParseAttachmentOptions | undefined,
   dependencies: ParseManagerDependencies,
-  concurrency: number,
 ): Promise<void> {
-  const tasks = attachments.map((attachment) => async () => {
-    try {
-      await parseAttachmentWithDependencies(attachment, options, dependencies);
-    } catch (error) {
-      dependencies.log(
-        "MinerU parse failed before task setup",
-        attachment.id,
-        error,
-      );
-    }
-  });
-  await runWithConcurrency(tasks, concurrency);
+  await Promise.all(
+    attachments.map(async (attachment) => {
+      try {
+        await parseAttachmentWithDependencies(
+          attachment,
+          options,
+          dependencies,
+        );
+      } catch (error) {
+        dependencies.log(
+          "MinerU parse failed before task setup",
+          attachment.id,
+          error,
+        );
+      }
+    }),
+  );
 }
 
 async function getSubmittableAttachments(
@@ -549,7 +558,14 @@ async function parseAttachmentWithDependencies(
   // A new attempt (retry or resume) supersedes an earlier cancellation.
   clearTaskCancelled(taskID);
   try {
-    await runParseAttachment(attachment, options, dependencies);
+    await parseSlots.run(async () => {
+      // A Stop pressed while this parse waited for a slot wins.
+      if (isTaskCancelled(taskID)) {
+        dependencies.log("MinerU parse cancelled before it started", taskID);
+        return;
+      }
+      await runParseAttachment(attachment, options, dependencies);
+    }, getMaxConcurrentRequests(dependencies));
   } finally {
     activeParseIDs.delete(taskID);
   }

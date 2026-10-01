@@ -1,45 +1,49 @@
 /**
- * Run async tasks with a bounded number of concurrent workers.
- *
- * Tasks are started in order. The promise rejects as soon as any task fails
- * (in-flight tasks keep running but their results are ignored) and rejects with
- * `The operation was canceled.` when `isCancelled` reports true.
+ * Bounded FIFO gate for async work that is requested from many places.
  */
-export async function runWithConcurrency(
-  tasks: ReadonlyArray<() => Promise<void>>,
-  concurrency: number,
-  isCancelled: () => boolean = () => false,
-): Promise<void> {
-  const queue = [...tasks];
-  let active = 0;
+export interface ConcurrencyLimiter {
+  /**
+   * Wait until fewer than `limit` tasks hold a slot, run `task`, and free the
+   * slot once it settles (fulfilled or rejected).
+   */
+  run<T>(task: () => Promise<T>, limit: number): Promise<T>;
+}
 
-  await new Promise<void>((resolve, reject) => {
-    let hasError = false;
-    const next = () => {
-      if (hasError) return;
-      if (isCancelled()) {
-        hasError = true;
-        reject(new Error("The operation was canceled."));
-        return;
+/**
+ * Create a limiter whose waiting tasks start in request order.
+ *
+ * The limit is passed on every call, so a changed setting applies to work
+ * requested afterwards. A limit below one (or not a number) counts as one, so a
+ * bad setting can never block every task.
+ */
+export function createConcurrencyLimiter(): ConcurrencyLimiter {
+  let active = 0;
+  const waiting: Array<{ limit: number; start: () => void }> = [];
+
+  const startWaitingTasks = () => {
+    while (waiting.length > 0 && active < waiting[0].limit) {
+      const next = waiting.shift()!;
+      active += 1;
+      next.start();
+    }
+  };
+
+  return {
+    async run<T>(task: () => Promise<T>, limit: number): Promise<T> {
+      await new Promise<void>((resolve) => {
+        waiting.push({ limit: normalizeLimit(limit), start: resolve });
+        startWaitingTasks();
+      });
+      try {
+        return await task();
+      } finally {
+        active -= 1;
+        startWaitingTasks();
       }
-      if (queue.length === 0 && active === 0) {
-        resolve();
-        return;
-      }
-      while (active < concurrency && queue.length > 0) {
-        const task = queue.shift()!;
-        active++;
-        task()
-          .then(() => {
-            active--;
-            next();
-          })
-          .catch((error) => {
-            hasError = true;
-            reject(error);
-          });
-      }
-    };
-    next();
-  });
+    },
+  };
+}
+
+function normalizeLimit(limit: number): number {
+  return Number.isFinite(limit) ? Math.max(1, Math.floor(limit)) : 1;
 }
