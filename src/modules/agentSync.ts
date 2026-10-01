@@ -3,10 +3,18 @@ import { joinNativePath, toNativePath } from "./mineruClient/path";
 import { taskStore } from "./taskStore";
 
 const INDEX_FILE = "_index.json";
+const MANIFEST_FILE = "manifest.json";
+const LITE_MANIFEST_FILE = "lite-manifest.json";
+const CONTENT_FILE = "content.md";
+const LITE_CONTENT_FILE = "lite-content.md";
 
 interface AgentSyncItem {
+  /** Parent item ID and key. */
   id: number;
   key: string;
+  /** Synced PDF attachment; absent in entries written by older versions. */
+  attachmentKey?: string;
+  libraryID?: number;
   citationKey?: string;
   title?: string;
   year?: string;
@@ -15,23 +23,39 @@ interface AgentSyncItem {
   markdownPath?: string;
 }
 
+export interface AgentSyncOptions {
+  /** Sync folder to use instead of the preference. */
+  syncFolder?: string;
+  /** BibTeX exporter to use instead of Zotero's translator. */
+  exportBibTeX?: (item: Zotero.Item) => Promise<string>;
+}
+
+/**
+ * Copy one stored result into the agent sync folder and record it in
+ * `_index.json`.
+ *
+ * Resolves to true only when the result was copied and indexed; false when
+ * syncing is not configured, the attachment has no parent item, or the copy
+ * failed.
+ */
 export async function syncResultToAgentFolder(
   attachment: Zotero.Item,
   sourceDir: string,
-): Promise<void> {
-  const syncFolder = getSyncFolder().trim();
+  options: AgentSyncOptions = {},
+): Promise<boolean> {
+  const syncFolder = (options.syncFolder ?? getSyncFolder()).trim();
   if (!syncFolder) {
-    return;
+    return false;
   }
 
   if (!hasIOUtils()) {
-    ztoolkit.log("IOUtils not available, cannot sync to agent folder");
-    return;
+    log("IOUtils not available, cannot sync to agent folder");
+    return false;
   }
 
   const parent = attachment.parentItem;
   if (!parent) {
-    return; // Standalone attachment, less useful for agent sync
+    return false; // Standalone attachment, less useful for agent sync
   }
 
   const title = (parent.getField("title") as string) || "Untitled";
@@ -44,12 +68,24 @@ export async function syncResultToAgentFolder(
   // Format: [CitationKey or Year] - [Title]
   const safeTitle = title.replace(/[\\/:*?"<>|]/g, "_").substring(0, 100);
   const prefix = citationKey ? citationKey : year ? year : "Item";
-  const folderName = `[${prefix}] - ${safeTitle}`;
+  const baseFolderName = `[${prefix}] - ${safeTitle}`;
 
   const syncRoot = joinNativePath(syncFolder);
-  const targetDir = joinNativePath(syncRoot, folderName);
+  const nativeSourceDir = toNativePath(sourceDir);
 
   try {
+    // Two PDFs of one item, or two papers sharing a year and title, map to
+    // the same name. Only replace a folder this attachment synced before;
+    // otherwise keep the attachment key in the name so neither is deleted.
+    // Once an attachment uses the keyed name it keeps it.
+    const keyedFolderName = `${baseFolderName} [${attachment.key}]`;
+    const folderName =
+      !(await IOUtils.exists(joinNativePath(syncRoot, keyedFolderName))) &&
+      (await canSyncInto(joinNativePath(syncRoot, baseFolderName), attachment))
+        ? baseFolderName
+        : keyedFolderName;
+    const targetDir = joinNativePath(syncRoot, folderName);
+
     // 1. Copy directory
     await IOUtils.makeDirectory(syncRoot, {
       createAncestors: true,
@@ -62,7 +98,7 @@ export async function syncResultToAgentFolder(
 
     // Zotero IOUtils might not have a direct copy directory, but let's try copy or manual copy
     try {
-      await IOUtils.copy(toNativePath(sourceDir), targetDir, {
+      await IOUtils.copy(nativeSourceDir, targetDir, {
         recursive: true,
       });
     } catch (e) {
@@ -71,7 +107,7 @@ export async function syncResultToAgentFolder(
         createAncestors: true,
         ignoreExisting: true,
       });
-      const children = await IOUtils.getChildren(toNativePath(sourceDir));
+      const children = await IOUtils.getChildren(nativeSourceDir);
       for (const child of children) {
         if (child.endsWith("images")) {
           // copy images dir
@@ -98,7 +134,7 @@ export async function syncResultToAgentFolder(
 
     // 1.5 Export BibTeX
     try {
-      const bibtex = await exportBibTeX(parent);
+      const bibtex = await (options.exportBibTeX ?? exportBibTeX)(parent);
       if (bibtex) {
         await IOUtils.writeUTF8(
           joinNativePath(targetDir, "metadata.bib"),
@@ -106,23 +142,75 @@ export async function syncResultToAgentFolder(
         );
       }
     } catch (e) {
-      ztoolkit.log("Failed to export BibTeX", e);
+      log("Failed to export BibTeX", e);
     }
 
     // 2. Update global index
     await updateGlobalIndex(syncRoot, {
       id: parent.id,
       key: parent.key,
+      attachmentKey: attachment.key,
+      libraryID: attachment.libraryID,
       citationKey,
       title,
       year,
       authors: getCreatorsString(parent),
       pdfPath: attachment.getFilePath() || "",
-      markdownPath: `${folderName}/content.md`,
+      markdownPath: `${folderName}/${await getSyncedMarkdownFile(nativeSourceDir)}`,
     });
+    return true;
   } catch (error) {
-    ztoolkit.log("Failed to sync MinerU result to agent folder", error);
+    log("Failed to sync MinerU result to agent folder", error);
+    return false;
   }
+}
+
+/**
+ * Report whether a sync folder may be (re)written for this attachment: it does
+ * not exist yet, or it holds a copy of this attachment's own result.
+ */
+async function canSyncInto(
+  dir: string,
+  attachment: Zotero.Item,
+): Promise<boolean> {
+  if (!(await IOUtils.exists(dir))) {
+    return true;
+  }
+  for (const manifestFile of [MANIFEST_FILE, LITE_MANIFEST_FILE]) {
+    try {
+      const manifest = JSON.parse(
+        await IOUtils.readUTF8(joinNativePath(dir, manifestFile)),
+      ) as { attachmentKey?: unknown; libraryID?: unknown };
+      return (
+        manifest.attachmentKey === attachment.key &&
+        manifest.libraryID === attachment.libraryID
+      );
+    } catch {
+      // Missing or unreadable manifest: try the next one.
+    }
+  }
+  // A folder without a result manifest was not created by the sync.
+  return false;
+}
+
+/**
+ * Markdown file that agents should read: the precise result when it is
+ * ready, otherwise the lite result.
+ */
+async function getSyncedMarkdownFile(sourceDir: string): Promise<string> {
+  try {
+    const manifest = JSON.parse(
+      await IOUtils.readUTF8(joinNativePath(sourceDir, MANIFEST_FILE)),
+    ) as { status?: unknown };
+    if (manifest.status === "ready") {
+      return CONTENT_FILE;
+    }
+  } catch {
+    // No precise manifest: fall through to the lite result.
+  }
+  return (await IOUtils.exists(joinNativePath(sourceDir, LITE_CONTENT_FILE)))
+    ? LITE_CONTENT_FILE
+    : CONTENT_FILE;
 }
 
 async function updateGlobalIndex(
@@ -138,20 +226,23 @@ async function updateGlobalIndex(
       indexData = JSON.parse(content) as AgentSyncItem[];
     }
   } catch (e) {
-    ztoolkit.log("Failed to read agent index", e);
+    log("Failed to read agent index", e);
   }
 
-  // Remove existing entry for same key if exists
-  indexData = indexData.filter((item) => item.key !== newItem.key);
+  // One entry per synced attachment. Entries written by older versions have
+  // no attachmentKey and were keyed by the parent item, so replace those by
+  // the parent key once.
+  indexData = indexData.filter((item) =>
+    item.attachmentKey
+      ? item.attachmentKey !== newItem.attachmentKey ||
+        item.libraryID !== newItem.libraryID
+      : item.key !== newItem.key,
+  );
   indexData.push(newItem);
 
-  try {
-    await IOUtils.writeUTF8(indexPath, JSON.stringify(indexData, null, 2), {
-      tmpPath: `${indexPath}.tmp`,
-    });
-  } catch (e) {
-    ztoolkit.log("Failed to write agent index", e);
-  }
+  await IOUtils.writeUTF8(indexPath, JSON.stringify(indexData, null, 2), {
+    tmpPath: `${indexPath}.tmp`,
+  });
 }
 
 function getCreatorsString(item: Zotero.Item): string {
@@ -170,6 +261,13 @@ function hasIOUtils(): boolean {
   return typeof IOUtils !== "undefined";
 }
 
+/** Log through the plugin toolkit; it is not defined in isolated test runs. */
+function log(...args: unknown[]): void {
+  if (typeof ztoolkit !== "undefined") {
+    ztoolkit.log(...args);
+  }
+}
+
 export function exportBibTeX(item: Zotero.Item): Promise<string> {
   return new Promise((resolve, reject) => {
     try {
@@ -186,15 +284,22 @@ export function exportBibTeX(item: Zotero.Item): Promise<string> {
       });
       translation.translate();
     } catch (e) {
-      ztoolkit.log("Exception in exportBibTeX", e);
+      log("Exception in exportBibTeX", e);
       resolve("");
     }
   });
 }
 
+/**
+ * Refresh the MinerU tags of every attachment with a stored result and copy
+ * the results into the agent sync folder when one is configured.
+ *
+ * Resolves to the number of results actually synced; `onProgress` reports how
+ * many attachments were processed so far.
+ */
 export async function syncAllToAgentFolder(
   storage: import("./storage").StorageAdapter,
-  onProgress?: (synced: number, total: number) => void,
+  onProgress?: (processed: number, total: number) => void,
 ): Promise<number> {
   const syncFolder = getSyncFolder().trim();
   const hasIO = hasIOUtils();
@@ -223,6 +328,7 @@ export async function syncAllToAgentFolder(
   }
 
   let processed = 0;
+  let synced = 0;
   for (const ref of readyKeys) {
     const attachment = Zotero.Items.getByLibraryAndKey(ref.libraryID, ref.key);
     if (attachment && attachment.isAttachment()) {
@@ -243,9 +349,14 @@ export async function syncAllToAgentFolder(
       }
 
       // 2. Sync to agent folder
-      if (shouldSync) {
-        const sourceDir = storage.getAttachmentDir(ref);
-        await syncResultToAgentFolder(attachment, sourceDir);
+      if (
+        shouldSync &&
+        (await syncResultToAgentFolder(
+          attachment,
+          storage.getAttachmentDir(ref),
+        ))
+      ) {
+        synced++;
       }
 
       processed++;
@@ -255,7 +366,7 @@ export async function syncAllToAgentFolder(
     }
   }
 
-  return processed;
+  return synced;
 }
 
 export async function updateAllMinerUTags(

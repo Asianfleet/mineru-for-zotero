@@ -363,8 +363,7 @@ export function createResultsManagerService(
         libraryID: entry.libraryID,
         key: entry.key || entry.attachmentKey!,
       });
-      await syncResultToAgentFolder(item, sourceDir);
-      return true;
+      return syncResultToAgentFolder(item, sourceDir);
     },
     syncSelected: async (entries) => {
       const syncFolder = getSyncFolder().trim();
@@ -380,8 +379,9 @@ export function createResultsManagerService(
               libraryID: entry.libraryID,
               key: entry.key || entry.attachmentKey!,
             });
-            await syncResultToAgentFolder(item, sourceDir);
-            count++;
+            if (await syncResultToAgentFolder(item, sourceDir)) {
+              count++;
+            }
           }
         }
       }

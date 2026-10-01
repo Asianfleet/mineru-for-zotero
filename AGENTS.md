@@ -136,7 +136,7 @@ Use `storage.readPreferredMarkdown()` to read precise first, then lite fallback.
 
 ### Agent-Friendly Sync Folder
 
-The optional sync folder copies results into `[CitationKey] - [Title]` format. Sync happens on demand when the user triggers "Sync All Results Now" in Preferences. `_index.json` maintains the list of synced entries.
+The optional sync folder copies results into `[CitationKey] - [Title]` format. Sync happens on demand when the user triggers "Sync All Results Now" in Preferences. `_index.json` keeps one entry per synced attachment (`attachmentKey`), and `markdownPath` points at `lite-content.md` for lite-only results. A folder is only replaced when its copied manifest belongs to the same attachment; on a name collision (two PDFs of one item, or same year and title) the attachment key is appended: `[CitationKey] - [Title] [ATTACHMENTKEY]`.
 
 ### Large PDFs
 
