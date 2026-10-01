@@ -1,5 +1,6 @@
 import { assert } from "chai";
 import { mergeChunkResults } from "../src/modules/parseMerge";
+import { formatSelectedBoxesForCopy } from "../src/modules/readerOverlay/copy";
 import { mineruResultFixture } from "./domainFixtures";
 
 describe("parseMerge", function () {
@@ -84,6 +85,42 @@ describe("parseMerge", function () {
     assert.deepEqual(
       secondHalf,
       firstHalf.map((page) => page + 3),
+    );
+  });
+
+  it("keeps box rawIndex values unique across merged chunks", function () {
+    const merged = mergeChunkResults(
+      [
+        { markdown: "one", rawResult: mineruResultFixture, _chunkPageCount: 3 },
+        { markdown: "two", rawResult: mineruResultFixture, _chunkPageCount: 3 },
+      ],
+      "precise",
+    );
+
+    assert.equal(merged.kind, "precise");
+    if (merged.kind !== "precise") return;
+    assert.deepEqual(
+      merged._mergedBoxes.map((box) => box.rawIndex),
+      [0, 1, 2, 3, 4, 5],
+    );
+  });
+
+  it("copies only the selected box of a merged result", function () {
+    const merged = mergeChunkResults(
+      [
+        { markdown: "one", rawResult: mineruResultFixture, _chunkPageCount: 3 },
+        { markdown: "two", rawResult: mineruResultFixture, _chunkPageCount: 3 },
+      ],
+      "precise",
+    );
+
+    assert.equal(merged.kind, "precise");
+    if (merged.kind !== "precise") return;
+    // The overlay keys selection by rawIndex; select the first box on page 1.
+    const selected = new Set([merged._mergedBoxes[0].rawIndex]);
+    assert.equal(
+      formatSelectedBoxesForCopy(merged._mergedBoxes, selected),
+      "First paragraph",
     );
   });
 

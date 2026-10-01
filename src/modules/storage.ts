@@ -173,7 +173,10 @@ export function createStorage(rootDir: string): StorageAdapter {
       if (!Array.isArray(boxes)) {
         throw new Error("boxes.normalized.json is not an array");
       }
-      return refreshStaleBoxes(dir, boxes as NormalizedBox[]);
+      return repairDuplicateRawIndexes(
+        dir,
+        await refreshStaleBoxes(dir, boxes as NormalizedBox[]),
+      );
     },
 
     async readImageDataURL(ref, imageMarkdownPath) {
@@ -573,6 +576,41 @@ async function refreshStaleBoxes(
 
   await writeJson(joinPath(dir, BOXES_FILE), refreshed);
   return refreshed;
+}
+
+/**
+ * Give every stored box a unique `rawIndex`.
+ *
+ * Older versions restarted `rawIndex` at 0 in every chunk of a merged (more
+ * than 200 page) result, so selecting or copying one box also picked up the
+ * boxes sharing its index in other chunks. Boxes are stored in document order,
+ * so renumbering by position matches what a fresh merge now produces. The fix
+ * is written back on a best-effort basis; the repaired boxes are returned
+ * either way.
+ */
+async function repairDuplicateRawIndexes(
+  dir: string,
+  boxes: NormalizedBox[],
+): Promise<NormalizedBox[]> {
+  const seen = new Set<number>();
+  const hasDuplicates = boxes.some((box) => {
+    if (seen.has(box.rawIndex)) {
+      return true;
+    }
+    seen.add(box.rawIndex);
+    return false;
+  });
+  if (!hasDuplicates) {
+    return boxes;
+  }
+
+  const repaired = boxes.map((box, index) => ({ ...box, rawIndex: index }));
+  try {
+    await writeJson(joinPath(dir, BOXES_FILE), repaired);
+  } catch {
+    // Keep serving the repaired boxes even if the result folder is read-only.
+  }
+  return repaired;
 }
 
 async function removeBackupDir(path: string): Promise<void> {

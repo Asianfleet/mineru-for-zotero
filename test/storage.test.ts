@@ -1,6 +1,6 @@
 import { assert } from "chai";
 import { createStorage } from "../src/modules/storage";
-import { normalizedBoxes } from "./domainFixtures";
+import { mineruResultFixture, normalizedBoxes } from "./domainFixtures";
 
 const rootDir = `TmpD/mineru-copy-${Date.now()}-${Math.random()
   .toString(36)
@@ -718,6 +718,51 @@ describe("storage", function () {
     );
 
     assert.equal(await storage.countReadyResults(), 1);
+  });
+
+  it("repairs duplicate rawIndex values left by older chunk merges", async function () {
+    const storage = createStorage(rootDir);
+    const attachment = {
+      id: 1,
+      key: "MERGED",
+      libraryID: 12,
+      fileName: "a.pdf",
+      filePath: "a.pdf",
+      mtime: 1,
+    };
+    // Two chunks merged by an older version: rawIndex restarts at 0.
+    const legacyBoxes = [
+      ...normalizedBoxes,
+      ...normalizedBoxes.map((box) => ({ ...box, page: box.page + 200 })),
+    ];
+
+    await writeResultOrFail(storage, {
+      attachment,
+      mineruTaskID: "task-1,task-2",
+      // A merged raw result is an array, which the stale-box refresh skips.
+      rawResult: [mineruResultFixture, mineruResultFixture],
+      markdown: "one\n\n---\n\ntwo",
+      boxes: legacyBoxes,
+    });
+
+    const boxes = await storage.readBoxes(attachment);
+
+    assert.deepEqual(
+      boxes.map((box) => box.rawIndex),
+      [0, 1, 2, 3, 4, 5],
+    );
+    assert.deepEqual(
+      boxes.map((box) => box.page),
+      legacyBoxes.map((box) => box.page),
+    );
+    const dir = resolveTmpPath(storage.getAttachmentDir(attachment));
+    const stored = (await readJson(
+      joinPath(dir, "boxes.normalized.json"),
+    )) as Array<{ rawIndex: number }>;
+    assert.deepEqual(
+      stored.map((box) => box.rawIndex),
+      [0, 1, 2, 3, 4, 5],
+    );
   });
 
   it("refreshes stale normalized boxes from the raw MinerU result", async function () {
