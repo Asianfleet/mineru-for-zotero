@@ -264,6 +264,47 @@ export async function clearAttachmentParseRunning(
   refreshColumns(dependencies);
 }
 
+/**
+ * Re-read one attachment's stored results and redraw the parse column, for
+ * example after its result was deleted. A mode that is currently parsing keeps
+ * its running badge; an unreadable result folder counts as no result.
+ */
+export async function refreshAttachmentParseStatus(
+  ref: AttachmentStatusKeyRef,
+  dependencies: ItemTreeColumnDependencies = {},
+): Promise<void> {
+  const state = getOrCreateItemTreeColumnState();
+  const key = getAttachmentStatusKey(ref);
+  let diskStatus = { preciseReady: false, liteReady: false };
+  try {
+    diskStatus = await getColumnStorage(dependencies).readParseStatus(ref);
+  } catch {
+    // Treat an unreadable result folder as having no result.
+  }
+
+  const current = state.statuses.get(key) ?? createEmptyParseColumnStatus();
+  const status: ParseColumnStatus = {
+    precise:
+      current.precise === "running"
+        ? "running"
+        : diskStatus.preciseReady
+          ? "ready"
+          : "none",
+    lite:
+      current.lite === "running"
+        ? "running"
+        : diskStatus.liteReady
+          ? "ready"
+          : "none",
+  };
+  if (status.precise === "none" && status.lite === "none") {
+    state.statuses.delete(key);
+  } else {
+    state.statuses.set(key, status);
+  }
+  refreshColumns(dependencies);
+}
+
 function createTokenParts(status: ParseColumnStatus): string[] {
   const parts: string[] = [];
   if (status.precise === "ready") {

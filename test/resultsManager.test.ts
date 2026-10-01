@@ -199,6 +199,57 @@ describe("Results Manager", function () {
       assert.ok(deletedStorage);
       assert.strictEqual(removedTags.length, 0);
     });
+
+    it("refreshes dependent UI after the stored result is deleted", async function () {
+      const events: string[] = [];
+      mockStorage.deleteResult = async () => {
+        events.push("delete");
+      };
+      deps.onResultDeleted = async (ref) => {
+        events.push(`refresh ${ref.libraryID}-${ref.key}`);
+      };
+
+      await deleteResultEntry(
+        {
+          libraryID: 1,
+          key: "KEY",
+          attachmentID: 101,
+          isOrphan: false,
+          preciseReady: true,
+          liteReady: false,
+          sizeBytes: 10,
+        },
+        { removeTags: false },
+        deps,
+      );
+
+      assert.deepEqual(events, ["delete", "refresh 1-KEY"]);
+    });
+
+    it("still completes the deletion when the UI refresh fails", async function () {
+      let deletedStorage = false;
+      mockStorage.deleteResult = async () => {
+        deletedStorage = true;
+      };
+      deps.onResultDeleted = async () => {
+        throw new Error("item tree unavailable");
+      };
+
+      await deleteResultEntry(
+        {
+          libraryID: 1,
+          key: "KEY",
+          isOrphan: true,
+          preciseReady: true,
+          liteReady: false,
+          sizeBytes: 10,
+        },
+        { removeTags: false },
+        deps,
+      );
+
+      assert.isTrue(deletedStorage);
+    });
   });
 
   describe("cleanOrphans", function () {

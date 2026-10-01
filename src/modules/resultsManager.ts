@@ -1,6 +1,7 @@
 import { config } from "../../package.json";
 import { createStorage, type StorageAdapter, toNativePath } from "./storage";
 import { syncResultToAgentFolder } from "./agentSync";
+import { refreshAttachmentParseStatus } from "./itemTreeColumn";
 import { getSyncFolder } from "../utils/prefs";
 import { taskStore } from "./taskStore";
 
@@ -41,6 +42,8 @@ export interface ResultsManagerDependencies {
   removeItemTag(id: number, tag: string): Promise<void>;
   eraseItem(id: number): Promise<void>;
   revealFolder(path: string): Promise<void>;
+  /** Called after a stored result was deleted, to refresh dependent UI. */
+  onResultDeleted?(ref: { libraryID: number; key: string }): Promise<void>;
 }
 
 export interface ResultsManagerService {
@@ -206,6 +209,12 @@ export async function deleteResultEntry(
     key: entry.key || entry.attachmentKey!,
   };
   await deps.storage.deleteResult(ref);
+  try {
+    // Keep the item tree's parse column in step with what is now on disk.
+    await deps.onResultDeleted?.(ref);
+  } catch {
+    // A UI refresh failure must not turn a completed deletion into an error.
+  }
 
   if (!entry.isOrphan && entry.attachmentID) {
     if (options.removeTags) {
@@ -308,6 +317,9 @@ export function createResultsManagerService(
       } else if (Zotero?.launchFile) {
         await Zotero.launchFile(nativePath);
       }
+    },
+    async onResultDeleted(ref) {
+      await refreshAttachmentParseStatus(ref, { storage });
     },
   };
 
