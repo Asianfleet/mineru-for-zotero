@@ -1,7 +1,7 @@
 {
   "name": "mineru-for-zotero",
   "type": "module",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "MinerU for Zotero: AI-powered PDF Parsing and Formula Extraction",
   "config": {
     "addonName": "MinerU for Zotero",
