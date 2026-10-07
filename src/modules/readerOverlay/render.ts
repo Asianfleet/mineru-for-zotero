@@ -4,6 +4,11 @@ import {
   formatTableBoxForCopy,
 } from "../copyFormatter";
 import { safeReaderOverlayCleanup } from "./diagnostics";
+import {
+  createReaderToolbarIconDataURI,
+  getReaderToolbarClearSelectionSVG,
+  getReaderToolbarCopySelectionSVG,
+} from "../readerToolbar/assets";
 import { readerOverlayString, showReaderOverlayNotice } from "./notice";
 import { copyBoxImageFromStorage, copyText, isImageCopyBox } from "./copy";
 import { setBoxSelectedClass, selectBoxRange } from "./selection";
@@ -49,6 +54,10 @@ export function buildReaderOverlayRoot(
 ): HTMLDivElement {
   const root = doc.createElement("div");
   root.className = `mineru-copy-overlay-root mineru-copy-mode-${mode}`;
+  root.classList.toggle(
+    "mineru-copy-has-selection",
+    (selectionOptions.selectedRawIndexes?.size ?? 0) > 0,
+  );
   const selectableRawIndexes = [
     ...(selectionOptions.selectableRawIndexes ?? []),
   ];
@@ -209,6 +218,28 @@ export function createBoxActions(
       },
     }),
   );
+  const selectionActions = doc.createElement("div");
+  selectionActions.className = "mineru-copy-selection-actions";
+  selectionActions.append(
+    createSelectionCommandButton(
+      doc,
+      "copy-selected",
+      readerOverlayString(
+        "reader-copy-selected-boxes",
+        "Copy selected content",
+      ),
+      getReaderToolbarCopySelectionSVG(),
+      () => selectionOptions.onCopySelected?.(),
+    ),
+    createSelectionCommandButton(
+      doc,
+      "clear-selection",
+      readerOverlayString("reader-clear-selection", "Clear selection"),
+      getReaderToolbarClearSelectionSVG(),
+      () => selectionOptions.onClearSelection?.(),
+    ),
+  );
+  toolbar.append(selectionActions);
 
   const panel = createSelectCopyPanel(doc, box);
   actions.append(toolbar, panel);
@@ -258,6 +289,31 @@ interface ToolbarButtonOptions {
   label: string;
   onClick: () => void;
   showText?: boolean;
+}
+
+/** 创建与 reader 菜单共用图标和文案的多选操作按钮。 */
+function createSelectionCommandButton(
+  doc: Document,
+  action: string,
+  label: string,
+  svg: string,
+  onClick: () => void,
+): HTMLButtonElement {
+  const button = createToolbarButton(doc, {
+    action,
+    className: `mineru-copy-toolbar-button-${action}`,
+    label,
+    onClick,
+  });
+  if (svg) {
+    const icon = doc.createElement("span");
+    icon.className = "mineru-copy-selection-icon";
+    icon.style.backgroundImage = `url("${createReaderToolbarIconDataURI(svg)}")`;
+    button.append(icon);
+  } else {
+    button.textContent = label;
+  }
+  return button;
 }
 
 /** 创建普通文本或公式复制入口。 */

@@ -1,5 +1,6 @@
 import { getMinerUStorageRoot } from "../preferenceScript";
 import { createStorage } from "../storage";
+import { copySelectedBoxesForReader } from "./copy";
 import { logReaderOverlayDiagnostic } from "./diagnostics";
 import { showReaderOverlayNotice } from "./notice";
 import {
@@ -7,7 +8,11 @@ import {
   positionPageLayers,
 } from "./positioning";
 import { buildReaderOverlayRoot } from "./render";
-import { setHoveredBox, syncSelectedBoxClasses } from "./selection";
+import {
+  clearReaderOverlaySelectionForReader,
+  setHoveredBox,
+  syncSelectedBoxClasses,
+} from "./selection";
 import {
   cleanupReaderOverlayRoot,
   destroyReaderOverlay,
@@ -132,7 +137,7 @@ export async function renderReaderOverlayForReader(
     }
 
     const mountContainer = getReaderOverlayMountContainer(doc);
-    const selectionOptions = createSelectionOptions(state, attachment);
+    const selectionOptions = createSelectionOptions(reader, state, attachment);
     const root = buildReaderOverlayRoot(doc, boxes, mode, selectionOptions);
     ensureReaderOverlayStyles(doc);
     positionPageLayers(doc, root);
@@ -155,6 +160,7 @@ export async function renderReaderOverlayForReader(
 
 /** 基于当前 state 构造渲染与定位共用的 selection options。 */
 function createSelectionOptions(
+  reader: _ZoteroTypes.ReaderInstance,
   state: ReaderOverlayState,
   attachment: { libraryID: number; key: string },
 ): import("./types").ReaderOverlaySelectionOptions {
@@ -166,6 +172,13 @@ function createSelectionOptions(
       state.selectionAnchorRawIndex = rawIndex;
     },
     onSelectionChange: () => syncSelectedBoxClasses(state),
+    onCopySelected: () => {
+      void copySelectedBoxesForReader(reader);
+    },
+    onClearSelection: () => {
+      clearReaderOverlaySelectionForReader(reader);
+      void renderReaderOverlayForReader(reader);
+    },
     isSelectPanelActive: () => state.selectPanelActive,
     onSelectPanelActiveChange: (active) => {
       syncSelectPanelActiveClasses(state, active);

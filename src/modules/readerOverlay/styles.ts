@@ -207,6 +207,39 @@ export const READER_OVERLAY_CSS = `
   border-radius: 0 8px 8px 0;
 }
 
+.mineru-copy-has-selection .mineru-copy-toolbar-button-select {
+  border-radius: 0;
+}
+
+.mineru-copy-selection-actions {
+  display: none;
+  align-items: center;
+  border-left: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+.mineru-copy-has-selection .mineru-copy-selection-actions {
+  display: flex;
+}
+
+.mineru-copy-toolbar-button-clear-selection {
+  border-radius: 0 8px 8px 0;
+}
+
+.mineru-copy-selection-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  margin: auto;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  pointer-events: none;
+}
+
+.mineru-copy-selection-actions .mineru-copy-toolbar-button::before {
+  display: none;
+}
+
 .mineru-copy-toolbar-button-select::before {
   mask-image: url("${SELECT_COPY_ICON_DATA_URI}");
 }

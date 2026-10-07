@@ -48,6 +48,8 @@ export interface ReaderOverlaySelectionOptions {
   getSelectionAnchorRawIndex?: () => number | null;
   setSelectionAnchorRawIndex?: (rawIndex: number | null) => void;
   onSelectionChange?: () => void;
+  onCopySelected?: () => void;
+  onClearSelection?: () => void;
   isSelectPanelActive?: () => boolean;
   onSelectPanelActiveChange?: (active: boolean) => void;
   isFormulaMenuActive?: () => boolean;
