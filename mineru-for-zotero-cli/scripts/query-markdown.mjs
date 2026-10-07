@@ -313,6 +313,25 @@ async function prepareSuccessData(options, data) {
     };
   }
 
+  if (options.output && data?.images?.length === 1) {
+    const image = data.images[0];
+    const bytes =
+      image.status === "ok" && typeof image.dataURL === "string"
+        ? decodeDataUrl(image.dataURL)
+        : undefined;
+    if (!bytes) {
+      throw new Error("Image response has no valid data URL");
+    }
+    const outputPath = imageOutputPath(options, image.path);
+    await writeBinaryOutput(outputPath, bytes);
+    return {
+      path: image.path,
+      mime: image.mime,
+      bytes: bytes.byteLength,
+      output: outputPath,
+    };
+  }
+
   if (options.outputDir && Array.isArray(data?.images)) {
     const writtenImages = [];
     for (const image of data.images) {
@@ -375,7 +394,7 @@ async function writeBinaryOutput(outputPath, bytes) {
 }
 
 /**
- * Decodes a base64 data URL into bytes for multi-image JSON responses.
+ * Decodes a base64 data URL into bytes for image JSON responses.
  */
 function decodeDataUrl(dataURL) {
   const match = /^data:[^;,]+;base64,(.+)$/i.exec(dataURL);

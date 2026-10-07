@@ -340,24 +340,23 @@ function json(code: number, payload: unknown) {
 }
 
 /**
- * 生成图片 endpoint 响应；单图成功返回原始字节，多图返回 JSON 元数据。
+ * 生成图片 endpoint 响应；成功结果统一返回可安全序列化的 JSON。
  */
 function imageResponse(payload: { images: MarkdownImageResult[] }) {
   if (payload.images.length === 1) {
     const image = payload.images[0];
-    if (image.status === "ok" && image.bytes && image.mime) {
-      return [200, image.mime, image.bytes] as const;
-    }
     if (image.status === "invalid-path") {
       return json(400, {
         error: "invalid-path",
         message: "Invalid image path",
       });
     }
-    return json(404, {
-      error: "image-not-found",
-      message: "Image not found",
-    });
+    if (image.status !== "ok") {
+      return json(404, {
+        error: "image-not-found",
+        message: "Image not found",
+      });
+    }
   }
 
   return json(200, {

@@ -85,7 +85,7 @@ Main capabilities:
 - Pass `attachmentKey` to select a specific PDF when a regular item has multiple PDF attachments.
 - Return precise Markdown first; if precise output is unavailable but lite output exists, return lite Markdown and mark it in `result.mode`.
 
-Compatibility note: `granularity=section` now returns grouped results under `groups`. Use `sectionNumber` for numbered headings and fuzzy `sectionPath` for partial heading/path matching. Tables are available from `/mineru-for-zotero/tables`; images referenced as `images/...` are available from `/mineru-for-zotero/image`. The `/image` endpoint returns raw bytes for a single image path and JSON `images` statuses for multiple comma-separated paths.
+Compatibility note: `granularity=section` now returns grouped results under `groups`. Use `sectionNumber` for numbered headings and fuzzy `sectionPath` for partial heading/path matching. Tables are available from `/mineru-for-zotero/tables`; images referenced as `images/...` are available from `/mineru-for-zotero/image`. The `/image` endpoint returns JSON `images` results with base64 `dataURL` values for both single and comma-separated image paths.
 
 ### Configuration
 
@@ -157,18 +157,15 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/tables" \
   -H "Authorization: Bearer <token>"
 ```
 
-Fetch a saved image referenced by Markdown:
+Fetch a saved image referenced by Markdown with the CLI:
 
 ```shell
-curl --get "http://127.0.0.1:23119/mineru-for-zotero/image" \
-  --data-urlencode "libraryID=1" \
-  --data-urlencode "key=ABCD1234" \
-  --data-urlencode "path=images/a.jpg" \
-  -H "Authorization: Bearer <token>" \
-  --output a.jpg
+node mineru-for-zotero-cli/scripts/query-markdown.mjs image \
+  --library-id 1 --key ABCD1234 --path images/a.jpg \
+  --token "<token>" --output a.jpg
 ```
 
-When `/image` receives one `path`, it returns image bytes directly. When it receives multiple comma-separated paths, it returns JSON statuses per image instead of a binary body.
+The `/image` endpoint returns JSON for single and multiple paths. Each successful image includes a base64 `dataURL`; the CLI decodes it when saving the file.
 
 Common parameters:
 

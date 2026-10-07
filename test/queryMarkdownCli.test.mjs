@@ -374,6 +374,102 @@ test("writes image binary responses to the requested output file", async () => {
   }
 });
 
+test("writes a single-image JSON response to --output", async () => {
+  const root = await mkdtemp(join(tmpdir(), "mineru-cli-image-json-"));
+  const outputPath = join(root, "figure.jpg");
+  const imageBytes = Uint8Array.from([255, 216, 255, 224, 0, 16]);
+
+  try {
+    await withServer(
+      {
+        status: 200,
+        body: {
+          images: [
+            {
+              path: "images/figure.jpg",
+              status: "ok",
+              mime: "image/jpeg",
+              dataURL: `data:image/jpeg;base64,${Buffer.from(imageBytes).toString("base64")}`,
+            },
+          ],
+        },
+      },
+      async ({ port }) => {
+        const result = await runCli([
+          "image",
+          "--port",
+          String(port),
+          "--library-id",
+          "1",
+          "--key",
+          "ABCD1234",
+          "--path",
+          "images/figure.jpg",
+          "--output",
+          outputPath,
+        ]);
+
+        assert.equal(result.code, 0);
+        assert.match(result.stdout, /Image saved/);
+        assert.match(result.stdout, /Bytes: 6/);
+        assert.deepEqual(
+          new Uint8Array(await readFile(outputPath)),
+          imageBytes,
+        );
+      },
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("writes a single-image JSON response to --output-dir", async () => {
+  const root = await mkdtemp(join(tmpdir(), "mineru-cli-image-dir-"));
+  const imageBytes = Uint8Array.from([137, 80, 78, 71]);
+
+  try {
+    await withServer(
+      {
+        status: 200,
+        body: {
+          images: [
+            {
+              path: "images/figure.png",
+              status: "ok",
+              mime: "image/png",
+              dataURL: `data:image/png;base64,${Buffer.from(imageBytes).toString("base64")}`,
+            },
+          ],
+        },
+      },
+      async ({ port }) => {
+        const result = await runCli([
+          "image",
+          "--port",
+          String(port),
+          "--library-id",
+          "1",
+          "--key",
+          "ABCD1234",
+          "--path",
+          "images/figure.png",
+          "--output-dir",
+          root,
+        ]);
+
+        assert.equal(result.code, 0);
+        assert.match(result.stdout, /Written: 1/);
+        assert.deepEqual(
+          new Uint8Array(await readFile(join(root, "figure.png"))),
+          imageBytes,
+        );
+      },
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("rejects image requests without an output target", async () => {
   await withServer(
     {

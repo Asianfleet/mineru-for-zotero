@@ -352,7 +352,7 @@ describe("markdownApiEndpoint", function () {
     assert.equal(payload.error, "invalid-request");
   });
 
-  it("returns image bytes for a single image request", async function () {
+  it("returns image data URL as JSON for a single image request", async function () {
     setMarkdownApiEnabled(true);
     setMarkdownApiRequireToken(false);
     const endpoint = createMarkdownQueryEndpoint({
@@ -372,6 +372,7 @@ describe("markdownApiEndpoint", function () {
               path: "images/a.jpg",
               status: "ok",
               mime: "image/jpeg",
+              dataURL: "data:image/jpeg;base64,AQID",
               bytes: new Uint8Array([1, 2, 3]),
             },
           ],
@@ -386,8 +387,19 @@ describe("markdownApiEndpoint", function () {
     );
 
     assert.equal(response[0], 200);
-    assert.equal(response[1], "image/jpeg");
-    assert.deepEqual(Array.from(response[2] as Uint8Array), [1, 2, 3]);
+    assert.equal(response[1], "application/json");
+    const payload = JSON.parse(String(response[2])) as {
+      images: Array<{ dataURL: string; bytes?: unknown }>;
+    };
+    assert.deepEqual(payload.images, [
+      {
+        path: "images/a.jpg",
+        status: "ok",
+        mime: "image/jpeg",
+        dataURL: "data:image/jpeg;base64,AQID",
+      },
+    ]);
+    assert.notProperty(payload.images[0], "bytes");
   });
 
   it("returns invalid-path for a single invalid image request", async function () {
