@@ -221,6 +221,7 @@ export function createBoxActions(
   const selectionActions = doc.createElement("div");
   selectionActions.className = "mineru-copy-selection-actions";
   selectionActions.append(
+    createToolbarDivider(doc),
     createSelectionCommandButton(
       doc,
       "copy-selected",
@@ -231,6 +232,7 @@ export function createBoxActions(
       getReaderToolbarCopySelectionSVG(),
       () => selectionOptions.onCopySelected?.(),
     ),
+    createToolbarDivider(doc),
     createSelectionCommandButton(
       doc,
       "clear-selection",
@@ -308,7 +310,7 @@ function createSelectionCommandButton(
   if (svg) {
     const icon = doc.createElement("span");
     icon.className = "mineru-copy-selection-icon";
-    icon.style.backgroundImage = `url("${createReaderToolbarIconDataURI(svg)}")`;
+    icon.style.maskImage = `url("${createReaderToolbarIconDataURI(svg)}")`;
     button.append(icon);
   } else {
     button.textContent = label;

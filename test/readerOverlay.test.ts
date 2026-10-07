@@ -145,7 +145,7 @@ describe("readerOverlay", function () {
     assert.lengthOf(findElementsByDataAction(root, "select-copy"), 25);
     assert.lengthOf(
       findElementsByClass(root, "mineru-copy-toolbar-divider"),
-      25,
+      75,
     );
     assert.lengthOf(findElementsByClass(root, "mineru-copy-formula-menu"), 2);
     assert.lengthOf(findElementsByClass(root, "mineru-copy-table-menu"), 1);
@@ -224,7 +224,7 @@ describe("readerOverlay", function () {
       );
       assert.lengthOf(
         findElementsByClass(root, "mineru-copy-toolbar-divider"),
-        4,
+        12,
       );
       assert.lengthOf(findElementsByClass(root, "mineru-copy-formula-menu"), 1);
       assert.deepEqual(
@@ -267,7 +267,7 @@ describe("readerOverlay", function () {
     assert.lengthOf(findElementsByDataAction(root, "select-copy"), 6);
     assert.lengthOf(
       findElementsByClass(root, "mineru-copy-toolbar-divider"),
-      6,
+      18,
     );
     assert.lengthOf(findElementsByClass(root, "mineru-copy-formula-menu"), 1);
     assert.lengthOf(findElementsByClass(root, "mineru-copy-table-menu"), 0);
@@ -1255,7 +1255,19 @@ describe("readerOverlay", function () {
     );
     assert.match(
       style.textContent,
-      /\.mineru-copy-toolbar-divider\s*\{[^}]*border-left:\s*1px solid/s,
+      /\.mineru-copy-toolbar-divider\s*\{[^}]*border-left:\s*1px solid currentColor;[^}]*opacity:\s*0\.4/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-toolbar-button:hover,[^{]*\{[^}]*background-color:\s*color-mix\(in srgb, currentColor 18%, transparent\)/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-menu-item:hover\s*\{[^}]*background-color:\s*color-mix\(in srgb, currentColor 18%, transparent\)/s,
+    );
+    assert.match(
+      style.textContent,
+      /\.mineru-copy-selection-icon\s*\{[^}]*background-color:\s*currentColor/s,
     );
     assert.notInclude(
       style.textContent,
@@ -3521,12 +3533,21 @@ describe("readerOverlay", function () {
       assert.equal(copyButtons[0].title, "Copy selected content");
       assert.equal(clearButtons[0].title, "Clear selection");
       assert.equal(
-        copyButtons[0].children[0]?.style.backgroundImage,
+        copyButtons[0].children[0]?.style.maskImage,
         `url("${createReaderToolbarIconDataURI(copyIcon)}")`,
       );
       assert.equal(
-        clearButtons[0].children[0]?.style.backgroundImage,
+        clearButtons[0].children[0]?.style.maskImage,
         `url("${createReaderToolbarIconDataURI(clearIcon)}")`,
+      );
+      const toolbar = findElementsByClass(root, "mineru-copy-box-toolbar")[0];
+      assert.deepEqual(
+        toolbar.children[3].children.map((element) =>
+          element.className.includes("mineru-copy-toolbar-divider")
+            ? "divider"
+            : element.dataset.mineruAction,
+        ),
+        ["divider", "copy-selected", "divider", "clear-selection"],
       );
 
       findElementsByClass(root, "mineru-copy-box")[0].dispatch(

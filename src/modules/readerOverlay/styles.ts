@@ -158,7 +158,7 @@ export const READER_OVERLAY_CSS = `
   display: flex;
   align-items: center;
   overflow: visible;
-  border: 1px solid rgba(0, 0, 0, 0.14);
+  border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
   border-radius: 8px;
   background: var(--material-toolbar, ButtonFace);
   box-shadow:
@@ -182,7 +182,7 @@ export const READER_OVERLAY_CSS = `
 
 .mineru-copy-toolbar-button:hover,
 .mineru-copy-menu-group:hover > .mineru-copy-toolbar-button {
-  background-color: rgba(0, 0, 0, 0.08);
+  background-color: color-mix(in srgb, currentColor 18%, transparent);
 }
 
 .mineru-copy-toolbar-button::before {
@@ -214,7 +214,6 @@ export const READER_OVERLAY_CSS = `
 .mineru-copy-selection-actions {
   display: none;
   align-items: center;
-  border-left: 1px solid rgba(0, 0, 0, 0.18);
 }
 
 .mineru-copy-has-selection .mineru-copy-selection-actions {
@@ -230,9 +229,10 @@ export const READER_OVERLAY_CSS = `
   width: 16px;
   height: 16px;
   margin: auto;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: contain;
+  background-color: currentColor;
+  mask-position: center;
+  mask-repeat: no-repeat;
+  mask-size: contain;
   pointer-events: none;
 }
 
@@ -247,7 +247,8 @@ export const READER_OVERLAY_CSS = `
 .mineru-copy-toolbar-divider {
   width: 0;
   height: 18px;
-  border-left: 1px solid rgba(0, 0, 0, 0.18);
+  border-left: 1px solid currentColor;
+  opacity: 0.4;
 }
 
 .mineru-copy-menu-group {
@@ -323,7 +324,7 @@ export const READER_OVERLAY_CSS = `
 }
 
 .mineru-copy-menu-item:hover {
-  background-color: rgba(0, 0, 0, 0.08);
+  background-color: color-mix(in srgb, currentColor 18%, transparent);
 }
 
 .mineru-copy-select-panel {
