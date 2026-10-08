@@ -4,7 +4,13 @@
 
 以 Zotero 条目 `NML4HPJG`（arXiv `2505.06708`）测试 `latex` 模式时，源码下载、全文、标题、搜索、表格和单图读取可用，但章节内容截取、多图导出、部分元数据与 CLI 文本输出存在错误。现有测试通过，却未覆盖这些真实源码形态。本设计修复这些问题，并使 LaTeX 的 CLI、HTTP API、实现和文档采用同一契约。
 
-本次只调整 LaTeX 查询与共用 CLI 对 LaTeX 响应的呈现，不改变 Markdown 查询行为、Zotero UI、源码下载或存储布局。不新增第三方 LaTeX 解析依赖。LaTeX 查询保留原始源码，不尝试宏展开、排版或语义转换。
+本次调整 LaTeX 查询、缓存命中的 `latex fetch` 响应与共用 CLI 对 LaTeX 响应的呈现，不改变 Markdown 查询行为、Zotero UI、首次下载流程或存储布局。不新增第三方 LaTeX 解析依赖。LaTeX 查询保留原始源码，不尝试宏展开、排版或语义转换。
+
+## 缓存命中的 fetch
+
+`latex fetch` 在首次下载、显式 `--refresh` 和缓存命中时都只返回同一形状的 manifest，包括 arXiv ID、版本、主文件、文件路径与数量等元数据，不返回 `files[].content`。缓存命中时先读取并验证 manifest 的 ready 状态、条目身份、路径安全性，以及 manifest 列出的 `.tex` 文件存在性；验证通过即返回 manifest，不读取或解码 TeX 正文，也不访问 arXiv。验证失败时沿用现有重新下载流程，下载失败仍按原有错误模型返回。
+
+这项元数据检查不能证明文件内容可解码。实际 `latex read` 和 `latex table` 继续通过完整源码读取发现内容损坏；缓存命中的 `fetch` 只承诺清单与 TeX 文件存在。CLI 文本模式从统一的顶层 manifest 字段读取 arXiv ID、版本、主文件和文件数，不再显示 `unknown`。
 
 ## 文档索引与扫描边界
 
@@ -41,11 +47,11 @@ LaTeX 的标题、表格和图片文本输出使用 LaTeX 专用标题与字段�
 - `latexQuery/parser.ts`：构建带来源位置的展开索引，并提供容错命令/环境扫描；不处理 Zotero、HTTP 或磁盘读写。
 - `latexQuery/service.ts`：从存储读取源码，使用索引完成标题、章节、搜索和表格查询，并执行查询参数规则。
 - `sourceQuery/apiEndpoint.ts`：校验请求参数、鉴权及 LaTeX 图片列表，映射稳定 HTTP 错误；不实现语法解析。
-- `texSource/storage.ts`：继续执行单路径的归档成员校验与字节读取；多图协调留在 API 层。
+- `texSource/storage.ts`：增加不读取 TeX 正文的 manifest 缓存检查，继续执行单路径的归档成员校验与字节读取；多图协调留在 API 层。
 - `mineru-for-zotero-cli/scripts/query-source.mjs`：按来源验证选项、保存图片、生成不含二进制载荷的 text/JSON 结果。
 
 ## 验收与验证
 
-回归测试应覆盖：同一文件中多个章节及跨 `\\input` 的截取边界；完整路径、唯一末级标题、歧义标题、未命中路径及禁止编号查询；含注释、转义和嵌套花括号的标题与 caption；搜索空查询、源码位置与上下文；单图和多图的成功、部分失败、重复路径、路径越界与输出目录层级；CLI text/JSON 中无 `undefined` 或 base64，Markdown 输出不变。
+回归测试应覆盖：缓存命中与首次下载返回相同的 manifest 形状、缓存命中不读取 TeX 正文、缺失 TeX 文件触发重新下载、`latex fetch` 文本模式不显示 `unknown`；同一文件中多个章节及跨 `\\input` 的截取边界；完整路径、唯一末级标题、歧义标题、未命中路径及禁止编号查询；含注释、转义和嵌套花括号的标题与 caption；搜索空查询、源码位置与上下文；单图和多图的成功、部分失败、重复路径、路径越界与输出目录层级；CLI text/JSON 中无 `undefined` 或 base64，Markdown 输出不变。
 
 以条目 `NML4HPJG` 复测 `Main Results` 应返回该章节而非导言区；查询 `Gating variant performance` 应返回完整 caption；两张 `imgs/*.pdf` 应可一次导出。运行 `node --test test/querySourceCli.test.mjs`、完整 Zotero scaffold 测试、`npm run lint:check` 和 `npm run build`，并确认最终 diff 只包含本任务文件。
