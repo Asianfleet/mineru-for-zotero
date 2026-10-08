@@ -214,18 +214,20 @@ LaTeX commands use the arXiv ID stored in the Zotero item's `extra` or `url`. Fe
 ```shell
 node mineru-for-zotero-cli/scripts/query-source.mjs latex fetch --library-id 1 --key ABCD1234 --token "<token>"
 node mineru-for-zotero-cli/scripts/query-source.mjs latex read --library-id 1 --key ABCD1234 --granularity headings --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs latex read --library-id 1 --key ABCD1234 --granularity section --section-path "Main Results" --token "<token>"
 node mineru-for-zotero-cli/scripts/query-source.mjs latex read --library-id 1 --key ABCD1234 --granularity search --query "attention" --token "<token>"
 node mineru-for-zotero-cli/scripts/query-source.mjs latex table --library-id 1 --key ABCD1234 --query "Table 2" --token "<token>"
 node mineru-for-zotero-cli/scripts/query-source.mjs latex image --library-id 1 --key ABCD1234 --path figures/model.pdf --output model.pdf --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs latex image --library-id 1 --key ABCD1234 --path imgs/one.pdf,imgs/two.pdf --output-dir extracted --token "<token>"
 ```
 
-For CLI commands, `--library-id` is required for every command and `--key` is required for every `markdown` and `latex` command. `markdown read` and `latex read` use the same granularity, section, and search options. The `--table-format` option is available only for `markdown table`; `latex table` always returns the original LaTeX code and does not accept it.
+For CLI commands, `--library-id` is required for every command and `--key` is required for every `markdown` and `latex` command. LaTeX sections require `--section-path`: use a case-insensitive exact full heading path separated by `/`, or a unique final title. LaTeX does not support `--section-number`, number ranges, or fuzzy path fragments. LaTeX search requires a non-empty `--query` and accepts `--context-paragraphs` (default `1`); matches report the source file and line. The `--table-format` option is available only for `markdown table`; `latex table` always returns the original LaTeX code and does not accept it.
 
 `latex table` always returns the original LaTeX table code. Use `latex fetch --refresh` to replace the stored source with a newly downloaded version.
 
 The CLI tries to read Zotero's local HTTP server port from the default Zotero profile. If it cannot, it uses `23119`. Add `--port <number>` to set the port manually. The default output is `--format text`, which is easier for agents to read directly. Use `--format json` for scripts and pipelines.
 
-For `image`, use `--output <file>` for a single path. For multiple comma-separated paths, use `--output-dir <dir>` so each image is written under that directory.
+For `image`, use `--output <file>` for a single path. For multiple comma-separated paths, use `--output-dir <dir>` so each image is written under that directory. LaTeX image output preserves source subdirectories such as `imgs/` and `logo/`; each requested path has its own status, duplicate paths are written once, and a partial failure returns a nonzero exit code while retaining successful files. Text and JSON output never include image base64 data. An ambiguous LaTeX section title returns candidate full paths; a missing section returns `section-not-found`.
 
 ## Troubleshooting
 

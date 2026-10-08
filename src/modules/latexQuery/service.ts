@@ -5,6 +5,7 @@ import {
   searchLatex,
   type LatexSourceFile,
 } from "./parser";
+import { createLatexDocumentIndex } from "./documentIndex";
 
 export interface LatexSourceStore {
   read(ref: { libraryID: number; key: string }): Promise<{
@@ -37,7 +38,8 @@ export function createLatexQueryService(deps: {
       throw new Error("tex-source-not-found");
     }
     const segments = expandLatexSource(source.files, source.mainFile);
-    return { item, source, segments };
+    const document = createLatexDocumentIndex(segments);
+    return { item, source, segments, document };
   }
 
   return {
@@ -46,9 +48,19 @@ export function createLatexQueryService(deps: {
       key: string;
       granularity?: "full" | "headings" | "section" | "search";
       query?: string;
+      sectionPath?: string;
+      sectionNumber?: string;
+      contextParagraphs?: number;
     }) {
-      const loaded = await load(input);
+      if (input.sectionNumber !== undefined) throw new Error("invalid-request");
       const granularity = input.granularity ?? "full";
+      if (!["full", "headings", "section", "search"].includes(granularity))
+        throw new Error("invalid-request");
+      if (granularity === "section" && !input.sectionPath?.trim())
+        throw new Error("missing-query");
+      if (granularity === "search" && !input.query?.trim())
+        throw new Error("missing-query");
+      const loaded = await load(input);
       const base = {
         item: {
           itemID: loaded.item.id,
@@ -62,38 +74,68 @@ export function createLatexQueryService(deps: {
         granularity,
       };
       if (granularity === "headings") {
-        return { ...base, headings: parseLatexHeadings(loaded.segments) };
+        return {
+          ...base,
+          headings: parseLatexHeadings(loaded.segments, loaded.document),
+        };
       }
       if (granularity === "search") {
         return {
           ...base,
-          query: input.query ?? "",
-          matches: searchLatex(loaded.segments, input.query ?? ""),
+          query: input.query,
+          matches: searchLatex(
+            loaded.segments,
+            input.query!,
+            input.contextParagraphs,
+            loaded.document,
+          ),
         };
       }
       if (granularity === "section") {
-        const headings = parseLatexHeadings(loaded.segments);
-        const requested = input.query?.trim() ?? "";
-        const heading = headings.find(
+        const requested = input.sectionPath!.trim();
+        const headings = parseLatexHeadings(loaded.segments, loaded.document);
+        const parts = requested
+          .split("/")
+          .map((part) => part.trim().toLowerCase());
+        const matches = headings.filter((candidate) => {
+          const path = candidate.path.map((part) => part.toLowerCase());
+          return parts.length === 1
+            ? candidate.title.toLowerCase() === parts[0]
+            : path.length === parts.length &&
+                path.every((part, index) => part === parts[index]);
+        });
+        if (matches.length === 0) throw new Error("section-not-found");
+        if (matches.length > 1) {
+          throw Object.assign(new Error("ambiguous-section"), {
+            candidates: matches.map(({ path, file, line }) => ({
+              path,
+              file,
+              line,
+            })),
+          });
+        }
+        const heading = matches[0];
+        const next = headings.find(
           (candidate) =>
-            candidate.path.join("/").toLowerCase() ===
-              requested.toLowerCase() ||
-            candidate.title.toLowerCase() === requested.toLowerCase(),
+            candidate.offset > heading.offset &&
+            candidate.level <= heading.level,
         );
-        if (!heading) throw new Error("section-not-found");
-        const segment = loaded.segments.find(
-          (candidate) => candidate.file === heading.file,
+        const content = loaded.document.text.slice(
+          heading.offset,
+          next?.offset ?? loaded.document.text.length,
         );
-        const content = segment?.text ?? "";
         return { ...base, heading, content };
       }
-      const content = loaded.segments.map((segment) => segment.text).join("\n");
+      const content = loaded.document.text;
       return { ...base, content };
     },
     async table(input: { libraryID: number; key: string; query: string }) {
       const loaded = await load(input);
       const query = input.query.trim().toLowerCase();
-      const tables = extractLatexTables(loaded.segments).filter((table) =>
+      const tables = extractLatexTables(
+        loaded.segments,
+        loaded.document,
+      ).filter((table) =>
         [table.caption, table.label, table.content]
           .filter(Boolean)
           .some((value) => value!.toLowerCase().includes(query)),

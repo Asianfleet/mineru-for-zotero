@@ -38,6 +38,47 @@ export function createTexSourceStorage(rootDir: string) {
     PathUtils.join(root, `${libraryID}-${key}`);
   return {
     getDir: dir,
+    /** 只验证缓存清单与 TeX 文件存在性，不读取源码正文。 */
+    async readReadyManifest(ref: {
+      libraryID: number;
+      key: string;
+    }): Promise<TexManifest> {
+      const target = dir(ref.libraryID, ref.key);
+      const manifestPath = PathUtils.join(target, "manifest.json");
+      if (!(await IOUtils.exists(manifestPath)))
+        throw new Error("tex-source-not-found");
+      const manifest = JSON.parse(
+        await IOUtils.readUTF8(manifestPath),
+      ) as TexManifest;
+      if (
+        !manifest ||
+        typeof manifest !== "object" ||
+        manifest.status !== "ready" ||
+        manifest.libraryID !== ref.libraryID ||
+        manifest.itemKey !== ref.key ||
+        typeof manifest.arxivID !== "string" ||
+        !manifest.arxivID ||
+        typeof manifest.resolvedVersion !== "string" ||
+        !manifest.resolvedVersion ||
+        !Array.isArray(manifest.files) ||
+        manifest.files.length === 0 ||
+        manifest.fileCount !== manifest.files.length ||
+        typeof manifest.mainFile !== "string" ||
+        !manifest.files.includes(manifest.mainFile) ||
+        !manifest.mainFile.toLowerCase().endsWith(".tex")
+      )
+        throw new Error("tex-source-not-found");
+      for (const path of manifest.files) {
+        if (typeof path !== "string" || !safeSourcePath(path))
+          throw new Error("unsafe-archive");
+        if (
+          path.toLowerCase().endsWith(".tex") &&
+          !(await IOUtils.exists(PathUtils.join(target, ...path.split("/"))))
+        )
+          throw new Error("tex-source-not-found");
+      }
+      return manifest;
+    },
     async read(ref: { libraryID: number; key: string }) {
       const target = dir(ref.libraryID, ref.key);
       const manifestPath = PathUtils.join(target, "manifest.json");
@@ -63,14 +104,18 @@ export function createTexSourceStorage(rootDir: string) {
     },
     async readImage(ref: { libraryID: number; key: string }, path: string) {
       if (!safeSourcePath(path)) throw new Error("invalid-path");
-      const source = await this.read(ref);
-      if (!source.manifest.files.includes(path))
+      const manifest = await this.readReadyManifest(ref);
+      if (!manifest.files.includes(path))
+        throw new Error("tex-image-not-found");
+      const imagePath = PathUtils.join(
+        dir(ref.libraryID, ref.key),
+        ...path.split("/"),
+      );
+      if (!(await IOUtils.exists(imagePath)))
         throw new Error("tex-image-not-found");
       return {
         path,
-        bytes: await IOUtils.read(
-          PathUtils.join(dir(ref.libraryID, ref.key), ...path.split("/")),
-        ),
+        bytes: await IOUtils.read(imagePath),
         mime: imageMime(path),
       };
     },

@@ -1,3 +1,9 @@
+import {
+  createLatexDocumentIndex,
+  type LatexDocumentIndex,
+} from "./documentIndex";
+import { plainLatexText, scanLatexCommands } from "./scanner";
+
 export interface LatexSourceFile {
   path: string;
   content: string;
@@ -15,6 +21,8 @@ export interface LatexHeading {
   path: string[];
   file: string;
   line: number;
+  level: number;
+  offset: number;
 }
 
 export interface LatexTable {
@@ -27,10 +35,20 @@ export interface LatexTable {
   lineEnd: number;
 }
 
-const INCLUDE = /\\(?:input|include)\s*\{([^}]+)\}/g;
-const SECTION =
-  /\\(part|chapter|section|subsection|subsubsection)\*?\s*\{([^}]*)\}/g;
-const TABLE_START = /\\begin\s*\{(table\*?|tabular\*?|longtable)\}/g;
+const HEADING_RANK: Record<string, number> = {
+  part: 0,
+  chapter: 1,
+  section: 2,
+  subsection: 3,
+  subsubsection: 4,
+};
+const TABLE_ENVIRONMENTS = new Set([
+  "table",
+  "table*",
+  "tabular",
+  "tabular*",
+  "longtable",
+]);
 
 /** 按主文件的引用顺序展开源码，同时记录每段的原始文件和起始行。 */
 export function expandLatexSource(
@@ -47,8 +65,19 @@ export function expandLatexSource(
     if (content === undefined || visiting.has(path)) return;
     visiting.add(path);
     let cursor = 0;
-    for (const match of content.matchAll(INCLUDE)) {
-      const start = match.index ?? 0;
+    for (const command of scanLatexCommands(content)) {
+      if (
+        (command.name !== "input" && command.name !== "include") ||
+        !command.argument
+      )
+        continue;
+      const start = command.start;
+      const requested = command.argument.trim();
+      const base = relativePath(path, requested);
+      const child = [base, `${base}.tex`].find((candidate) =>
+        byPath.has(candidate),
+      );
+      if (!child) continue;
       if (start > cursor) {
         segments.push({
           text: content.slice(cursor, start),
@@ -56,13 +85,8 @@ export function expandLatexSource(
           lineStart: lineNumber(content, cursor),
         });
       }
-      const requested = match[1].trim();
-      const base = relativePath(path, requested);
-      const child = [base, `${base}.tex`].find((candidate) =>
-        byPath.has(candidate),
-      );
-      if (child) visit(child);
-      cursor = start + match[0].length;
+      visit(child);
+      cursor = command.end;
     }
     if (cursor < content.length) {
       segments.push({
@@ -79,62 +103,71 @@ export function expandLatexSource(
 }
 
 /** 按 LaTeX 章节命令建立标题层级路径。 */
-export function parseLatexHeadings(segments: LatexSegment[]): LatexHeading[] {
-  const levels = {
-    part: 0,
-    chapter: 1,
-    section: 2,
-    subsection: 3,
-    subsubsection: 4,
-  };
-  const stack: Array<{ level: number; title: string }> = [];
+export function parseLatexHeadings(
+  segments: LatexSegment[],
+  document = createLatexDocumentIndex(segments),
+): LatexHeading[] {
+  const commands = scanLatexCommands(document.text).filter(
+    (command) => command.name in HEADING_RANK && command.argument !== undefined,
+  );
+  const firstRank = Math.min(
+    ...commands.map((command) => HEADING_RANK[command.name]),
+  );
+  const stack: Array<{ rank: number; title: string }> = [];
   const headings: LatexHeading[] = [];
-  for (const segment of segments) {
-    for (const match of segment.text.matchAll(SECTION)) {
-      const command = match[1] as keyof typeof levels;
-      const title = match[2].trim();
-      const level = levels[command];
-      while (stack.length && stack[stack.length - 1].level >= level)
-        stack.pop();
-      headings.push({
-        command,
-        title,
-        path: [...stack.map((item) => item.title), title],
-        file: segment.file,
-        line:
-          segment.lineStart + lineNumber(segment.text, match.index ?? 0) - 1,
-      });
-      stack.push({ level, title });
-    }
+  for (const command of commands) {
+    const rank = HEADING_RANK[command.name];
+    const title = plainLatexText(command.argument ?? "");
+    while (stack.length && stack[stack.length - 1].rank >= rank) stack.pop();
+    headings.push({
+      command: `${command.name}${command.starred ? "*" : ""}`,
+      title,
+      path: [...stack.map((item) => item.title), title],
+      ...document.locate(command.start),
+      level: rank - firstRank + 1,
+      offset: command.start,
+    });
+    stack.push({ rank, title });
   }
   return headings;
 }
 
 /** 查找完整表格环境，并避免将 table 内的 tabular 重复报告。 */
-export function extractLatexTables(segments: LatexSegment[]): LatexTable[] {
+export function extractLatexTables(
+  segments: LatexSegment[],
+  document = createLatexDocumentIndex(segments),
+): LatexTable[] {
   const tables: LatexTable[] = [];
-  for (const segment of segments) {
-    const covered: Array<[number, number]> = [];
-    for (const match of segment.text.matchAll(TABLE_START)) {
-      const start = match.index ?? 0;
-      if (covered.some(([from, to]) => start >= from && start < to)) continue;
-      const environment = match[1];
-      const end = environmentEnd(
-        segment.text,
-        environment,
-        start + match[0].length,
-      );
-      if (end === -1) continue;
-      covered.push([start, end]);
-      const content = segment.text.slice(start, end);
+  const stack: Array<{ name: string; start: number; report: boolean }> = [];
+  for (const command of scanLatexCommands(document.text)) {
+    const name = command.argument?.trim();
+    if (!name) continue;
+    if (command.name === "begin") {
+      stack.push({
+        name,
+        start: command.start,
+        report:
+          TABLE_ENVIRONMENTS.has(name) &&
+          !stack.some((entry) => TABLE_ENVIRONMENTS.has(entry.name)),
+      });
+    } else if (command.name === "end") {
+      let matchIndex = stack.length - 1;
+      while (matchIndex >= 0 && stack[matchIndex].name !== name) matchIndex--;
+      if (matchIndex < 0) continue;
+      const [entry] = stack.splice(matchIndex);
+      if (!entry.report) continue;
+      const content = document.text.slice(entry.start, command.end);
+      const inner = scanLatexCommands(content);
+      const caption = inner.find((item) => item.name === "caption")?.argument;
+      const label = inner.find((item) => item.name === "label")?.argument;
       tables.push({
         content,
-        environment,
-        caption: /\\caption\*?\s*\{([^}]*)\}/.exec(content)?.[1]?.trim(),
-        label: /\\label\s*\{([^}]*)\}/.exec(content)?.[1]?.trim(),
-        file: segment.file,
-        lineStart: segment.lineStart + lineNumber(segment.text, start) - 1,
-        lineEnd: segment.lineStart + lineNumber(segment.text, end) - 1,
+        environment: name,
+        caption: caption === undefined ? undefined : plainLatexText(caption),
+        label: label === undefined ? undefined : plainLatexText(label),
+        file: document.locate(entry.start).file,
+        lineStart: document.locate(entry.start).line,
+        lineEnd: document.locate(Math.max(entry.start, command.end - 1)).line,
       });
     }
   }
@@ -145,39 +178,55 @@ export function extractLatexTables(segments: LatexSegment[]): LatexTable[] {
 export function searchLatex(
   segments: LatexSegment[],
   query: string,
-): Array<{ hit: string; file: string; line: number }> {
+  contextParagraphs = 1,
+  document: LatexDocumentIndex = createLatexDocumentIndex(segments),
+): Array<{
+  hit: string;
+  file: string;
+  line: number;
+  before: string[];
+  after: string[];
+}> {
   const needle = query.trim().toLowerCase();
   if (!needle) return [];
-  return segments.flatMap((segment) =>
-    segment.text.split(/\r?\n/).flatMap((line, index) =>
-      line.toLowerCase().includes(needle)
-        ? [
-            {
-              hit: line.trim(),
-              file: segment.file,
-              line: segment.lineStart + index,
-            },
-          ]
-        : [],
-    ),
-  );
-}
-
-/** 寻找同名 begin/end 的平衡终点。 */
-function environmentEnd(
-  text: string,
-  environment: string,
-  from: number,
-): number {
-  const escaped = environment.replace(/\*/g, "\\*");
-  const tokens = new RegExp(`\\\\(begin|end)\\s*\\{${escaped}\\}`, "g");
-  tokens.lastIndex = from;
-  let depth = 1;
-  for (const match of text.matchAll(tokens)) {
-    if (match[1] === "begin") depth += 1;
-    else if (--depth === 0) return (match.index ?? 0) + match[0].length;
+  const lines = document.text.split("\n");
+  const paragraphs: Array<{ start: number; end: number; text: string }> = [];
+  let start = -1;
+  for (let index = 0; index <= lines.length; index += 1) {
+    if (index < lines.length && lines[index].trim()) {
+      if (start < 0) start = index;
+    } else if (start >= 0) {
+      paragraphs.push({
+        start,
+        end: index,
+        text: lines.slice(start, index).join("\n").trim(),
+      });
+      start = -1;
+    }
   }
-  return -1;
+  const matches = [];
+  let offset = 0;
+  const count = Math.max(0, Math.floor(contextParagraphs));
+  for (const [index, rawLine] of lines.entries()) {
+    const line = rawLine.replace(/\r$/, "");
+    if (line.toLowerCase().includes(needle)) {
+      const paragraphIndex = paragraphs.findIndex(
+        (paragraph) => index >= paragraph.start && index < paragraph.end,
+      );
+      matches.push({
+        hit: line.trim(),
+        ...document.locate(offset),
+        before: paragraphs
+          .slice(Math.max(0, paragraphIndex - count), paragraphIndex)
+          .map((paragraph) => paragraph.text),
+        after: paragraphs
+          .slice(paragraphIndex + 1, paragraphIndex + count + 1)
+          .map((paragraph) => paragraph.text),
+      });
+    }
+    offset += rawLine.length + 1;
+  }
+  return matches;
 }
 
 /** 计算字符偏移对应的 1-based 行号。 */

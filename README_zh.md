@@ -214,18 +214,20 @@ LaTeX 命令使用 Zotero 条目 `extra` 或 `url` 中的 arXiv ID。先下载�
 ```shell
 node mineru-for-zotero-cli/scripts/query-source.mjs latex fetch --library-id 1 --key ABCD1234 --token "<token>"
 node mineru-for-zotero-cli/scripts/query-source.mjs latex read --library-id 1 --key ABCD1234 --granularity headings --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs latex read --library-id 1 --key ABCD1234 --granularity section --section-path "Main Results" --token "<token>"
 node mineru-for-zotero-cli/scripts/query-source.mjs latex read --library-id 1 --key ABCD1234 --granularity search --query "attention" --token "<token>"
 node mineru-for-zotero-cli/scripts/query-source.mjs latex table --library-id 1 --key ABCD1234 --query "Table 2" --token "<token>"
 node mineru-for-zotero-cli/scripts/query-source.mjs latex image --library-id 1 --key ABCD1234 --path figures/model.pdf --output model.pdf --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs latex image --library-id 1 --key ABCD1234 --path imgs/one.pdf,imgs/two.pdf --output-dir extracted --token "<token>"
 ```
 
-CLI 命令中，所有命令都需要 `--library-id`；所有 `markdown` 和 `latex` 命令都需要 `--key`。`markdown read` 和 `latex read` 使用相同的 granularity、章节和搜索参数。`--table-format` 只适用于 `markdown table`；`latex table` 始终返回原始 LaTeX 代码，不接受该参数。
+CLI 命令中，所有命令都需要 `--library-id`；所有 `markdown` 和 `latex` 命令都需要 `--key`。LaTeX 章节只接受 `--section-path`：用 `/` 分隔、大小写不敏感的完整精确标题路径，或唯一的末级标题；不支持 `--section-number`、编号范围和模糊片段。LaTeX 搜索需要非空 `--query`，可用 `--context-paragraphs` 设置前后源码段落数（默认 `1`），结果显示原文件和行号。`--table-format` 只适用于 `markdown table`；`latex table` 始终返回原始 LaTeX 代码，不接受该参数。
 
 `latex table` 始终返回原始 LaTeX 表格代码。需要重新下载源码时，使用 `latex fetch --refresh`。
 
 CLI 默认会尝试从 Zotero 默认 profile 读取本地 HTTP server 端口，读不到时使用 `23119`。如果需要手动指定端口，添加 `--port <number>`。默认输出 `--format text`，适合 agent 直接阅读；需要脚本处理时使用 `--format json`。
 
-使用 `image` 时，单图路径用 `--output <file>`；多图逗号分隔路径必须用 `--output-dir <dir>`，让每张图片都写入目标目录。
+使用 `image` 时，单图路径用 `--output <file>`；多图逗号分隔路径必须用 `--output-dir <dir>`。LaTeX 图片在输出目录中保留 `imgs/`、`logo/` 等源码子目录；每个请求路径返回独立状态，重复路径只写一次，部分失败仍保留成功文件并返回非零退出码。text 和 JSON 输出均不含图片 base64。LaTeX 末级标题有歧义时返回候选完整路径，未找到章节时返回 `section-not-found`。
 
 ## 常见问题
 

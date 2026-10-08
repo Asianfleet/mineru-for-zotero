@@ -36,6 +36,7 @@ interface SourceEndpointDeps {
     query?: string;
     sectionPath?: string;
     sectionNumber?: string;
+    contextParagraphs?: number;
   }): Promise<unknown>;
   table(input: {
     libraryID: number;
@@ -80,7 +81,9 @@ export function createSourceQueryEndpoint(deps: SourceEndpointDeps) {
           );
         }
         if (options.method !== "GET") throw new Error("invalid-request");
-        if (options.pathname.endsWith("/read"))
+        if (options.pathname.endsWith("/read")) {
+          if (query.sectionNumber !== undefined)
+            throw new Error("invalid-request");
           return json(
             200,
             await deps.read({
@@ -90,8 +93,10 @@ export function createSourceQueryEndpoint(deps: SourceEndpointDeps) {
               query: query.q ?? query.sectionPath ?? query.sectionNumber,
               sectionPath: query.sectionPath,
               sectionNumber: query.sectionNumber,
+              contextParagraphs: optionalInteger(query.contextParagraphs),
             }),
           );
+        }
         if (options.pathname.endsWith("/table"))
           return json(
             200,
@@ -122,19 +127,7 @@ export function registerSourceQueryApiEndpoint(): void {
     authorized: authorize,
     read: (input) => service.read(input as never),
     table: (input) => service.table(input),
-    image: async (input) => {
-      const image = await store.readImage(input, input.path);
-      return {
-        images: [
-          {
-            path: image.path,
-            status: "ok",
-            mime: image.mime,
-            dataURL: `data:${image.mime};base64,${bytesToBase64(image.bytes)}`,
-          },
-        ],
-      };
-    },
+    image: (input) => readLatexImages(store, input),
     fetch: (input) =>
       fetchLatex(
         store,
@@ -160,7 +153,52 @@ export function unregisterSourceQueryApiEndpoint(): void {
     delete Zotero.Server.Endpoints[path];
 }
 
-async function fetchLatex(
+/** 按请求顺序读取一张或多张图片，并保留多图的逐项错误。 */
+export async function readLatexImages(
+  store: ReturnType<typeof createTexSourceStorage>,
+  input: { libraryID: number; key: string; path: string },
+) {
+  const paths = input.path
+    .split(",")
+    .map((path) => path.trim())
+    .filter(Boolean);
+  if (paths.length === 0) throw new Error("invalid-request");
+  if (paths.length === 1) {
+    const image = await store.readImage(input, paths[0]);
+    return { images: [imageRecord(image)] };
+  }
+  const seen = new Set<string>();
+  const images = [];
+  for (const path of paths) {
+    if (seen.has(path)) {
+      images.push({ path, status: "duplicate-path" });
+      continue;
+    }
+    seen.add(path);
+    try {
+      images.push(imageRecord(await store.readImage(input, path)));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "internal-error";
+      if (code !== "invalid-path" && code !== "tex-image-not-found")
+        throw error;
+      images.push({ path, status: code });
+    }
+  }
+  return { images };
+}
+
+/** 将成功读取的图片转换成 API 记录。 */
+function imageRecord(image: { path: string; mime: string; bytes: Uint8Array }) {
+  return {
+    path: image.path,
+    status: "ok",
+    mime: image.mime,
+    dataURL: `data:${image.mime};base64,${bytesToBase64(image.bytes)}`,
+  };
+}
+
+/** 获取条目 LaTeX 源码清单，优先使用已验证的本地缓存。 */
+export async function fetchLatex(
   store: ReturnType<typeof createTexSourceStorage>,
   libraryID: number,
   key: string,
@@ -169,7 +207,7 @@ async function fetchLatex(
 ) {
   if (!refresh) {
     try {
-      return await store.read({ libraryID, key });
+      return await store.readReadyManifest({ libraryID, key });
     } catch {
       /* fetch below */
     }
@@ -241,16 +279,32 @@ function integer(value: string | undefined): number {
   if (!Number.isInteger(parsed)) throw new Error("invalid-request");
   return parsed;
 }
+/** 解析可选的非负整数查询参数。 */
+function optionalInteger(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0)
+    throw new Error("invalid-request");
+  return parsed;
+}
 function json(status: number, payload: unknown) {
   return [status, "application/json", JSON.stringify(payload)] as const;
 }
 function errorResponse(error: unknown) {
   const code = error instanceof Error ? error.message : "internal-error";
+  const candidates =
+    error && typeof error === "object" && "candidates" in error
+      ? error.candidates
+      : undefined;
   const status =
     code === "api-disabled" || code === "invalid-token"
       ? 403
       : code === "tex-source-not-found"
         ? 404
         : 400;
-  return json(status, { error: code, message: code });
+  return json(status, {
+    error: code,
+    message: code,
+    ...(candidates ? { candidates } : {}),
+  });
 }

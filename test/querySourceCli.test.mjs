@@ -22,6 +22,7 @@ test("help lists command-scoped options without misleading source sections", asy
   assert.match(result.stdout, /--key <key>/);
   assert.match(result.stdout, /markdown table.*--table-format/);
   assert.match(result.stdout, /latex table.*--table-format is unavailable/);
+  assert.match(result.stdout, /latex image.*partial failure/i);
   assert.doesNotMatch(result.stdout, /Markdown options:/);
   assert.doesNotMatch(result.stdout, /LaTeX options:/);
   assert.doesNotMatch(result.stdout, /Table options:/);
@@ -75,6 +76,245 @@ test("latex fetch accepts the refresh switch and main-file option", async () => 
       assert.equal(requests[0].pathname, "/mineru-for-zotero/latex/fetch");
       assert.equal(requests[0].searchParams.refresh, "true");
       assert.equal(requests[0].searchParams.mainFile, "paper/main.tex");
+    },
+  );
+});
+
+test("formats a LaTeX fetch manifest without unknown fields", async () => {
+  await withServer(
+    {
+      status: 200,
+      body: {
+        arxivID: "2505.06708",
+        resolvedVersion: "latest",
+        mainFile: "main.tex",
+        files: ["main.tex", "figures/a.png"],
+        fileCount: 2,
+        status: "ready",
+      },
+    },
+    async ({ port }) => {
+      const result = await runCli([
+        "latex",
+        "fetch",
+        "--port",
+        String(port),
+        "--library-id",
+        "1",
+        "--key",
+        "ABCD1234",
+      ]);
+      assert.equal(result.code, 0);
+      assert.match(result.stdout, /arXiv: 2505\.06708/);
+      assert.match(result.stdout, /Version: latest/);
+      assert.match(result.stdout, /Main file: main\.tex/);
+      assert.match(result.stdout, /Files: 2/);
+      assert.doesNotMatch(result.stdout, /unknown/);
+    },
+  );
+});
+
+test("rejects LaTeX section numbers and unrelated context options", async () => {
+  const numbered = await runCli([
+    "latex",
+    "read",
+    "--library-id",
+    "1",
+    "--key",
+    "ABCD1234",
+    "--granularity",
+    "section",
+    "--section-number",
+    "2",
+  ]);
+  assert.equal(numbered.code, 2);
+  assert.match(numbered.stderr, /--section-number/);
+  const context = await runCli([
+    "latex",
+    "read",
+    "--library-id",
+    "1",
+    "--key",
+    "ABCD1234",
+    "--granularity",
+    "headings",
+    "--context-paragraphs",
+    "2",
+  ]);
+  assert.equal(context.code, 2);
+  assert.match(context.stderr, /--context-paragraphs/);
+});
+
+test("formats LaTeX headings, source search, and tables without Markdown fields", async () => {
+  const responses = [
+    {
+      granularity: "headings",
+      item: { title: "Paper" },
+      headings: [
+        {
+          command: "section",
+          level: 1,
+          title: "Results",
+          path: ["Results"],
+          file: "main.tex",
+          line: 10,
+        },
+      ],
+    },
+    {
+      granularity: "search",
+      query: "gating",
+      matches: [
+        {
+          hit: "Gating works.",
+          file: "parts/results.tex",
+          line: 27,
+          before: ["Before."],
+          after: ["After."],
+        },
+      ],
+    },
+    {
+      query: "Gating",
+      tables: [
+        {
+          caption: "Gating variant performance",
+          file: "main.tex",
+          lineStart: 20,
+          lineEnd: 24,
+          content: "\\begin{table}...\\end{table}",
+        },
+      ],
+    },
+  ];
+  for (const [index, operation] of ["read", "read", "table"].entries()) {
+    await withServer(
+      { status: 200, body: responses[index] },
+      async ({ port }) => {
+        const args = [
+          "latex",
+          operation,
+          "--port",
+          String(port),
+          "--library-id",
+          "1",
+          "--key",
+          "ABCD1234",
+        ];
+        if (index === 0) args.push("--granularity", "headings");
+        if (index === 1)
+          args.push("--granularity", "search", "--query", "gating");
+        if (index === 2) args.push("--query", "Gating");
+        const result = await runCli(args);
+        assert.equal(result.code, 0);
+        assert.doesNotMatch(
+          result.stdout,
+          /undefined|Paragraph:|Page:|Raw Index:|Match: both/,
+        );
+        if (index === 0) assert.match(result.stdout, /main\.tex:10/);
+        if (index === 1) assert.match(result.stdout, /parts\/results\.tex:27/);
+        if (index === 2)
+          assert.match(result.stdout, /Gating variant performance/);
+      },
+    );
+  }
+});
+
+test("writes LaTeX images under their source paths and reports partial failures", async () => {
+  const root = await mkdtemp(join(tmpdir(), "mineru-latex-images-"));
+  try {
+    await withServer(
+      {
+        status: 200,
+        body: {
+          images: [
+            {
+              path: "imgs/one.pdf",
+              status: "ok",
+              mime: "application/pdf",
+              dataURL: "data:application/pdf;base64,AQID",
+            },
+            { path: "../bad.pdf", status: "invalid-path" },
+            { path: "imgs/one.pdf", status: "duplicate-path" },
+            {
+              path: "logo/two.pdf",
+              status: "ok",
+              mime: "application/pdf",
+              dataURL: "data:application/pdf;base64,BAUG",
+            },
+          ],
+        },
+      },
+      async ({ port }) => {
+        const result = await runCli([
+          "latex",
+          "image",
+          "--port",
+          String(port),
+          "--library-id",
+          "1",
+          "--key",
+          "ABCD1234",
+          "--path",
+          "imgs/one.pdf,../bad.pdf,imgs/one.pdf,logo/two.pdf",
+          "--output-dir",
+          root,
+          "--format",
+          "json",
+        ]);
+        assert.equal(result.code, 1);
+        const output = JSON.parse(result.stdout);
+        assert.equal(output.ok, false);
+        assert.deepEqual(
+          output.data.images.map((image) => image.status),
+          ["ok", "invalid-path", "duplicate-path", "ok"],
+        );
+        assert.doesNotMatch(result.stdout, /base64|dataURL/);
+        assert.deepEqual(
+          await readFile(join(root, "imgs", "one.pdf")),
+          Buffer.from([1, 2, 3]),
+        );
+        assert.deepEqual(
+          await readFile(join(root, "logo", "two.pdf")),
+          Buffer.from([4, 5, 6]),
+        );
+      },
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("shows ambiguous LaTeX heading paths in text errors", async () => {
+  await withServer(
+    {
+      status: 400,
+      body: {
+        error: "ambiguous-section",
+        message: "ambiguous-section",
+        candidates: [
+          { path: ["Experiments", "Results"], file: "main.tex", line: 12 },
+        ],
+      },
+    },
+    async ({ port }) => {
+      const result = await runCli([
+        "latex",
+        "read",
+        "--port",
+        String(port),
+        "--library-id",
+        "1",
+        "--key",
+        "ABCD1234",
+        "--granularity",
+        "section",
+        "--section-path",
+        "Results",
+      ]);
+      assert.equal(result.code, 1);
+      assert.match(result.stderr, /Experiments \/ Results.*main\.tex:12/);
+      assert.doesNotMatch(result.stderr, /unknown|undefined/);
     },
   );
 });
