@@ -219,6 +219,8 @@ node mineru-for-zotero-cli/scripts/query-source.mjs latex table --library-id 1 -
 node mineru-for-zotero-cli/scripts/query-source.mjs latex image --library-id 1 --key ABCD1234 --path figures/model.pdf --output model.pdf --token "<token>"
 ```
 
+CLI 命令中，所有命令都需要 `--library-id`；所有 `markdown` 和 `latex` 命令都需要 `--key`。`markdown read` 和 `latex read` 使用相同的 granularity、章节和搜索参数。`--table-format` 只适用于 `markdown table`；`latex table` 始终返回原始 LaTeX 代码，不接受该参数。
+
 `latex table` 始终返回原始 LaTeX 表格代码。需要重新下载源码时，使用 `latex fetch --refresh`。
 
 CLI 默认会尝试从 Zotero 默认 profile 读取本地 HTTP server 端口，读不到时使用 `23119`。如果需要手动指定端口，添加 `--port <number>`。默认输出 `--format text`，适合 agent 直接阅读；需要脚本处理时使用 `--format json`。

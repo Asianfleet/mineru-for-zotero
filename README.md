@@ -219,6 +219,8 @@ node mineru-for-zotero-cli/scripts/query-source.mjs latex table --library-id 1 -
 node mineru-for-zotero-cli/scripts/query-source.mjs latex image --library-id 1 --key ABCD1234 --path figures/model.pdf --output model.pdf --token "<token>"
 ```
 
+For CLI commands, `--library-id` is required for every command and `--key` is required for every `markdown` and `latex` command. `markdown read` and `latex read` use the same granularity, section, and search options. The `--table-format` option is available only for `markdown table`; `latex table` always returns the original LaTeX code and does not accept it.
+
 `latex table` always returns the original LaTeX table code. Use `latex fetch --refresh` to replace the stored source with a newly downloaded version.
 
 The CLI tries to read Zotero's local HTTP server port from the default Zotero profile. If it cannot, it uses `23119`. Add `--port <number>` to set the port manually. The default output is `--format text`, which is easier for agents to read directly. Use `--format json` for scripts and pipelines.

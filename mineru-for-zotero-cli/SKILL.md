@@ -35,58 +35,114 @@ All operations use `scripts/query-source.mjs` (Nodejs, zero external dependencie
 node scripts/query-source.mjs <command> [options]
 ```
 
-### Commands
+### Command Index
 
-| Command          | Description                                                              | Example                                                                                                                |
-| ---------------- | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `search`         | Search Zotero items by title and return matching candidates.             | `node scripts/query-source.mjs search --library-id 1 --title "keyword" --format json`                                  |
-| `markdown read`  | Query saved MinerU Markdown with selectable granularity.                 | `node scripts/query-source.mjs markdown read --library-id 1 --key ABCD1234 --granularity headings --format text`       |
-| `markdown table` | Find a table in MinerU Markdown and return the requested format.         | `node scripts/query-source.mjs markdown table --library-id 1 --key ABCD1234 --query "Table 2" --table-format markdown` |
-| `markdown image` | Fetch an image referenced by MinerU Markdown.                            | `node scripts/query-source.mjs markdown image --library-id 1 --key ABCD1234 --path "images/a.jpg" --output a.jpg`      |
-| `latex fetch`    | Download and store the decompressed arXiv source for a Zotero item.      | `node scripts/query-source.mjs latex fetch --library-id 1 --key ABCD1234`                                              |
-| `latex read`     | Read the stored LaTeX source by full text, headings, section, or search. | `node scripts/query-source.mjs latex read --library-id 1 --key ABCD1234 --granularity headings`                        |
-| `latex table`    | Find tables in LaTeX source and return the original LaTeX code only.     | `node scripts/query-source.mjs latex table --library-id 1 --key ABCD1234 --query "Table 2"`                            |
-| `latex image`    | Fetch an image file referenced by the stored LaTeX source.               | `node scripts/query-source.mjs latex image --library-id 1 --key ABCD1234 --path figures/a.pdf --output a.pdf`          |
+| Command          | Purpose                                                       |
+| ---------------- | ------------------------------------------------------------- |
+| `search`         | Search Zotero items by title.                                 |
+| `markdown read`  | Read saved MinerU Markdown.                                   |
+| `markdown table` | Find a table in MinerU Markdown and choose its output format. |
+| `markdown image` | Fetch an image referenced by MinerU Markdown.                 |
+| `latex fetch`    | Download and store the decompressed arXiv source.             |
+| `latex read`     | Read the stored LaTeX source.                                 |
+| `latex table`    | Find a table and return its original LaTeX code.              |
+| `latex image`    | Fetch a file referenced by the stored LaTeX source.           |
 
 ### Common Options
 
-- `--library-id <id>` — Zotero library ID; required for all item commands
+The following options are shared by the source commands. `search` uses `--library-id` but does not use `--key`.
+
+- `--library-id <id>` — Zotero library ID; required for every command
+- `--key <key>` — Zotero item key; required for every `markdown` and `latex` command
 - `--port <number>` — Zotero local server port; default is auto-detected from the Zotero profile, then 23119
 - `--token <token>` — API token, sent as Authorization: Bearer
-- `--format <text|json>` — Output format; default is text, use `--format text` for agent-readable text. use `--format json` when another script or pipeline needs structured output.
+- `--format <text|json>` — Output format; default is `text`
 - `--timeout-ms <number>` — Request timeout; default is 30000
 
-### Search options
+### Commands
 
-- `--title <text>` — Required search text for title matching
+#### `search`
 
-### Markdown options
+```powershell
+node scripts/query-source.mjs search --library-id <id> --title <text> [common options]
+```
 
-- `--attachment-key <key>` — Select a specific PDF attachment after ambiguous-attachment or explicit user choice
-- `--granularity <kind>` — full, headings, section, or search
-- `--section-number <expr>` — Section numbers for section queries, for example `5.1,5.3-5.5`. Range queries only support endpoints within the same top-level section; query cross-section ranges such as `1-3` as separate numbers, for example `1,2,3`.
-- `--section-path <path>` — Fuzzy heading phrase or comma-separated path fragments for section queries
-- `--query <text>` — Search query for search queries
-- `--context-paragraphs <n>` — Context paragraphs for search queries
+- `--title <text>` — Required title search text
 
-### Table options
+#### `markdown read`
 
-- `--query <text>` — Required table caption or cell-content query
-- `--match <kind>` — caption, content, both, or caption-exact; default is both
-- `--table-format <format>` — html, markdown, tsv, latex, or json; default is html
+```powershell
+node scripts/query-source.mjs markdown read --library-id <id> --key <key> [options]
+```
 
-### Image options
+- `--attachment-key <key>` — Select a specific PDF attachment after an ambiguous-attachment response
+- `--granularity <full|headings|section|search>` — Read scope; default is `full`
+- `--section-number <expr>` — Section numbers for `section`, such as `5.1,5.3-5.5`
+- `--section-path <path>` — Fuzzy heading phrase or comma-separated path fragments for `section`
+- `--query <text>` — Search text for `search`
+- `--context-paragraphs <n>` — Context paragraphs around each `search` match
+
+#### `markdown table`
+
+```powershell
+node scripts/query-source.mjs markdown table --library-id <id> --key <key> --query <text> [options]
+```
+
+- `--query <text>` — Required caption or cell-content query
+- `--match <caption|content|both|caption-exact>` — Match scope; default is `both`
+- `--table-format <html|markdown|tsv|latex|json>` — Output format; default is `html`
+
+#### `markdown image`
+
+```powershell
+node scripts/query-source.mjs markdown image --library-id <id> --key <key> --path <paths> (--output <file>|--output-dir <dir>)
+```
 
 - `--path <paths>` — Required image path or comma-separated paths from Markdown output
-- `--output <file>` — Save a single image response to a file; use only for one image path
-- `--output-dir <dir>` — Save image responses under a directory; required for comma-separated multi-image paths
+- `--output <file>` — Save one image; use only with a single path
+- `--output-dir <dir>` — Save one or more images under a directory
 
-### LaTeX options
+#### `latex fetch`
 
-- `latex fetch` accepts `--refresh` to download the source again. Without `--refresh`, a ready stored source is reused.
-- `latex read` accepts the same `--granularity` values as Markdown. Use `--query` for `search` and for a section title or path with `section`.
-- `latex table` always returns the matched table's original LaTeX source; `--table-format` is not used.
-- `latex` commands require an arXiv ID in the Zotero item's `extra` or `url` field. A version such as `arXiv:2401.12345v2` is downloaded at that version; an unversioned ID downloads the latest source.
+```powershell
+node scripts/query-source.mjs latex fetch --library-id <id> --key <key> [--refresh] [--main-file <relative-path>]
+```
+
+The arXiv ID is read from the Zotero item's `extra` or `url`. An ID with a version, such as `arXiv:2401.12345v2`, downloads that version; an unversioned ID downloads the latest source. Without `--refresh`, an existing ready source is reused. Use `--main-file <relative-path>` when the archive contains multiple possible entry files. This is the only command that downloads or replaces stored source files.
+
+#### `latex read`
+
+```powershell
+node scripts/query-source.mjs latex read --library-id <id> --key <key> [options]
+```
+
+- `--granularity <full|headings|section|search>` — Read scope; default is `full`
+- `--section-number <expr>` — Section numbers for `section`
+- `--section-path <path>` — Fuzzy heading phrase or path fragments for `section`
+- `--query <text>` — Search text for `search`
+- `--context-paragraphs <n>` — Context paragraphs around each `search` match
+
+`latex read` uses the same granularity and section/query semantics as `markdown read`, but reads the stored LaTeX source and does not select a PDF attachment.
+
+#### `latex table`
+
+```powershell
+node scripts/query-source.mjs latex table --library-id <id> --key <key> --query <text>
+```
+
+- `--query <text>` — Required table caption or content query
+
+The result is always the original LaTeX table code. `--table-format` is not available for this command and must not be passed.
+
+#### `latex image`
+
+```powershell
+node scripts/query-source.mjs latex image --library-id <id> --key <key> --path <paths> (--output <file>|--output-dir <dir>)
+```
+
+- `--path <paths>` — Required path or comma-separated paths in the stored source
+- `--output <file>` — Save one file; use only with a single path
+- `--output-dir <dir>` — Save one or more files under a directory
 
 ## Workflows
 
@@ -208,6 +264,7 @@ node scripts/query-source.mjs latex image --library-id 1 --key ABCD1234 --path f
 - `parse-result-not-found`: Tell the user the target PDF has no available parse result yet.
 - `arxiv-id-not-found`: The Zotero item has no recognizable arXiv ID in `extra` or `url`; LaTeX mode only supports arXiv sources.
 - `arxiv-download-failed`: The arXiv source could not be downloaded. Retry later or check the item's arXiv ID and network access.
+- `invalid-main-file`: The requested `--main-file` path is not present in the downloaded archive.
 - `tex-source-not-found`: Run `latex fetch` before querying the LaTeX source, or use `--refresh` to replace a stale local copy.
 - `section-not-found`: Re-run with `--granularity headings`, then use `--section-number` or a more specific `--section-path`.
 - `missing-query`: Re-run the search query with a non-empty `--query` value.

@@ -14,6 +14,71 @@ const cliPath = fileURLToPath(
   new URL("../mineru-for-zotero-cli/scripts/query-source.mjs", import.meta.url),
 );
 
+test("help lists command-scoped options without misleading source sections", async () => {
+  const result = await runCli(["--help"]);
+
+  assert.equal(result.code, 0);
+  assert.equal(result.stderr, "");
+  assert.match(result.stdout, /--key <key>/);
+  assert.match(result.stdout, /markdown table.*--table-format/);
+  assert.match(result.stdout, /latex table.*--table-format is unavailable/);
+  assert.doesNotMatch(result.stdout, /Markdown options:/);
+  assert.doesNotMatch(result.stdout, /LaTeX options:/);
+  assert.doesNotMatch(result.stdout, /Table options:/);
+});
+
+test("latex table rejects Markdown-only table options", async () => {
+  const result = await runCli([
+    "latex",
+    "table",
+    "--library-id",
+    "1",
+    "--key",
+    "ABCD1234",
+    "--query",
+    "Table 2",
+    "--table-format",
+    "markdown",
+  ]);
+
+  assert.equal(result.code, 2);
+  assert.equal(result.stdout, "");
+  assert.match(result.stderr, /does not accept --table-format/);
+});
+
+test("latex fetch accepts the refresh switch and main-file option", async () => {
+  await withServer(
+    {
+      status: 200,
+      body: {
+        arxivID: "2401.12345v2",
+        mainFile: "paper/main.tex",
+      },
+    },
+    async ({ port, requests }) => {
+      const result = await runCli([
+        "latex",
+        "fetch",
+        "--port",
+        String(port),
+        "--library-id",
+        "1",
+        "--key",
+        "ABCD1234",
+        "--refresh",
+        "--main-file",
+        "paper/main.tex",
+      ]);
+
+      assert.equal(result.code, 0);
+      assert.equal(result.stderr, "");
+      assert.equal(requests[0].pathname, "/mineru-for-zotero/latex/fetch");
+      assert.equal(requests[0].searchParams.refresh, "true");
+      assert.equal(requests[0].searchParams.mainFile, "paper/main.tex");
+    },
+  );
+});
+
 test("formats search results as agent-friendly text", async () => {
   await withServer(
     {

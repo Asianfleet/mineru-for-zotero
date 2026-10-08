@@ -29,6 +29,7 @@ const VALID_TABLE_MATCHES = new Set([
   "both",
   "caption-exact",
 ]);
+const BOOLEAN_FLAGS = new Set(["--help", "--refresh"]);
 
 /**
  * Runs the CLI entry point and maps failures to stable process output.
@@ -150,6 +151,14 @@ function parseCommand(argv) {
   if (command.endsWith(".table")) {
     const key = getRequiredFlag(flags, "--key");
     const query = getRequiredFlag(flags, "--query");
+    if (
+      source === "latex" &&
+      (flags.has("--table-format") || flags.has("--match"))
+    ) {
+      throw new CliArgumentError(
+        "latex table always returns LaTeX code and does not accept --table-format or --match.",
+      );
+    }
     const tableFormat =
       source === "markdown"
         ? getFlag(flags, "--table-format", "html")
@@ -270,7 +279,7 @@ function parseFlags(args) {
     if (!name.startsWith("--")) {
       throw new CliArgumentError(`Unexpected argument: ${name}`);
     }
-    if (name === "--help") {
+    if (BOOLEAN_FLAGS.has(name)) {
       flags.set(name, "true");
       continue;
     }
@@ -819,6 +828,8 @@ function hintForError(code) {
       "Pass --attachment-key with one of the candidate keys.",
     "parse-result-not-found":
       "Parse this PDF in Zotero first, or choose another attachment with --attachment-key.",
+    "invalid-main-file":
+      "Pass --main-file with a relative .tex path present in the arXiv archive.",
     "section-not-found":
       "Run with --granularity headings first and use an exact heading path.",
     "missing-query": "Pass a non-empty --query value.",
@@ -845,31 +856,28 @@ function helpText() {
     "  node mineru-for-zotero-cli/scripts/query-source.mjs markdown read --library-id <id> --key <key> [--granularity full|headings|section|search] [--format text|json]",
     "  node mineru-for-zotero-cli/scripts/query-source.mjs markdown table --library-id <id> --key <key> --query <text> [--match caption|content|both|caption-exact] [--table-format html|markdown|tsv|latex|json]",
     "  node mineru-for-zotero-cli/scripts/query-source.mjs markdown image --library-id <id> --key <key> --path <images/...> (--output <file>|--output-dir <dir>)",
-    "  node mineru-for-zotero-cli/scripts/query-source.mjs latex fetch --library-id <id> --key <key> [--refresh]",
-    "  node mineru-for-zotero-cli/scripts/query-source.mjs latex read|table|image --library-id <id> --key <key> ...",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs latex fetch --library-id <id> --key <key> [--refresh] [--main-file <relative-path>]",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs latex read --library-id <id> --key <key> [--granularity full|headings|section|search]",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs latex table --library-id <id> --key <key> --query <text>",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs latex image --library-id <id> --key <key> --path <paths> (--output <file>|--output-dir <dir>)",
     "",
     "Common options:",
+    "  --library-id <id>            Zotero library ID. Required for every command.",
+    "  --key <key>                  Zotero item key. Required for markdown and latex commands; not used by search.",
     "  --port <number>              Zotero local server port. Default: auto-detect from Zotero profile, then 23119",
     "  --token <token>              Source query API token. Sent as Authorization: Bearer.",
     "  --format <text|json>         Output format. Default: text",
     "  --timeout-ms <number>        Request timeout. Default: 30000",
     "",
-    "Markdown options:",
-    "  --attachment-key <key>       Select a specific PDF attachment under a regular item.",
-    "  --section-path <path>        Section path for granularity=section.",
-    "  --section-number <expr>      Section numbers for granularity=section, such as 5.1,5.3-5.5.",
-    "  --query <text>               Search query for granularity=search.",
-    "  --context-paragraphs <n>     Context paragraphs for granularity=search.",
-    "",
-    "Table options:",
-    "  --query <text>               Required table caption or content query.",
-    "  --match <kind>               caption, content, both, or caption-exact. Default: both",
-    "  --table-format <format>      html, markdown, tsv, latex, or json. Default: html",
-    "",
-    "Image options:",
-    "  --path <paths>               Required image path or comma-separated paths.",
-    "  --output <file>              Save a single image response to a file. Required unless --output-dir is set.",
-    "  --output-dir <dir>           Save image responses under a directory. Required unless --output is set.",
+    "Command options:",
+    "  search --title <text>        Required title search text.",
+    "  markdown read                --attachment-key, --granularity, --section-number, --section-path, --query, --context-paragraphs",
+    "  markdown table               --query, --match, --table-format",
+    "  markdown image               --path, --output, --output-dir",
+    "  latex fetch                  --refresh, --main-file",
+    "  latex read                   --granularity, --section-number, --section-path, --query, --context-paragraphs",
+    "  latex table                  --query (returns LaTeX code; --table-format is unavailable)",
+    "  latex image                  --path, --output, --output-dir",
   ].join("\n");
 }
 

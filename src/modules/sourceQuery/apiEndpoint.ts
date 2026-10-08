@@ -51,6 +51,7 @@ interface SourceEndpointDeps {
     libraryID: number;
     key: string;
     refresh: boolean;
+    mainFile?: string;
   }): Promise<unknown>;
 }
 
@@ -74,6 +75,7 @@ export function createSourceQueryEndpoint(deps: SourceEndpointDeps) {
               libraryID,
               key,
               refresh: query.refresh === "true",
+              mainFile: query.mainFile,
             }),
           );
         }
@@ -134,7 +136,13 @@ export function registerSourceQueryApiEndpoint(): void {
       };
     },
     fetch: (input) =>
-      fetchLatex(store, input.libraryID, input.key, input.refresh),
+      fetchLatex(
+        store,
+        input.libraryID,
+        input.key,
+        input.refresh,
+        input.mainFile,
+      ),
   });
   class SourceQueryEndpoint {
     supportedMethods = endpoint.supportedMethods;
@@ -157,6 +165,7 @@ async function fetchLatex(
   libraryID: number,
   key: string,
   refresh: boolean,
+  requestedMainFile?: string,
 ) {
   if (!refresh) {
     try {
@@ -176,11 +185,14 @@ async function fetchLatex(
   const files = await decodeSourceArchive(
     new Uint8Array(await response.arrayBuffer()),
   );
-  const mainFile = files.find((file) =>
-    /\\documentclass|\\begin\s*\{document\}/.test(
-      new TextDecoder().decode(file.bytes),
-    ),
-  )?.path;
+  const mainFile = requestedMainFile
+    ? files.find((file) => file.path === requestedMainFile)?.path
+    : files.find((file) =>
+        /\\documentclass|\\begin\s*\{document\}/.test(
+          new TextDecoder().decode(file.bytes),
+        ),
+      )?.path;
+  if (requestedMainFile && !mainFile) throw new Error("invalid-main-file");
   if (!mainFile) throw new Error("ambiguous-main-file");
   const manifest = {
     libraryID,
