@@ -74,7 +74,7 @@ API Key 只保存在本机 Zotero 首选项中。
 
 ## 本地 Markdown 查询 API
 
-本地 Markdown 查询 API 让外部本地工具通过 Zotero 自带的本地 HTTP server 读取 MinerU for Zotero 已经保存的 Markdown 解析结果。它只查询本机已有结果，不会提交新的 MinerU 解析任务，也不会直接暴露插件数据目录。
+本地来源查询 API 让外部本地工具通过 Zotero 自带的本地 HTTP server 读取已保存的 MinerU Markdown，或按需获取 arXiv LaTeX 源码。它不会提交新的 MinerU 解析任务，也不会直接暴露插件数据目录。
 
 主要能力：
 
@@ -85,7 +85,7 @@ API Key 只保存在本机 Zotero 首选项中。
 - 普通条目下有多个 PDF attachment 时，可用 `attachmentKey` 精确选择目标附件。
 - 优先返回精准解析 Markdown；没有精准结果但有轻量解析结果时，返回轻量 Markdown，并在响应里标记 `result.mode`。
 
-兼容性提示：`granularity=section` 现在会在 `groups` 下返回分组结果。使用 `sectionNumber` 查询带编号的标题，使用模糊 `sectionPath` 做部分标题或路径匹配。表格可通过 `/mineru-for-zotero/tables` 读取；Markdown 中引用的 `images/...` 图片可通过 `/mineru-for-zotero/image` 读取。`/image` 对单图和逗号分隔的多图路径统一返回 JSON，其中成功的图片包含 base64 `dataURL`。
+兼容性提示：`granularity=section` 现在会在 `groups` 下返回分组结果。使用 `sectionNumber` 查询带编号的标题，使用模糊 `sectionPath` 做部分标题或路径匹配。表格可通过 `/mineru-for-zotero/markdown/table` 读取；Markdown 中引用的 `images/...` 图片可通过 `/mineru-for-zotero/markdown/image` 读取。`/image` 对单图和逗号分隔的多图路径统一返回 JSON，其中成功的图片包含 base64 `dataURL`。
 
 ### 配置
 
@@ -111,21 +111,21 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/search" \
 读取全文 Markdown：
 
 ```shell
-curl "http://127.0.0.1:23119/mineru-for-zotero/markdown?libraryID=1&key=ABCD1234" \
+curl "http://127.0.0.1:23119/mineru-for-zotero/markdown/read?libraryID=1&key=ABCD1234" \
   -H "Authorization: Bearer <token>"
 ```
 
 只读取标题层级，适合先了解文档结构：
 
 ```shell
-curl "http://127.0.0.1:23119/mineru-for-zotero/markdown?libraryID=1&key=ABCD1234&granularity=headings" \
+curl "http://127.0.0.1:23119/mineru-for-zotero/markdown/read?libraryID=1&key=ABCD1234&granularity=headings" \
   -H "Authorization: Bearer <token>"
 ```
 
 读取指定章节：
 
 ```shell
-curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
+curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown/read" \
   --data-urlencode "libraryID=1" \
   --data-urlencode "key=ABCD1234" \
   --data-urlencode "granularity=section" \
@@ -136,7 +136,7 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
 在 Markdown 中搜索关键词并返回前后文段落：
 
 ```shell
-curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
+curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown/read" \
   --data-urlencode "libraryID=1" \
   --data-urlencode "key=ABCD1234" \
   --data-urlencode "granularity=search" \
@@ -148,7 +148,7 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
 按标题或单元格内容查询表格：
 
 ```shell
-curl --get "http://127.0.0.1:23119/mineru-for-zotero/tables" \
+curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown/table" \
   --data-urlencode "libraryID=1" \
   --data-urlencode "key=ABCD1234" \
   --data-urlencode "q=Table 2" \
@@ -160,7 +160,7 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/tables" \
 用 CLI 保存 Markdown 中引用的图片：
 
 ```shell
-node mineru-for-zotero-cli/scripts/query-markdown.mjs image \
+node mineru-for-zotero-cli/scripts/query-source.mjs markdown image \
   --library-id 1 --key ABCD1234 --path images/a.jpg \
   --token "<token>" --output a.jpg
 ```
@@ -200,14 +200,26 @@ node mineru-for-zotero-cli/scripts/query-markdown.mjs image \
 在仓库根目录可以直接运行 CLI：
 
 ```shell
-node mineru-for-zotero-cli/scripts/query-markdown.mjs search --library-id 1 --title "paper title" --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity headings --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity section --section-number "5.1,5.3-5.5" --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity search --query "retrieval" --context-paragraphs 2 --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs table --library-id 1 --key ABCD1234 --query "Table 2" --match both --table-format markdown --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs image --library-id 1 --key ABCD1234 --path "images/a.jpg" --output a.jpg --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity full --format json --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs search --library-id 1 --title "paper title" --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs markdown read --library-id 1 --key ABCD1234 --granularity headings --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs markdown read --library-id 1 --key ABCD1234 --granularity section --section-number "5.1,5.3-5.5" --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs markdown read --library-id 1 --key ABCD1234 --granularity search --query "retrieval" --context-paragraphs 2 --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs markdown table --library-id 1 --key ABCD1234 --query "Table 2" --match both --table-format markdown --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs markdown image --library-id 1 --key ABCD1234 --path "images/a.jpg" --output a.jpg --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs markdown read --library-id 1 --key ABCD1234 --granularity full --format json --token "<token>"
 ```
+
+LaTeX 命令使用 Zotero 条目 `extra` 或 `url` 中的 arXiv ID。先下载并解压源码；不带版本号时下载最新版，像 `arXiv:2401.12345v2` 这样的 ID 下载指定版本：
+
+```shell
+node mineru-for-zotero-cli/scripts/query-source.mjs latex fetch --library-id 1 --key ABCD1234 --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs latex read --library-id 1 --key ABCD1234 --granularity headings --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs latex read --library-id 1 --key ABCD1234 --granularity search --query "attention" --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs latex table --library-id 1 --key ABCD1234 --query "Table 2" --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs latex image --library-id 1 --key ABCD1234 --path figures/model.pdf --output model.pdf --token "<token>"
+```
+
+`latex table` 始终返回原始 LaTeX 表格代码。需要重新下载源码时，使用 `latex fetch --refresh`。
 
 CLI 默认会尝试从 Zotero 默认 profile 读取本地 HTTP server 端口，读不到时使用 `23119`。如果需要手动指定端口，添加 `--port <number>`。默认输出 `--format text`，适合 agent 直接阅读；需要脚本处理时使用 `--format json`。
 

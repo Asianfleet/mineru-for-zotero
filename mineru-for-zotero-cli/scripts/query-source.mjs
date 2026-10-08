@@ -11,10 +11,9 @@ const DEFAULT_LISTEN_PORT = 23119;
 const DEFAULT_FORMAT = "text";
 const DEFAULT_TIMEOUT_MS = 30000;
 const SEARCH_ENDPOINT = "/mineru-for-zotero/search";
-const MARKDOWN_ENDPOINT = "/mineru-for-zotero/markdown";
-const TABLE_ENDPOINT = "/mineru-for-zotero/tables";
-const IMAGE_ENDPOINT = "/mineru-for-zotero/image";
-const VALID_COMMANDS = new Set(["search", "markdown", "table", "image"]);
+const VALID_SOURCES = new Set(["markdown", "latex"]);
+const VALID_MARKDOWN_OPERATIONS = new Set(["read", "table", "image"]);
+const VALID_LATEX_OPERATIONS = new Set(["fetch", "read", "table", "image"]);
 const VALID_FORMATS = new Set(["text", "json"]);
 const VALID_GRANULARITIES = new Set(["full", "headings", "section", "search"]);
 const VALID_TABLE_FORMATS = new Set([
@@ -48,7 +47,7 @@ async function main(argv) {
   }
 
   try {
-    const response = await requestMarkdownApi(options);
+    const response = await requestSourceApi(options);
     const data = await prepareSuccessData(options, response);
     const envelope = createSuccessEnvelope(options, data);
     if (options.format === "json") {
@@ -76,10 +75,20 @@ function parseCommand(argv) {
     return { help: true };
   }
 
-  const [command, ...rest] = argv;
-  if (!VALID_COMMANDS.has(command)) {
-    throw new CliArgumentError(`Unknown command: ${command}`);
+  const [source, operation, ...remaining] = argv;
+  if (source !== "search" && !VALID_SOURCES.has(source)) {
+    throw new CliArgumentError(`Unknown source: ${source}`);
   }
+  if (source !== "search") {
+    const valid =
+      source === "markdown"
+        ? VALID_MARKDOWN_OPERATIONS
+        : VALID_LATEX_OPERATIONS;
+    if (!valid.has(operation))
+      throw new CliArgumentError(`Unknown operation: ${operation}`);
+  }
+  const command = source === "search" ? "search" : `${source}.${operation}`;
+  const rest = source === "search" ? argv.slice(1) : remaining;
 
   const flags = parseFlags(rest);
   const format = getFlag(flags, "--format", DEFAULT_FORMAT);
@@ -101,6 +110,7 @@ function parseCommand(argv) {
     const title = getRequiredFlag(flags, "--title");
     return {
       command,
+      source: "shared",
       endpoint: SEARCH_ENDPOINT,
       listenPort,
       baseUrl,
@@ -114,11 +124,38 @@ function parseCommand(argv) {
     };
   }
 
-  if (command === "table") {
+  if (command === "latex.fetch") {
+    const key = getRequiredFlag(flags, "--key");
+    return {
+      command,
+      source,
+      endpoint: "/mineru-for-zotero/latex/fetch",
+      listenPort,
+      baseUrl,
+      format,
+      timeoutMs,
+      token,
+      params: {
+        libraryID,
+        key,
+        refresh: flags.has("--refresh") ? "true" : "false",
+        ...(flags.has("--main-file")
+          ? { mainFile: flags.get("--main-file") }
+          : {}),
+      },
+      method: "POST",
+    };
+  }
+
+  if (command.endsWith(".table")) {
     const key = getRequiredFlag(flags, "--key");
     const query = getRequiredFlag(flags, "--query");
-    const tableFormat = getFlag(flags, "--table-format", "html");
-    const match = getFlag(flags, "--match", "both");
+    const tableFormat =
+      source === "markdown"
+        ? getFlag(flags, "--table-format", "html")
+        : "latex";
+    const match =
+      source === "markdown" ? getFlag(flags, "--match", "both") : "both";
     if (!VALID_TABLE_FORMATS.has(tableFormat)) {
       throw new CliArgumentError("Invalid --table-format.");
     }
@@ -139,7 +176,8 @@ function parseCommand(argv) {
     );
     return {
       command,
-      endpoint: TABLE_ENDPOINT,
+      source,
+      endpoint: `/mineru-for-zotero/${source}/table`,
       listenPort,
       baseUrl,
       format,
@@ -149,7 +187,7 @@ function parseCommand(argv) {
     };
   }
 
-  if (command === "image") {
+  if (command.endsWith(".image")) {
     const key = getRequiredFlag(flags, "--key");
     const path = getRequiredFlag(flags, "--path");
     const output = getFlag(flags, "--output");
@@ -172,7 +210,8 @@ function parseCommand(argv) {
     );
     return {
       command,
-      endpoint: IMAGE_ENDPOINT,
+      source,
+      endpoint: `/mineru-for-zotero/${source}/image`,
       listenPort,
       baseUrl,
       format,
@@ -210,7 +249,8 @@ function parseCommand(argv) {
 
   return {
     command,
-    endpoint: MARKDOWN_ENDPOINT,
+    source,
+    endpoint: `/mineru-for-zotero/${source}/read`,
     listenPort,
     baseUrl,
     format,
@@ -248,7 +288,7 @@ function parseFlags(args) {
 /**
  * Fetches JSON or image bytes from the local Zotero Markdown query API.
  */
-async function requestMarkdownApi(options) {
+async function requestSourceApi(options) {
   const url = new URL(options.endpoint, options.baseUrl);
   for (const [key, value] of Object.entries(options.params)) {
     url.searchParams.set(key, value);
@@ -263,11 +303,12 @@ async function requestMarkdownApi(options) {
     }
 
     const response = await fetch(url, {
+      method: options.method ?? "GET",
       headers,
       signal: controller.signal,
     });
     if (
-      options.command === "image" &&
+      options.command.endsWith(".image") &&
       response.ok &&
       !response.headers.get("content-type")?.includes("json")
     ) {
@@ -296,7 +337,7 @@ async function requestMarkdownApi(options) {
  * Writes requested CLI output files and returns JSON-safe success data.
  */
 async function prepareSuccessData(options, data) {
-  if (options.command !== "image") {
+  if (!options.command.endsWith(".image")) {
     return data;
   }
 
@@ -480,13 +521,13 @@ function formatTextSuccess(options, data) {
   if (options.command === "search") {
     return formatSearchText(options, data);
   }
-  if (options.command === "table") {
+  if (options.command.endsWith(".table")) {
     return formatTableText(options, data);
   }
-  if (options.command === "image") {
+  if (options.command.endsWith(".image")) {
     return formatImageText(options, data);
   }
-  return formatMarkdownText(options, data);
+  return formatSourceText(options, data);
 }
 
 /**
@@ -495,7 +536,7 @@ function formatTextSuccess(options, data) {
 function formatSearchText(options, data) {
   const candidates = Array.isArray(data.candidates) ? data.candidates : [];
   const lines = [
-    "Markdown Query Search",
+    "Source Query Search",
     `Library: ${options.params.libraryID}`,
     `Title: ${options.params.title}`,
     `Candidates: ${candidates.length}`,
@@ -538,15 +579,30 @@ function formatSearchText(options, data) {
 /**
  * Formats Markdown query responses according to their granularity.
  */
-function formatMarkdownText(options, data) {
+function formatSourceText(options, data) {
+  if (options.command === "latex.fetch") {
+    return [
+      "LaTeX Source Fetch",
+      `Library: ${options.params.libraryID}`,
+      `Item: ${valueOrUnknown(options.params.key)}`,
+      `arXiv: ${valueOrUnknown(data.arxivID)}`,
+      `Version: ${valueOrUnknown(data.resolvedVersion)}`,
+      `Main file: ${valueOrUnknown(data.mainFile)}`,
+      `Files: ${valueOrUnknown(data.fileCount)}`,
+    ].join("\n");
+  }
   const lines = [
-    "Markdown Query Result",
+    options.command.startsWith("latex.")
+      ? "LaTeX Source Result"
+      : "Markdown Query Result",
     `Library: ${options.params.libraryID}`,
     `Item: ${valueOrUnknown(data.item?.key ?? options.params.key)}`,
-    `Attachment: ${formatAttachment(data.attachment)}`,
+    ...(data.attachment
+      ? [`Attachment: ${formatAttachment(data.attachment)}`]
+      : []),
     `Title: ${valueOrUnknown(data.item?.title)}`,
     `Granularity: ${valueOrUnknown(data.granularity ?? options.params.granularity)}`,
-    `Mode: ${valueOrUnknown(data.result?.mode)}`,
+    ...(data.result?.mode ? [`Mode: ${valueOrUnknown(data.result.mode)}`] : []),
     "",
   ];
 
@@ -785,14 +841,16 @@ function writeArgumentError(error) {
 function helpText() {
   return [
     "Usage:",
-    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs search --library-id <id> --title <text> [--format text|json]",
-    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id <id> --key <key> [--granularity full|headings|section|search] [--format text|json]",
-    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs table --library-id <id> --key <key> --query <text> [--match caption|content|both|caption-exact] [--table-format html|markdown|tsv|latex|json]",
-    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs image --library-id <id> --key <key> --path <images/...> (--output <file>|--output-dir <dir>)",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs search --library-id <id> --title <text> [--format text|json]",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs markdown read --library-id <id> --key <key> [--granularity full|headings|section|search] [--format text|json]",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs markdown table --library-id <id> --key <key> --query <text> [--match caption|content|both|caption-exact] [--table-format html|markdown|tsv|latex|json]",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs markdown image --library-id <id> --key <key> --path <images/...> (--output <file>|--output-dir <dir>)",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs latex fetch --library-id <id> --key <key> [--refresh]",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs latex read|table|image --library-id <id> --key <key> ...",
     "",
     "Common options:",
     "  --port <number>              Zotero local server port. Default: auto-detect from Zotero profile, then 23119",
-    "  --token <token>              Markdown query API token. Sent as Authorization: Bearer.",
+    "  --token <token>              Source query API token. Sent as Authorization: Bearer.",
     "  --format <text|json>         Output format. Default: text",
     "  --timeout-ms <number>        Request timeout. Default: 30000",
     "",

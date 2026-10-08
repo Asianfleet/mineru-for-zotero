@@ -74,7 +74,7 @@ The result folder contains the parsed Markdown, box data used by the reader, and
 
 ## Local Markdown Query API
 
-The local Markdown query API lets local external tools read Markdown parse results that MinerU for Zotero has already saved through Zotero's built-in local HTTP server. It only queries existing local results. It does not submit new MinerU parsing jobs or directly expose the plugin data folder.
+The local source query API lets local external tools read saved MinerU Markdown or an on-demand arXiv LaTeX source through Zotero's built-in local HTTP server. It does not submit new MinerU parsing jobs or directly expose the plugin data folder.
 
 Main capabilities:
 
@@ -85,7 +85,7 @@ Main capabilities:
 - Pass `attachmentKey` to select a specific PDF when a regular item has multiple PDF attachments.
 - Return precise Markdown first; if precise output is unavailable but lite output exists, return lite Markdown and mark it in `result.mode`.
 
-Compatibility note: `granularity=section` now returns grouped results under `groups`. Use `sectionNumber` for numbered headings and fuzzy `sectionPath` for partial heading/path matching. Tables are available from `/mineru-for-zotero/tables`; images referenced as `images/...` are available from `/mineru-for-zotero/image`. The `/image` endpoint returns JSON `images` results with base64 `dataURL` values for both single and comma-separated image paths.
+Compatibility note: `granularity=section` now returns grouped results under `groups`. Use `sectionNumber` for numbered headings and fuzzy `sectionPath` for partial heading/path matching. Tables are available from `/mineru-for-zotero/markdown/table`; images referenced as `images/...` are available from `/mineru-for-zotero/markdown/image`. The `/image` endpoint returns JSON `images` results with base64 `dataURL` values for both single and comma-separated image paths.
 
 ### Configuration
 
@@ -111,21 +111,21 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/search" \
 Read the full Markdown:
 
 ```shell
-curl "http://127.0.0.1:23119/mineru-for-zotero/markdown?libraryID=1&key=ABCD1234" \
+curl "http://127.0.0.1:23119/mineru-for-zotero/markdown/read?libraryID=1&key=ABCD1234" \
   -H "Authorization: Bearer <token>"
 ```
 
 Read only the heading hierarchy:
 
 ```shell
-curl "http://127.0.0.1:23119/mineru-for-zotero/markdown?libraryID=1&key=ABCD1234&granularity=headings" \
+curl "http://127.0.0.1:23119/mineru-for-zotero/markdown/read?libraryID=1&key=ABCD1234&granularity=headings" \
   -H "Authorization: Bearer <token>"
 ```
 
 Read a specific section:
 
 ```shell
-curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
+curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown/read" \
   --data-urlencode "libraryID=1" \
   --data-urlencode "key=ABCD1234" \
   --data-urlencode "granularity=section" \
@@ -136,7 +136,7 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
 Search Markdown and return surrounding paragraphs:
 
 ```shell
-curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
+curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown/read" \
   --data-urlencode "libraryID=1" \
   --data-urlencode "key=ABCD1234" \
   --data-urlencode "granularity=search" \
@@ -148,7 +148,7 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown" \
 Find tables by caption or cell content:
 
 ```shell
-curl --get "http://127.0.0.1:23119/mineru-for-zotero/tables" \
+curl --get "http://127.0.0.1:23119/mineru-for-zotero/markdown/table" \
   --data-urlencode "libraryID=1" \
   --data-urlencode "key=ABCD1234" \
   --data-urlencode "q=Table 2" \
@@ -160,7 +160,7 @@ curl --get "http://127.0.0.1:23119/mineru-for-zotero/tables" \
 Fetch a saved image referenced by Markdown with the CLI:
 
 ```shell
-node mineru-for-zotero-cli/scripts/query-markdown.mjs image \
+node mineru-for-zotero-cli/scripts/query-source.mjs markdown image \
   --library-id 1 --key ABCD1234 --path images/a.jpg \
   --token "<token>" --output a.jpg
 ```
@@ -200,14 +200,26 @@ The repository includes a companion Skill in `mineru-for-zotero-cli/`. It is int
 Run the CLI from the repository root:
 
 ```shell
-node mineru-for-zotero-cli/scripts/query-markdown.mjs search --library-id 1 --title "paper title" --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity headings --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity section --section-number "5.1,5.3-5.5" --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity search --query "retrieval" --context-paragraphs 2 --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs table --library-id 1 --key ABCD1234 --query "Table 2" --match both --table-format markdown --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs image --library-id 1 --key ABCD1234 --path "images/a.jpg" --output a.jpg --token "<token>"
-node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id 1 --key ABCD1234 --granularity full --format json --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs search --library-id 1 --title "paper title" --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs markdown read --library-id 1 --key ABCD1234 --granularity headings --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs markdown read --library-id 1 --key ABCD1234 --granularity section --section-number "5.1,5.3-5.5" --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs markdown read --library-id 1 --key ABCD1234 --granularity search --query "retrieval" --context-paragraphs 2 --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs markdown table --library-id 1 --key ABCD1234 --query "Table 2" --match both --table-format markdown --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs markdown image --library-id 1 --key ABCD1234 --path "images/a.jpg" --output a.jpg --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs markdown read --library-id 1 --key ABCD1234 --granularity full --format json --token "<token>"
 ```
+
+LaTeX commands use the arXiv ID stored in the Zotero item's `extra` or `url`. Fetch the decompressed source first; an unversioned ID downloads the latest version, while an ID such as `arXiv:2401.12345v2` downloads that version:
+
+```shell
+node mineru-for-zotero-cli/scripts/query-source.mjs latex fetch --library-id 1 --key ABCD1234 --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs latex read --library-id 1 --key ABCD1234 --granularity headings --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs latex read --library-id 1 --key ABCD1234 --granularity search --query "attention" --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs latex table --library-id 1 --key ABCD1234 --query "Table 2" --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs latex image --library-id 1 --key ABCD1234 --path figures/model.pdf --output model.pdf --token "<token>"
+```
+
+`latex table` always returns the original LaTeX table code. Use `latex fetch --refresh` to replace the stored source with a newly downloaded version.
 
 The CLI tries to read Zotero's local HTTP server port from the default Zotero profile. If it cannot, it uses `23119`. Add `--port <number>` to set the port manually. The default output is `--format text`, which is easier for agents to read directly. Use `--format json` for scripts and pipelines.
 

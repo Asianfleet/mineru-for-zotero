@@ -26,9 +26,9 @@ interface MarkdownEndpointRequest {
 
 export const MARKDOWN_ENDPOINT_PATHS = [
   "/mineru-for-zotero/search",
-  "/mineru-for-zotero/tables",
-  "/mineru-for-zotero/image",
-  "/mineru-for-zotero/markdown",
+  "/mineru-for-zotero/markdown/table",
+  "/mineru-for-zotero/markdown/image",
+  "/mineru-for-zotero/markdown/read",
 ] as const;
 
 /**
@@ -76,7 +76,7 @@ export function createMarkdownQueryEndpoint(service: MarkdownQueryService) {
           );
         }
 
-        if (options.pathname === "/mineru-for-zotero/tables") {
+        if (options.pathname === "/mineru-for-zotero/markdown/table") {
           return json(
             200,
             await service.queryTables({
@@ -90,7 +90,7 @@ export function createMarkdownQueryEndpoint(service: MarkdownQueryService) {
           );
         }
 
-        if (options.pathname === "/mineru-for-zotero/image") {
+        if (options.pathname === "/mineru-for-zotero/markdown/image") {
           return imageResponse(
             await service.readImages({
               libraryID: requireInteger(query.libraryID, "libraryID"),

@@ -21,7 +21,7 @@ describe("markdownApiEndpoint", function () {
     setMarkdownApiEnabled(false);
     const endpoint = createMarkdownQueryEndpoint(fakeService());
     const response = await endpoint.init(
-      request("/mineru-for-zotero/markdown"),
+      request("/mineru-for-zotero/markdown/read"),
     );
 
     assert.deepEqual(response, [
@@ -41,7 +41,7 @@ describe("markdownApiEndpoint", function () {
     const endpoint = createMarkdownQueryEndpoint(fakeService());
 
     const response = await endpoint.init(
-      request("/mineru-for-zotero/markdown"),
+      request("/mineru-for-zotero/markdown/read"),
     );
 
     assert.include(String(response[2]), "invalid-token");
@@ -54,7 +54,7 @@ describe("markdownApiEndpoint", function () {
     const endpoint = createMarkdownQueryEndpoint(fakeService());
 
     const response = await endpoint.init(
-      request("/mineru-for-zotero/markdown", {
+      request("/mineru-for-zotero/markdown/read", {
         headers: { authorization: "Bearer secret" },
         query: { libraryID: "1", key: "PDF1" },
       }),
@@ -87,7 +87,7 @@ describe("markdownApiEndpoint", function () {
     const endpoint = new EndpointClass();
 
     const response = await endpoint.init(
-      runtimeRequest("/mineru-for-zotero/markdown", {
+      runtimeRequest("/mineru-for-zotero/markdown/read", {
         searchParams: new URLSearchParams({ libraryID: "1", key: "PDF1" }),
       }),
     );
@@ -129,7 +129,7 @@ describe("markdownApiEndpoint", function () {
     });
 
     const response = await endpoint.init(
-      request("/mineru-for-zotero/markdown", {
+      request("/mineru-for-zotero/markdown/read", {
         query: {
           libraryID: "1",
           key: "PDF1",
@@ -174,7 +174,7 @@ describe("markdownApiEndpoint", function () {
     });
 
     const response = await endpoint.init(
-      request("/mineru-for-zotero/markdown", {
+      request("/mineru-for-zotero/markdown/read", {
         query: {
           libraryID: "1",
           key: "PDF1",
@@ -219,7 +219,7 @@ describe("markdownApiEndpoint", function () {
     });
 
     const response = await endpoint.init(
-      request("/mineru-for-zotero/markdown", {
+      request("/mineru-for-zotero/markdown/read", {
         query: { libraryID: "1", key: "PDF1" },
       }),
     );
@@ -252,7 +252,7 @@ describe("markdownApiEndpoint", function () {
     });
 
     const response = await endpoint.init(
-      request("/mineru-for-zotero/tables", {
+      request("/mineru-for-zotero/markdown/table", {
         query: {
           libraryID: "1",
           key: "PDF1",
@@ -294,7 +294,7 @@ describe("markdownApiEndpoint", function () {
     });
 
     const response = await endpoint.init(
-      request("/mineru-for-zotero/tables", {
+      request("/mineru-for-zotero/markdown/table", {
         query: {
           libraryID: "1",
           key: "PDF1",
@@ -316,7 +316,7 @@ describe("markdownApiEndpoint", function () {
     const endpoint = createMarkdownQueryEndpoint(fakeService());
 
     const response = await endpoint.init(
-      request("/mineru-for-zotero/tables", {
+      request("/mineru-for-zotero/markdown/table", {
         query: {
           libraryID: "1",
           key: "PDF1",
@@ -337,7 +337,7 @@ describe("markdownApiEndpoint", function () {
     const endpoint = createMarkdownQueryEndpoint(fakeService());
 
     const response = await endpoint.init(
-      request("/mineru-for-zotero/tables", {
+      request("/mineru-for-zotero/markdown/table", {
         query: {
           libraryID: "1",
           key: "PDF1",
@@ -381,7 +381,7 @@ describe("markdownApiEndpoint", function () {
     });
 
     const response = await endpoint.init(
-      request("/mineru-for-zotero/image", {
+      request("/mineru-for-zotero/markdown/image", {
         query: { libraryID: "1", key: "PDF1", path: "images/a.jpg" },
       }),
     );
@@ -423,7 +423,7 @@ describe("markdownApiEndpoint", function () {
     });
 
     const response = await endpoint.init(
-      request("/mineru-for-zotero/image", {
+      request("/mineru-for-zotero/markdown/image", {
         query: { libraryID: "1", key: "PDF1", path: "../a.jpg" },
       }),
     );
@@ -454,7 +454,7 @@ describe("markdownApiEndpoint", function () {
     });
 
     const response = await endpoint.init(
-      request("/mineru-for-zotero/image", {
+      request("/mineru-for-zotero/markdown/image", {
         query: { libraryID: "1", key: "PDF1", path: "images/missing.jpg" },
       }),
     );
@@ -497,7 +497,7 @@ describe("markdownApiEndpoint", function () {
     });
 
     const response = await endpoint.init(
-      request("/mineru-for-zotero/image", {
+      request("/mineru-for-zotero/markdown/image", {
         query: {
           libraryID: "1",
           key: "PDF1",
@@ -522,7 +522,7 @@ describe("markdownApiEndpoint", function () {
     const endpoint = createMarkdownQueryEndpoint(fakeService());
 
     const response = await endpoint.init(
-      request("/mineru-for-zotero/image", {
+      request("/mineru-for-zotero/markdown/image", {
         query: {
           libraryID: "1",
           key: "PDF1",
@@ -539,14 +539,17 @@ describe("markdownApiEndpoint", function () {
   it("registers the expected endpoint paths", function () {
     assert.deepEqual(MARKDOWN_ENDPOINT_PATHS, [
       "/mineru-for-zotero/search",
-      "/mineru-for-zotero/tables",
-      "/mineru-for-zotero/image",
-      "/mineru-for-zotero/markdown",
+      "/mineru-for-zotero/markdown/table",
+      "/mineru-for-zotero/markdown/image",
+      "/mineru-for-zotero/markdown/read",
     ]);
   });
 
   it("registers the tables endpoint path", function () {
-    assert.include(MARKDOWN_ENDPOINT_PATHS, "/mineru-for-zotero/tables");
+    assert.include(
+      MARKDOWN_ENDPOINT_PATHS,
+      "/mineru-for-zotero/markdown/table",
+    );
   });
 });
 

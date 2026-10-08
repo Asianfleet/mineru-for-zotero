@@ -11,10 +11,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const cliPath = fileURLToPath(
-  new URL(
-    "../mineru-for-zotero-cli/scripts/query-markdown.mjs",
-    import.meta.url,
-  ),
+  new URL("../mineru-for-zotero-cli/scripts/query-source.mjs", import.meta.url),
 );
 
 test("formats search results as agent-friendly text", async () => {
@@ -59,7 +56,7 @@ test("formats search results as agent-friendly text", async () => {
       ]);
 
       assert.equal(result.code, 0);
-      assert.match(result.stdout, /Markdown Query Search/);
+      assert.match(result.stdout, /Source Query Search/);
       assert.match(result.stdout, /Candidates: 1/);
       assert.match(result.stdout, /1\. Example Paper/);
       assert.match(result.stdout, /parsed: precise=yes lite=no/);
@@ -107,6 +104,7 @@ test("formats markdown headings as json envelope without exposing token", async 
     async ({ port, requests }) => {
       const result = await runCli([
         "markdown",
+        "read",
         "--port",
         String(port),
         "--library-id",
@@ -129,8 +127,8 @@ test("formats markdown headings as json envelope without exposing token", async 
       const output = JSON.parse(result.stdout);
       assert.equal(output.ok, true);
       assert.equal(output.status, 200);
-      assert.equal(output.request.command, "markdown");
-      assert.equal(output.request.endpoint, "/mineru-for-zotero/markdown");
+      assert.equal(output.request.command, "markdown.read");
+      assert.equal(output.request.endpoint, "/mineru-for-zotero/markdown/read");
       assert.deepEqual(output.request.params, {
         libraryID: "1",
         key: "ABCD1234",
@@ -180,6 +178,7 @@ test("formats markdown search matches as text", async () => {
     async ({ port, requests }) => {
       const result = await runCli([
         "markdown",
+        "read",
         "--port",
         String(port),
         "--library-id",
@@ -237,6 +236,7 @@ test("passes comma and range section-number expressions", async () => {
     async ({ port, requests }) => {
       const result = await runCli([
         "markdown",
+        "read",
         "--port",
         String(port),
         "--library-id",
@@ -271,6 +271,7 @@ test("passes table match and table-format options", async () => {
     },
     async ({ port, requests }) => {
       const result = await runCli([
+        "markdown",
         "table",
         "--port",
         String(port),
@@ -288,7 +289,7 @@ test("passes table match and table-format options", async () => {
 
       assert.equal(result.code, 0);
       assert.match(result.stdout, /Table 2/);
-      assert.equal(requests[0].pathname, "/mineru-for-zotero/tables");
+      assert.equal(requests[0].pathname, "/mineru-for-zotero/markdown/table");
       assert.equal(requests[0].searchParams.tableFormat, "markdown");
       assert.equal(requests[0].searchParams.match, "content");
     },
@@ -308,6 +309,7 @@ test("passes caption-exact table match option", async () => {
     },
     async ({ port, requests }) => {
       const result = await runCli([
+        "markdown",
         "table",
         "--port",
         String(port),
@@ -323,7 +325,7 @@ test("passes caption-exact table match option", async () => {
 
       assert.equal(result.code, 0);
       assert.equal(result.stderr, "");
-      assert.equal(requests[0].pathname, "/mineru-for-zotero/tables");
+      assert.equal(requests[0].pathname, "/mineru-for-zotero/markdown/table");
       assert.equal(requests[0].searchParams.match, "caption-exact");
     },
   );
@@ -345,6 +347,7 @@ test("writes image binary responses to the requested output file", async () => {
       },
       async ({ port, requests }) => {
         const result = await runCli([
+          "markdown",
           "image",
           "--port",
           String(port),
@@ -361,7 +364,7 @@ test("writes image binary responses to the requested output file", async () => {
         assert.equal(result.code, 0);
         assert.match(result.stdout, /Image saved/);
         assert.equal(result.stderr, "");
-        assert.equal(requests[0].pathname, "/mineru-for-zotero/image");
+        assert.equal(requests[0].pathname, "/mineru-for-zotero/markdown/image");
         assert.equal(requests[0].searchParams.path, "images/figure.png");
         assert.deepEqual(
           new Uint8Array(await readFile(outputPath)),
@@ -396,6 +399,7 @@ test("writes a single-image JSON response to --output", async () => {
       },
       async ({ port }) => {
         const result = await runCli([
+          "markdown",
           "image",
           "--port",
           String(port),
@@ -444,6 +448,7 @@ test("writes a single-image JSON response to --output-dir", async () => {
       },
       async ({ port }) => {
         const result = await runCli([
+          "markdown",
           "image",
           "--port",
           String(port),
@@ -481,6 +486,7 @@ test("rejects image requests without an output target", async () => {
     },
     async ({ port, requests }) => {
       const result = await runCli([
+        "markdown",
         "image",
         "--port",
         String(port),
@@ -533,6 +539,7 @@ test("writes multi-image json responses under the requested output directory", a
       },
       async ({ port, requests }) => {
         const result = await runCli([
+          "markdown",
           "image",
           "--port",
           String(port),
@@ -549,7 +556,7 @@ test("writes multi-image json responses under the requested output directory", a
         assert.equal(result.code, 0);
         assert.match(result.stdout, /Written: 2/);
         assert.equal(result.stderr, "");
-        assert.equal(requests[0].pathname, "/mineru-for-zotero/image");
+        assert.equal(requests[0].pathname, "/mineru-for-zotero/markdown/image");
         assert.equal(
           requests[0].searchParams.path,
           "images/figures/one.png,images/two.jpg",
@@ -590,6 +597,7 @@ test("rejects multi-image requests that use --output without --output-dir", asyn
       },
       async ({ port, requests }) => {
         const result = await runCli([
+          "markdown",
           "image",
           "--port",
           String(port),
@@ -626,6 +634,7 @@ test("formats api errors as json and exits with code 1", async () => {
     async ({ port }) => {
       const result = await runCli([
         "markdown",
+        "read",
         "--port",
         String(port),
         "--library-id",
@@ -651,7 +660,7 @@ test("formats api errors as json and exits with code 1", async () => {
 });
 
 test("prints parameter errors to stderr and exits with code 2", async () => {
-  const result = await runCli(["markdown", "--library-id", "1"]);
+  const result = await runCli(["markdown", "read", "--library-id", "1"]);
 
   assert.equal(result.code, 2);
   assert.equal(result.stdout, "");
@@ -659,7 +668,7 @@ test("prints parameter errors to stderr and exits with code 2", async () => {
   assert.match(result.stderr, /Usage:/);
   assert.match(
     result.stderr,
-    /node mineru-for-zotero-cli\/scripts\/query-markdown\.mjs markdown/,
+    /node mineru-for-zotero-cli\/scripts\/query-source\.mjs markdown read/,
   );
 });
 
