@@ -24,6 +24,10 @@ export function clearReaderOverlaySelectionForReader(
 export function syncSelectedBoxClasses(state: ReaderOverlayState): void {
   for (const root of state.rootsByWindow.values()) {
     safeReaderOverlayCleanup(() => {
+      root.classList.toggle(
+        "mineru-copy-has-selection",
+        state.selectedRawIndexes.size > 0,
+      );
       for (const element of getBoxElements(root)) {
         const rawIndex = Number(element.dataset.rawIndex);
         setBoxSelectedClass(
