@@ -1,3 +1,5 @@
+import { Gunzip } from "fflate";
+
 export interface SourceArchiveFile {
   path: string;
   bytes: Uint8Array;
@@ -6,6 +8,7 @@ export interface SourceArchiveFile {
 const MAX_COMPRESSED_BYTES = 50 * 1024 * 1024;
 const MAX_EXPANDED_BYTES = 200 * 1024 * 1024;
 const MAX_FILES = 3000;
+const GZIP_INPUT_CHUNK_BYTES = 64 * 1024;
 
 /** 解码 arXiv 源码响应并拒绝越界路径和过大的归档。 */
 export async function decodeSourceArchive(
@@ -29,22 +32,24 @@ export async function decodeSourceArchive(
   return [{ path: "main.tex", bytes: expanded }];
 }
 
-/** 通过浏览器标准 gzip 解压流读取源码，并在流中限制输出大小。 */
+/** 分块解压 gzip 源码，并在流中限制输出大小。 */
 async function decompressGzip(bytes: Uint8Array): Promise<Uint8Array> {
-  if (typeof DecompressionStream === "undefined") {
-    throw new Error("arxiv-download-failed: gzip decompression unavailable");
-  }
-  const stream = new Blob([bytes as BlobPart])
-    .stream()
-    .pipeThrough(new DecompressionStream("gzip"));
   const chunks: Uint8Array[] = [];
   let size = 0;
-  for await (const chunk of stream as AsyncIterable<Uint8Array>) {
+  const gunzip = new Gunzip((chunk) => {
     size += chunk.byteLength;
     if (size > MAX_EXPANDED_BYTES) {
       throw new Error("unsafe-archive: expanded source is too large");
     }
     chunks.push(chunk);
+  });
+  for (
+    let offset = 0;
+    offset < bytes.byteLength;
+    offset += GZIP_INPUT_CHUNK_BYTES
+  ) {
+    const end = Math.min(offset + GZIP_INPUT_CHUNK_BYTES, bytes.byteLength);
+    gunzip.push(bytes.subarray(offset, end), end === bytes.byteLength);
   }
   const output = new Uint8Array(size);
   let offset = 0;

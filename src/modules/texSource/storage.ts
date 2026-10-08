@@ -16,7 +16,7 @@ export interface TexManifest extends Record<string, unknown> {
 /** 将 ProfD 路径转换为 Zotero 运行时的实际目录。 */
 function resolveRoot(root: string): string {
   return root.startsWith("ProfD/")
-    ? `${PathUtils.profileDir}/${root.slice(6)}`
+    ? PathUtils.join(PathUtils.profileDir, ...root.slice(6).split("/"))
     : root;
 }
 
@@ -33,14 +33,19 @@ export function safeSourcePath(path: string): boolean {
 
 /** 读取并以原子目录替换方式保存条目源码。 */
 export function createTexSourceStorage(rootDir: string) {
-  const root = `${resolveRoot(rootDir).replace(/[\\/]$/, "")}/tex_source`;
-  const dir = (libraryID: number, key: string) => `${root}/${libraryID}-${key}`;
+  const root = PathUtils.join(resolveRoot(rootDir), "tex_source");
+  const dir = (libraryID: number, key: string) =>
+    PathUtils.join(root, `${libraryID}-${key}`);
   return {
     getDir: dir,
     async read(ref: { libraryID: number; key: string }) {
       const target = dir(ref.libraryID, ref.key);
+      const manifestPath = PathUtils.join(target, "manifest.json");
+      if (!(await IOUtils.exists(manifestPath))) {
+        throw new Error("tex-source-not-found");
+      }
       const manifest = JSON.parse(
-        await IOUtils.readUTF8(`${target}/manifest.json`),
+        await IOUtils.readUTF8(manifestPath),
       ) as TexManifest;
       if (manifest.status !== "ready") throw new Error("tex-source-not-found");
       const files: LatexSourceFile[] = [];
@@ -49,7 +54,9 @@ export function createTexSourceStorage(rootDir: string) {
         if (path.toLowerCase().endsWith(".tex"))
           files.push({
             path,
-            content: await IOUtils.readUTF8(`${target}/${path}`),
+            content: await IOUtils.readUTF8(
+              PathUtils.join(target, ...path.split("/")),
+            ),
           });
       }
       return { manifest, files, mainFile: manifest.mainFile };
@@ -61,7 +68,9 @@ export function createTexSourceStorage(rootDir: string) {
         throw new Error("tex-image-not-found");
       return {
         path,
-        bytes: await IOUtils.read(`${dir(ref.libraryID, ref.key)}/${path}`),
+        bytes: await IOUtils.read(
+          PathUtils.join(dir(ref.libraryID, ref.key), ...path.split("/")),
+        ),
         mime: imageMime(path),
       };
     },
@@ -83,15 +92,19 @@ export function createTexSourceStorage(rootDir: string) {
       });
       try {
         for (const file of input.files) {
-          const path = `${temp}/${file.path}`;
-          await IOUtils.makeDirectory(path.slice(0, path.lastIndexOf("/")), {
-            createAncestors: true,
-            ignoreExisting: true,
-          });
+          const parts = file.path.split("/");
+          const path = PathUtils.join(temp, ...parts);
+          await IOUtils.makeDirectory(
+            PathUtils.join(temp, ...parts.slice(0, -1)),
+            {
+              createAncestors: true,
+              ignoreExisting: true,
+            },
+          );
           await IOUtils.write(path, file.bytes);
         }
         await IOUtils.writeUTF8(
-          `${temp}/manifest.json`,
+          PathUtils.join(temp, "manifest.json"),
           `${JSON.stringify(input.manifest, null, 2)}\n`,
         );
         const oldExists = await IOUtils.exists(target);

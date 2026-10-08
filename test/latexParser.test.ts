@@ -42,6 +42,19 @@ describe("latex source parser", function () {
     expect(tables[0].content).to.contain("\\begin{table}");
   });
 
+  it("finds a table after a long source preamble", function () {
+    const segments = [
+      {
+        file: "main.tex",
+        lineStart: 1,
+        text: `${"Introduction text.\n".repeat(100)}\\begin{table}\n\\caption{Results}\n\\end{table}`,
+      },
+    ];
+    const tables = extractLatexTables(segments);
+    expect(tables).to.have.length(1);
+    expect(tables[0].caption).to.equal("Results");
+  });
+
   it("searches expanded source with file and line locations", function () {
     const segments = expandLatexSource(files, "main.tex");
     expect(searchLatex(segments, "method")[0]).to.include({

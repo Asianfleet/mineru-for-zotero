@@ -173,9 +173,9 @@ function environmentEnd(
   const tokens = new RegExp(`\\\\(begin|end)\\s*\\{${escaped}\\}`, "g");
   tokens.lastIndex = from;
   let depth = 1;
-  for (const match of text.slice(from).matchAll(tokens)) {
+  for (const match of text.matchAll(tokens)) {
     if (match[1] === "begin") depth += 1;
-    else if (--depth === 0) return from + (match.index ?? 0) + match[0].length;
+    else if (--depth === 0) return (match.index ?? 0) + match[0].length;
   }
   return -1;
 }

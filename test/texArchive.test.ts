@@ -31,6 +31,29 @@ describe("arXiv source archive", function () {
       expect(String(error)).to.contain("unsafe-archive");
     }
   });
+
+  it("reads a gzip-compressed tar without DecompressionStream", async function () {
+    const runtime = globalThis as typeof globalThis & {
+      DecompressionStream?: typeof DecompressionStream;
+    };
+    const original = runtime.DecompressionStream;
+    runtime.DecompressionStream = undefined;
+    try {
+      const compressed = Uint8Array.from(
+        atob(
+          "H4sIAAAAAAAACitILEgt0s9NzMzTK0mtYKAJMDAwMDAzMQHTBgYG6LSBgZk5gm1gwKAABQa0cQ4qKC0uSSyih0WDE8Sk5CeX5qbmlSTnJBYXVycWlWQm56TWxiSlpmfmVcMka/OzY1LzUhD8gXb2KBgFo2AUjAIKAQDmTqrkAAgAAA==",
+        ),
+        (character) => character.charCodeAt(0),
+      );
+      const files = await decodeSourceArchive(compressed);
+      expect(files.map((file) => file.path)).to.deep.equal(["paper/main.tex"]);
+      expect(new TextDecoder().decode(files[0].bytes)).to.contain(
+        "\\documentclass",
+      );
+    } finally {
+      runtime.DecompressionStream = original;
+    }
+  });
 });
 
 /** 生成最小 ustar 归档供真实解析器测试。 */

@@ -1,5 +1,6 @@
 import { expect } from "chai";
 import { createSourceQueryEndpoint } from "../src/modules/sourceQuery/apiEndpoint";
+import { createTexSourceStorage } from "../src/modules/texSource/storage";
 
 describe("source query endpoint", function () {
   it("routes LaTeX table queries", async function () {
@@ -73,5 +74,28 @@ describe("source query endpoint", function () {
       refresh: true,
       mainFile: "paper/main.tex",
     });
+  });
+
+  it("returns source-not-found for an image when no source is stored", async function () {
+    const store = createTexSourceStorage("ProfD/mineru-copy-archive-test");
+    const endpoint = createSourceQueryEndpoint({
+      authorized: () => undefined,
+      read: async () => ({}),
+      table: async () => ({}),
+      image: (input) => store.readImage(input, input.path),
+      fetch: async () => ({}),
+    });
+    const response = await endpoint.init({
+      pathname: "/mineru-for-zotero/latex/image",
+      method: "GET",
+      query: {
+        libraryID: "1",
+        key: "MISSING1",
+        path: "figures/a.pdf",
+      },
+      headers: {},
+    });
+    expect(response[0], response[2]).to.equal(404);
+    expect(JSON.parse(response[2]).error).to.equal("tex-source-not-found");
   });
 });
