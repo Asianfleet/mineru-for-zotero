@@ -7,7 +7,11 @@ import {
   sameOriginUploadHeaders,
 } from "./api";
 import { zoteroDownloadFileBytes } from "./download";
-import { MinerUTaskError } from "./errors";
+import {
+  describeMinerUFailure,
+  MinerUTaskError,
+  MinerUTaskFailedError,
+} from "./errors";
 import { readFileBytes, readPdfBytes } from "./file";
 import {
   createDefaultRequest,
@@ -324,7 +328,7 @@ export function createV1MinerUClient(
       const job = await fetchJob(taskID, "download");
       const status = mapJobStatus(job);
       if (status.status === "failed") {
-        throw new MinerUTaskError(status.error || "MinerU task failed");
+        throw new MinerUTaskFailedError(status.error || "MinerU task failed");
       }
       const outputs = job.files?.[0]?.output_files ?? {};
       const markdownRef = outputs.markdown?.file_id;
@@ -388,13 +392,10 @@ export function mapJobStatus(job: V1ParseJob): {
 export function extractJobError(job: V1ParseJob): string {
   const fileError = job.files?.find((file) => file.error)?.error;
   const error = job.error ?? fileError;
-  const message = error?.message;
-  const code = error?.code;
-  if (message && code) {
-    return `${message} (${code})`;
-  }
-  return (
-    message || code || `MinerU job ended with status ${job.status ?? "unknown"}`
+  return describeMinerUFailure(
+    error?.message || `MinerU job ended with status ${job.status ?? "unknown"}`,
+    error?.code,
+    job.job_id ? `job ${job.job_id}` : undefined,
   );
 }
 

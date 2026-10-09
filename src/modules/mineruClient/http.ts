@@ -1,4 +1,4 @@
-import { MinerUTaskError } from "./errors";
+import { errorCodeText, MinerUTaskError } from "./errors";
 import type { FetchLike } from "./types";
 
 /**
@@ -381,7 +381,11 @@ export function summarizeErrorBody(text: string): string {
 }
 
 /**
- * Extracts a summary from a V1 error envelope ({"error":{"code":..,"message":..}}).
+ * Extracts a `code: message` summary from a JSON error body.
+ *
+ * Covers the V1 envelope ({"error":{"code":..,"message":..}}), the official
+ * v4 envelope ({"code":..,"msg":..}), and the official gateway envelope used
+ * for failures such as an invalid token ({"msgCode":..,"msg":..}).
  */
 export function extractJsonError(text: string): string {
   if (!text.startsWith("{")) {
@@ -391,14 +395,16 @@ export function extractJsonError(text: string): string {
     const parsed = JSON.parse(text) as {
       error?: { code?: string; message?: string };
       msg?: string;
-      code?: string;
+      code?: string | number;
+      msgCode?: string;
     };
     const error = parsed.error;
     if (error && (error.code || error.message)) {
       return [error.code, error.message].filter(Boolean).join(": ");
     }
-    if (parsed.code || parsed.msg) {
-      return [parsed.code, parsed.msg].filter(Boolean).join(": ");
+    const code = errorCodeText(parsed.code) || errorCodeText(parsed.msgCode);
+    if (code || parsed.msg) {
+      return [code, parsed.msg].filter(Boolean).join(": ");
     }
   } catch {
     // Not JSON; fall through to XML/text handling.

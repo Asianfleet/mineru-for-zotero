@@ -1,6 +1,7 @@
 import { assert } from "chai";
 import {
   MinerURequestError,
+  MinerUTaskFailedError,
   type MinerUClient,
 } from "../src/modules/mineruClient";
 import {
@@ -28,6 +29,26 @@ describe("parseNetwork", function () {
     );
 
     assert.instanceOf(error, MinerUTaskCancelledError);
+  });
+
+  it("reports a task MinerU failed as a terminal failure with its message", async function () {
+    const client: MinerUClient = {
+      ...runningClient,
+      pollTask: async () => ({
+        status: "failed",
+        error: "parsing failed, please try again later (code -60010)",
+      }),
+    };
+
+    const error = await rejectionOf(
+      waitForTask(client, "task-1", async () => {}, 60_000),
+    );
+
+    assert.instanceOf(error, MinerUTaskFailedError);
+    assert.equal(
+      (error as Error).message,
+      "parsing failed, please try again later (code -60010)",
+    );
   });
 
   it("polls a running task until the timeout is used up", async function () {

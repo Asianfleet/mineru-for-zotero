@@ -2,6 +2,7 @@ export {
   MinerUFileAccessError,
   MinerURequestError,
   MinerUTaskError,
+  MinerUTaskFailedError,
 } from "./errors";
 export { createMinerUClientForSettings } from "./factory";
 export { createV1MinerUClient } from "./v1";

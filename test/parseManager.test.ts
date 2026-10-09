@@ -1835,6 +1835,68 @@ describe("parseManager", function () {
     assert.deepEqual(messages, ["parse-error-local-api-unavailable"]);
   });
 
+  it("submits again on Resume after MinerU reported the task as failed", async function () {
+    const messages: string[] = [];
+    const submitted: string[] = [];
+    const polled: string[] = [];
+    const failure = "parsing failed, please try again later (code -60010)";
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      client: {
+        submitPdf: async () => {
+          const taskID = `batch-${submitted.length + 1}`;
+          submitted.push(taskID);
+          return { taskID };
+        },
+        pollTask: async (taskID) => {
+          polled.push(taskID);
+          return taskID === "batch-1"
+            ? { status: "failed", error: failure }
+            : { status: "succeeded" };
+        },
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+    const attachment = pdfAttachment({ id: 7105 });
+
+    await manager.parseAttachment(attachment);
+
+    assert.deepEqual(messages, ["parse-error-mineru"]);
+    assert.equal(taskStore.getTask("7105")?.error, failure);
+    // The failed batch can only answer with the same failure again, so its ID
+    // is dropped instead of being kept for a reconnect.
+    const chunk = taskStore.getTask("7105")?.resume?.chunks[0];
+    assert.equal(chunk?.status, "pending");
+    assert.isUndefined(chunk?.taskID);
+
+    await manager.parseAttachment(attachment, { force: true, resume: true });
+
+    assert.deepEqual(submitted, ["batch-1", "batch-2"]);
+    assert.deepEqual(polled, ["batch-1", "batch-2"]);
+    assert.equal(taskStore.getTask("7105")?.status, "succeeded");
+    assert.deepEqual(messages, ["parse-error-mineru"]);
+  });
+
+  it("keeps the task ID for Resume when polling fails without a MinerU verdict", async function () {
+    const messages: string[] = [];
+    const manager = createParseManager({
+      ...baseDependencies(messages),
+      client: {
+        submitPdf: async () => ({ taskID: "batch-kept" }),
+        pollTask: async () => {
+          throw new MinerURequestError("poll", 401, "A0202: token invalid");
+        },
+        downloadResult: async () => preciseResultFixture(),
+      },
+    });
+
+    await manager.parseAttachment(pdfAttachment({ id: 7106 }));
+
+    const chunk = taskStore.getTask("7106")?.resume?.chunks[0];
+    assert.equal(chunk?.status, "submitted");
+    assert.equal(chunk?.taskID, "batch-kept");
+  });
+
   it("uses the configured online API timeout", async function () {
     const messages: string[] = [];
     let pollCount = 0;

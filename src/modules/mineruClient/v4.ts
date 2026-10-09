@@ -1,6 +1,10 @@
 import { authHeaders, jsonHeaders, requestJson, requestOk } from "./api";
 import { zoteroDownloadFileBytes } from "./download";
-import { MinerUTaskError } from "./errors";
+import {
+  describeMinerUFailure,
+  MinerUTaskError,
+  MinerUTaskFailedError,
+} from "./errors";
 import { readFileBytes, readPdfBytes } from "./file";
 import {
   createDefaultRequest,
@@ -31,8 +35,13 @@ export interface V4MinerUClientOptions extends MinerUClientOptions {
 }
 
 interface V4Envelope<T> {
-  code?: number;
+  code?: number | string;
   msg?: string;
+  trace_id?: string;
+  // Gateway failures such as an invalid token answer with these names instead
+  // of `code` and `trace_id`.
+  msgCode?: string;
+  traceId?: string;
   data?: T;
 }
 
@@ -46,6 +55,9 @@ interface V4ExtractResultItem {
   state?: string;
   full_zip_url?: string;
   err_msg?: string;
+  // The precise API documents `err_msg` only; `err_code` is read when the
+  // service sends it and may be null.
+  err_code?: number | string | null;
 }
 
 interface V4ExtractResultsData {
@@ -122,13 +134,27 @@ export function createV4MinerUClient(
       init,
     );
     if (envelope.code !== 0) {
+      const traceID = envelope.trace_id ?? envelope.traceId;
       throw new MinerUTaskError(
-        envelope.msg ||
-          `MinerU v4 request failed (code ${envelope.code ?? "unknown"})`,
+        describeMinerUFailure(
+          envelope.msg || "MinerU v4 request failed",
+          envelope.code ?? envelope.msgCode,
+          traceID ? `trace_id ${traceID}` : undefined,
+        ),
       );
     }
     return (envelope.data ?? {}) as T;
   };
+
+  const describeFailedItem = (
+    item: V4ExtractResultItem | undefined,
+    batchID: string,
+  ): string =>
+    describeMinerUFailure(
+      item?.err_msg || "MinerU v4 task failed",
+      item?.err_code,
+      `batch ${batchID}`,
+    );
 
   const fetchResults = (taskID: string, stage: string) =>
     requestV4<V4ExtractResultsData>(
@@ -214,10 +240,7 @@ export function createV4MinerUClient(
         return { status: "succeeded" };
       }
       if (state === "failed") {
-        return {
-          status: "failed",
-          error: item?.err_msg || "MinerU v4 task failed",
-        };
+        return { status: "failed", error: describeFailedItem(item, taskID) };
       }
       return { status: "running" };
     },
@@ -226,7 +249,7 @@ export function createV4MinerUClient(
       const results = await fetchResults(taskID, "download");
       const item = results.extract_result?.[0];
       if (String(item?.state ?? "").toLowerCase() === "failed") {
-        throw new MinerUTaskError(item?.err_msg || "MinerU v4 task failed");
+        throw new MinerUTaskFailedError(describeFailedItem(item, taskID));
       }
       const zipURL = item?.full_zip_url;
       if (!zipURL) {

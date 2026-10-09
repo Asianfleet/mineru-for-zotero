@@ -3,7 +3,9 @@ import {
   createMinerUClientForSettings,
   createV1MinerUClient,
   createV4MinerUClient,
+  MinerURequestError,
   MinerUTaskError,
+  MinerUTaskFailedError,
 } from "../src/modules/mineruClient";
 import { fallbackDownloadBinary } from "../src/modules/mineruClient/http";
 import { extractJobError } from "../src/modules/mineruClient/v1";
@@ -182,6 +184,126 @@ describe("mineruClient (V1)", function () {
     assert.isObject(result.rawResult);
   });
 
+  it("reports the MinerU error code of a failed v4 task", async function () {
+    const client = v4ClientAnswering(() =>
+      jsonResponse({
+        code: 0,
+        msg: "ok",
+        trace_id: "trace-1",
+        data: {
+          batch_id: "batch-1",
+          extract_result: [
+            {
+              file_name: "a.pdf",
+              state: "failed",
+              err_code: -60010,
+              err_msg: "parsing failed, please try again later",
+            },
+          ],
+        },
+      }),
+    );
+
+    assert.deepEqual(await client.pollTask("batch-1"), {
+      status: "failed",
+      error: "parsing failed, please try again later (code -60010)",
+    });
+  });
+
+  it("names the batch when a failed v4 task carries no error code", async function () {
+    const expected =
+      "parsing failed, please try again later " +
+      "(no error code returned by MinerU; batch batch-1)";
+    for (const errCode of [null, undefined, 0, ""]) {
+      const client = v4ClientAnswering(() =>
+        jsonResponse({
+          code: 0,
+          msg: "ok",
+          data: {
+            batch_id: "batch-1",
+            extract_result: [
+              {
+                state: "failed",
+                err_code: errCode,
+                err_msg: "parsing failed, please try again later",
+              },
+            ],
+          },
+        }),
+      );
+
+      assert.deepEqual(await client.pollTask("batch-1"), {
+        status: "failed",
+        error: expected,
+      });
+      const error = await rejectionOf(client.downloadResult("batch-1"));
+      assert.instanceOf(error, MinerUTaskFailedError);
+      assert.equal((error as Error).message, expected);
+    }
+  });
+
+  it("keeps the error code of a v4 request MinerU rejects", async function () {
+    const client = createV4MinerUClient({
+      apiKey: "k",
+      baseURL: ONLINE_BASE,
+      readBinary: async () => new Uint8Array([37, 80, 68, 70]),
+      fetch: async () =>
+        jsonResponse({
+          code: -60018,
+          msg: "daily extract task limit reached",
+          trace_id: "trace-2",
+        }),
+    });
+
+    const error = await rejectionOf(client.submitPdf("C:/tmp/a.pdf"));
+
+    assert.instanceOf(error, MinerUTaskError);
+    assert.notInstanceOf(error, MinerUTaskFailedError);
+    assert.equal(
+      (error as Error).message,
+      "daily extract task limit reached (code -60018)",
+    );
+  });
+
+  it("names the request when a rejected v4 request carries no code", async function () {
+    const client = v4ClientAnswering(() =>
+      jsonResponse({ msg: "service busy", trace_id: "trace-3" }),
+    );
+
+    const error = await rejectionOf(client.pollTask("batch-1"));
+
+    assert.equal(
+      (error as Error).message,
+      "service busy (no error code returned by MinerU; trace_id trace-3)",
+    );
+  });
+
+  it("reports the code of the v4 gateway envelope for an invalid token", async function () {
+    // The body mineru.net answers with for a token it does not accept.
+    const client = v4ClientAnswering(() =>
+      jsonResponse(
+        {
+          traceId: "34a472fa1263",
+          msgCode: "A0202",
+          msg: "user authenticate failed",
+          data: null,
+          success: false,
+          total: 0,
+        },
+        401,
+      ),
+    );
+
+    const error = await rejectionOf(client.pollTask("batch-1"));
+
+    assert.instanceOf(error, MinerURequestError);
+    assert.equal((error as MinerURequestError).status, 401);
+    assert.equal(
+      (error as Error).message,
+      "MinerU poll request failed: status 401; A0202: user authenticate failed",
+    );
+  });
+
   it("uses the local source without uploading when health advertises it", async function () {
     const calls: RecordedCall[] = [];
     const client = createMinerUClientForSettings({
@@ -334,7 +456,7 @@ describe("mineruClient (V1)", function () {
     statuses.push("partial");
     assert.deepEqual(await client.pollTask("job-x"), {
       status: "failed",
-      error: "boom",
+      error: "boom (no error code returned by MinerU)",
     });
   });
 
@@ -347,7 +469,36 @@ describe("mineruClient (V1)", function () {
           message: "convert failed, please try again later",
         },
       }),
-      "convert failed, please try again later (-60015)",
+      "convert failed, please try again later (code -60015)",
+    );
+  });
+
+  it("surfaces the file-level error code of a self-hosted V1 job", function () {
+    // A self-hosted server reports failures per file, never on the job.
+    assert.equal(
+      extractJobError({
+        job_id: "job-1",
+        status: "failed",
+        files: [
+          {
+            status: "failed",
+            error: {
+              type: "engine_error",
+              code: "parse_failed",
+              message: "PDF is encrypted",
+            },
+          },
+        ],
+      }),
+      "PDF is encrypted (code parse_failed)",
+    );
+  });
+
+  it("names the job when a failed V1 job carries no error code", function () {
+    assert.equal(
+      extractJobError({ job_id: "job-1", status: "canceled" }),
+      "MinerU job ended with status canceled " +
+        "(no error code returned by MinerU; job job-1)",
     );
   });
 
@@ -625,6 +776,24 @@ function jsonResponse(value: unknown, status = 200): Response {
     status,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+/** A v4 client whose every API request gets the given answer. */
+function v4ClientAnswering(answer: () => Response) {
+  return createV4MinerUClient({
+    apiKey: "k",
+    baseURL: ONLINE_BASE,
+    fetch: async () => answer(),
+  });
+}
+
+async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+  } catch (error) {
+    return error;
+  }
+  assert.fail("expected the promise to reject");
 }
 
 function createStoredZipBytes(

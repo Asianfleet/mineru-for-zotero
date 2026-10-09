@@ -93,6 +93,15 @@ The official client (`mineruClient/v4.ts`):
 3. `GET /v4/extract-results/batch/{batch_id}` polls `extract_result[0].state` (`waiting-file`/`pending`/`running`/`converting`/`done`/`failed`).
 4. Download `full_zip_url` (CDN, no auth) and read `full.md`, `layout.json`, `images/…` from the zip.
 
+### Failure Messages & Error Codes
+
+Every failure a client reports must carry the code MinerU returned, because the client's message is what the Task Manager and the failure notice show. `describeMinerUFailure()` in `mineruClient/errors.ts` formats it as `message (code X)`; when MinerU sends no code it says so and names the remote task or request instead (`… (no error code returned by MinerU; batch <batch_id>)`).
+
+- V4 answers in three shapes. A normal envelope is `{ code, msg, trace_id, data }` with `code: 0` on success and a documented code otherwise (`-60005` file too large, `-60018` daily limit, …). The gateway rejects a bad token with HTTP 401 and a different envelope, `{ msgCode: "A0202", msg, traceId }`. A task that fails while parsing answers `code: 0` with `extract_result[0].state: "failed"` and `err_msg`; the precise API documents no `err_code` there, so it is read when present and may be null.
+- V1 (self-hosted) answers `{ error: { type, code, message, param } }` on a non-2xx response, and reports a failed job per file in `files[].error` with the same fields; there is no job-level error.
+
+HTTP error bodies are summarized as `status <n>; <code>: <message>` by `extractJsonError()` in `mineruClient/http.ts`.
+
 ## Presigned URL Uploads
 
 The V1 client sends exactly the `upload_method`, `upload_url`, and `upload_headers` returned by `POST /v1/uploads`, attaching the MinerU Bearer token only when the upload URL is same-origin with the API base — never to an external presigned host. The V4 client uploads to the pre-signed OSS URL with no headers.
@@ -111,6 +120,8 @@ Task records persist in `<Zotero.DataDirectory.dir>/mineru_tasks.json` via a ser
 Resume state includes `TaskRecord.resume` bookkeeping and chunk caches in `<Zotero.DataDirectory.dir>/mineru-resume/<attachmentID>/`. Caches stay until the final merged result is written, after which `cleanupTaskResume()` removes them.
 
 Transient network failures (status 0 or ≥ 500) reconnect with exponential backoff for idempotent GET stages only; submit/upload stages never retry to avoid burning quota. A local 404 during poll means the remote task was lost: only that unfinished chunk is resubmitted.
+
+When MinerU itself reports a task as failed (`MinerUTaskFailedError`: v4 `state: "failed"`, v1 `failed`/`canceled`), that task ID can only repeat the failure, so the chunk drops it and returns to `pending`: Resume then submits that chunk again. Any other poll or download error keeps the task ID, so Resume reconnects without uploading again.
 
 Cancellation (Stop in the Task Manager) is a distinct terminal `cancelled` status, never a failure: it sets no Failed tag, shows no notice, and keeps the resume data, so the task can be resumed or retried. The pipeline checks for cancellation before every phase and inside the poll/download retry loops. A second parse of an attachment that is already running in this session is ignored (in-flight guard) instead of resetting the first parse's resume directory.
 

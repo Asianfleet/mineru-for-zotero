@@ -1,6 +1,7 @@
 import {
   MinerURequestError,
   MinerUTaskError,
+  MinerUTaskFailedError,
   MinerUClient,
 } from "./mineruClient";
 import { ParseSource } from "../utils/prefs";
@@ -87,7 +88,7 @@ export async function waitForTask(
         return;
       }
       if (result.status === "failed") {
-        throw new MinerUTaskError(result.error || "MinerU task failed");
+        throw new MinerUTaskFailedError(result.error || "MinerU task failed");
       }
       await delay(POLL_INTERVAL_MS);
       remainingMs -= POLL_INTERVAL_MS;

@@ -8,6 +8,7 @@ import {
   MinerUFileAccessError,
   MinerURequestError,
   MinerUTaskError,
+  MinerUTaskFailedError,
   type MinerUClient,
 } from "./mineruClient";
 import { joinNativePath, toNativePath } from "./mineruClient/path";
@@ -921,21 +922,50 @@ async function runParseAttachment(
         taskIDs[i] = chunk.taskID;
       }
 
-      try {
-        await poll();
-      } catch (error) {
-        await resubmitLostTask(error);
-      }
-
-      if (!split) {
-        await updateTaskDetail(String(attachment.id), "Downloading result...");
-      }
       let res: any;
       try {
-        res = await download();
+        if (!split) {
+          await updateTaskDetail(
+            String(attachment.id),
+            `Waiting for MinerU to parse (${pageCount} pages)...`,
+          );
+        }
+        try {
+          await poll();
+        } catch (error) {
+          await resubmitLostTask(error);
+        }
+
+        if (!split) {
+          await updateTaskDetail(
+            String(attachment.id),
+            "Downloading result...",
+          );
+        }
+        try {
+          res = await download();
+        } catch (error) {
+          await resubmitLostTask(error);
+          res = await download();
+        }
       } catch (error) {
-        await resubmitLostTask(error);
-        res = await download();
+        // MinerU reported this task as failed. Asking for the same task again
+        // only repeats that failure, so forget its ID: Resume then submits
+        // this chunk again, while completed chunks stay cached.
+        if (error instanceof MinerUTaskFailedError) {
+          chunk.taskID = undefined;
+          chunk.status = "pending";
+          try {
+            await persistTaskResume(task, resume);
+          } catch (persistError) {
+            dependencies.log(
+              "MinerU resume state could not be saved",
+              attachment.id,
+              persistError,
+            );
+          }
+        }
+        throw error;
       }
       res._chunkPageCount = split ? endPage - startPage + 1 : pageCount;
 
