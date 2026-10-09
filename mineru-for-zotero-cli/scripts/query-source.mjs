@@ -11,10 +11,9 @@ const DEFAULT_LISTEN_PORT = 23119;
 const DEFAULT_FORMAT = "text";
 const DEFAULT_TIMEOUT_MS = 30000;
 const SEARCH_ENDPOINT = "/mineru-for-zotero/search";
-const MARKDOWN_ENDPOINT = "/mineru-for-zotero/markdown";
-const TABLE_ENDPOINT = "/mineru-for-zotero/tables";
-const IMAGE_ENDPOINT = "/mineru-for-zotero/image";
-const VALID_COMMANDS = new Set(["search", "markdown", "table", "image"]);
+const VALID_SOURCES = new Set(["markdown", "latex"]);
+const VALID_MARKDOWN_OPERATIONS = new Set(["read", "table", "image"]);
+const VALID_LATEX_OPERATIONS = new Set(["fetch", "read", "table", "image"]);
 const VALID_FORMATS = new Set(["text", "json"]);
 const VALID_GRANULARITIES = new Set(["full", "headings", "section", "search"]);
 const VALID_TABLE_FORMATS = new Set([
@@ -30,6 +29,7 @@ const VALID_TABLE_MATCHES = new Set([
   "both",
   "caption-exact",
 ]);
+const BOOLEAN_FLAGS = new Set(["--help", "--refresh"]);
 
 /**
  * Runs the CLI entry point and maps failures to stable process output.
@@ -48,15 +48,21 @@ async function main(argv) {
   }
 
   try {
-    const response = await requestMarkdownApi(options);
+    const response = await requestSourceApi(options);
     const data = await prepareSuccessData(options, response);
     const envelope = createSuccessEnvelope(options, data);
+    const partialImageFailure =
+      options.command === "latex.image" &&
+      data.images?.some(
+        (image) => !["ok", "duplicate-path"].includes(image.status),
+      );
+    if (partialImageFailure) envelope.ok = false;
     if (options.format === "json") {
       console.log(JSON.stringify(envelope, null, 2));
     } else {
       console.log(formatTextSuccess(options, data));
     }
-    return 0;
+    return partialImageFailure ? 1 : 0;
   } catch (error) {
     const envelope = createErrorEnvelope(options, error);
     if (options.format === "json") {
@@ -76,10 +82,20 @@ function parseCommand(argv) {
     return { help: true };
   }
 
-  const [command, ...rest] = argv;
-  if (!VALID_COMMANDS.has(command)) {
-    throw new CliArgumentError(`Unknown command: ${command}`);
+  const [source, operation, ...remaining] = argv;
+  if (source !== "search" && !VALID_SOURCES.has(source)) {
+    throw new CliArgumentError(`Unknown source: ${source}`);
   }
+  if (source !== "search") {
+    const valid =
+      source === "markdown"
+        ? VALID_MARKDOWN_OPERATIONS
+        : VALID_LATEX_OPERATIONS;
+    if (!valid.has(operation))
+      throw new CliArgumentError(`Unknown operation: ${operation}`);
+  }
+  const command = source === "search" ? "search" : `${source}.${operation}`;
+  const rest = source === "search" ? argv.slice(1) : remaining;
 
   const flags = parseFlags(rest);
   const format = getFlag(flags, "--format", DEFAULT_FORMAT);
@@ -101,6 +117,7 @@ function parseCommand(argv) {
     const title = getRequiredFlag(flags, "--title");
     return {
       command,
+      source: "shared",
       endpoint: SEARCH_ENDPOINT,
       listenPort,
       baseUrl,
@@ -114,11 +131,46 @@ function parseCommand(argv) {
     };
   }
 
-  if (command === "table") {
+  if (command === "latex.fetch") {
+    const key = getRequiredFlag(flags, "--key");
+    return {
+      command,
+      source,
+      endpoint: "/mineru-for-zotero/latex/fetch",
+      listenPort,
+      baseUrl,
+      format,
+      timeoutMs,
+      token,
+      params: {
+        libraryID,
+        key,
+        refresh: flags.has("--refresh") ? "true" : "false",
+        ...(flags.has("--main-file")
+          ? { mainFile: flags.get("--main-file") }
+          : {}),
+      },
+      method: "POST",
+    };
+  }
+
+  if (command.endsWith(".table")) {
     const key = getRequiredFlag(flags, "--key");
     const query = getRequiredFlag(flags, "--query");
-    const tableFormat = getFlag(flags, "--table-format", "html");
-    const match = getFlag(flags, "--match", "both");
+    if (
+      source === "latex" &&
+      (flags.has("--table-format") || flags.has("--match"))
+    ) {
+      throw new CliArgumentError(
+        "latex table always returns LaTeX code and does not accept --table-format or --match.",
+      );
+    }
+    const tableFormat =
+      source === "markdown"
+        ? getFlag(flags, "--table-format", "html")
+        : "latex";
+    const match =
+      source === "markdown" ? getFlag(flags, "--match", "both") : "both";
     if (!VALID_TABLE_FORMATS.has(tableFormat)) {
       throw new CliArgumentError("Invalid --table-format.");
     }
@@ -139,7 +191,8 @@ function parseCommand(argv) {
     );
     return {
       command,
-      endpoint: TABLE_ENDPOINT,
+      source,
+      endpoint: `/mineru-for-zotero/${source}/table`,
       listenPort,
       baseUrl,
       format,
@@ -149,7 +202,7 @@ function parseCommand(argv) {
     };
   }
 
-  if (command === "image") {
+  if (command.endsWith(".image")) {
     const key = getRequiredFlag(flags, "--key");
     const path = getRequiredFlag(flags, "--path");
     const output = getFlag(flags, "--output");
@@ -172,7 +225,8 @@ function parseCommand(argv) {
     );
     return {
       command,
-      endpoint: IMAGE_ENDPOINT,
+      source,
+      endpoint: `/mineru-for-zotero/${source}/image`,
       listenPort,
       baseUrl,
       format,
@@ -191,6 +245,30 @@ function parseCommand(argv) {
       "Invalid --granularity. Expected full, headings, section, or search.",
     );
   }
+  if (source === "latex") {
+    if (flags.has("--section-number"))
+      throw new CliArgumentError(
+        "latex read does not accept --section-number.",
+      );
+    if (flags.has("--attachment-key"))
+      throw new CliArgumentError(
+        "latex read does not accept --attachment-key.",
+      );
+    if (flags.has("--section-path") && granularity !== "section")
+      throw new CliArgumentError(
+        "--section-path requires section granularity.",
+      );
+    if (granularity === "section" && !getFlag(flags, "--section-path")?.trim())
+      throw new CliArgumentError("latex section requires --section-path.");
+    if (flags.has("--context-paragraphs") && granularity !== "search")
+      throw new CliArgumentError(
+        "--context-paragraphs requires search granularity.",
+      );
+    if (flags.has("--query") && granularity !== "search")
+      throw new CliArgumentError("--query requires search granularity.");
+    if (granularity === "search" && !getFlag(flags, "--query")?.trim())
+      throw new CliArgumentError("latex search requires --query.");
+  }
 
   const params = {
     libraryID,
@@ -205,12 +283,15 @@ function parseCommand(argv) {
   const contextParagraphs = getFlag(flags, "--context-paragraphs");
   if (contextParagraphs !== undefined) {
     parseInteger(contextParagraphs, "--context-paragraphs");
+    if (source === "latex" && Number(contextParagraphs) < 0)
+      throw new CliArgumentError("--context-paragraphs must be non-negative.");
     params.contextParagraphs = contextParagraphs;
   }
 
   return {
     command,
-    endpoint: MARKDOWN_ENDPOINT,
+    source,
+    endpoint: `/mineru-for-zotero/${source}/read`,
     listenPort,
     baseUrl,
     format,
@@ -230,7 +311,7 @@ function parseFlags(args) {
     if (!name.startsWith("--")) {
       throw new CliArgumentError(`Unexpected argument: ${name}`);
     }
-    if (name === "--help") {
+    if (BOOLEAN_FLAGS.has(name)) {
       flags.set(name, "true");
       continue;
     }
@@ -248,7 +329,7 @@ function parseFlags(args) {
 /**
  * Fetches JSON or image bytes from the local Zotero Markdown query API.
  */
-async function requestMarkdownApi(options) {
+async function requestSourceApi(options) {
   const url = new URL(options.endpoint, options.baseUrl);
   for (const [key, value] of Object.entries(options.params)) {
     url.searchParams.set(key, value);
@@ -263,11 +344,12 @@ async function requestMarkdownApi(options) {
     }
 
     const response = await fetch(url, {
+      method: options.method ?? "GET",
       headers,
       signal: controller.signal,
     });
     if (
-      options.command === "image" &&
+      options.command.endsWith(".image") &&
       response.ok &&
       !response.headers.get("content-type")?.includes("json")
     ) {
@@ -296,8 +378,11 @@ async function requestMarkdownApi(options) {
  * Writes requested CLI output files and returns JSON-safe success data.
  */
 async function prepareSuccessData(options, data) {
-  if (options.command !== "image") {
+  if (!options.command.endsWith(".image")) {
     return data;
+  }
+  if (options.command === "latex.image") {
+    return prepareLatexImages(options, data);
   }
 
   if (data?.imageBytes instanceof Uint8Array) {
@@ -354,6 +439,49 @@ async function prepareSuccessData(options, data) {
   }
 
   return data;
+}
+
+/** 保存 LaTeX 图片并仅保留可安全输出的逐项元数据。 */
+async function prepareLatexImages(options, data) {
+  if (!Array.isArray(data?.images))
+    throw new Error("LaTeX image response has no images list");
+  const images = [];
+  for (const image of data.images) {
+    if (image.status !== "ok") {
+      images.push({ path: image.path, status: image.status });
+      continue;
+    }
+    const bytes = decodeDataUrl(image.dataURL);
+    if (!bytes) throw new Error("Image response has no valid data URL");
+    const output =
+      options.output && data.images.length === 1
+        ? resolve(options.output)
+        : latexImageOutputPathForDir(options.outputDir, image.path);
+    await writeBinaryOutput(output, bytes);
+    images.push({
+      path: image.path,
+      status: "ok",
+      mime: image.mime,
+      bytes: bytes.byteLength,
+      output,
+    });
+  }
+  return { images };
+}
+
+/** 在目标目录内保留 LaTeX 归档文件的完整安全相对路径。 */
+function latexImageOutputPathForDir(outputDir, imagePath) {
+  const path = String(imagePath ?? "");
+  const parts = path.split("/");
+  if (
+    !path ||
+    path.startsWith("/") ||
+    path.includes("\\") ||
+    /^[a-z]:/i.test(path) ||
+    parts.some((part) => !part || part === "." || part === "..")
+  )
+    throw new Error("Invalid LaTeX image path in API response");
+  return resolve(outputDir, ...parts);
 }
 
 /**
@@ -480,13 +608,13 @@ function formatTextSuccess(options, data) {
   if (options.command === "search") {
     return formatSearchText(options, data);
   }
-  if (options.command === "table") {
+  if (options.command.endsWith(".table")) {
     return formatTableText(options, data);
   }
-  if (options.command === "image") {
+  if (options.command.endsWith(".image")) {
     return formatImageText(options, data);
   }
-  return formatMarkdownText(options, data);
+  return formatSourceText(options, data);
 }
 
 /**
@@ -495,7 +623,7 @@ function formatTextSuccess(options, data) {
 function formatSearchText(options, data) {
   const candidates = Array.isArray(data.candidates) ? data.candidates : [];
   const lines = [
-    "Markdown Query Search",
+    "Source Query Search",
     `Library: ${options.params.libraryID}`,
     `Title: ${options.params.title}`,
     `Candidates: ${candidates.length}`,
@@ -538,15 +666,31 @@ function formatSearchText(options, data) {
 /**
  * Formats Markdown query responses according to their granularity.
  */
-function formatMarkdownText(options, data) {
+function formatSourceText(options, data) {
+  if (options.command === "latex.fetch") {
+    return [
+      "LaTeX Source Fetch",
+      `Library: ${options.params.libraryID}`,
+      `Item: ${valueOrUnknown(options.params.key)}`,
+      `arXiv: ${valueOrUnknown(data.arxivID)}`,
+      `Version: ${valueOrUnknown(data.resolvedVersion)}`,
+      `Main file: ${valueOrUnknown(data.mainFile)}`,
+      `Files: ${valueOrUnknown(data.fileCount)}`,
+    ].join("\n");
+  }
+  if (options.source === "latex") return formatLatexSourceText(options, data);
   const lines = [
-    "Markdown Query Result",
+    options.command.startsWith("latex.")
+      ? "LaTeX Source Result"
+      : "Markdown Query Result",
     `Library: ${options.params.libraryID}`,
     `Item: ${valueOrUnknown(data.item?.key ?? options.params.key)}`,
-    `Attachment: ${formatAttachment(data.attachment)}`,
+    ...(data.attachment
+      ? [`Attachment: ${formatAttachment(data.attachment)}`]
+      : []),
     `Title: ${valueOrUnknown(data.item?.title)}`,
     `Granularity: ${valueOrUnknown(data.granularity ?? options.params.granularity)}`,
-    `Mode: ${valueOrUnknown(data.result?.mode)}`,
+    ...(data.result?.mode ? [`Mode: ${valueOrUnknown(data.result.mode)}`] : []),
     "",
   ];
 
@@ -565,6 +709,50 @@ function formatMarkdownText(options, data) {
     lines.push("[Content]", data.content ?? "");
   }
 
+  return lines.join("\n");
+}
+
+/** 按 LaTeX 响应字段展示标题、章节、搜索和全文。 */
+function formatLatexSourceText(options, data) {
+  const granularity = data.granularity ?? options.params.granularity;
+  const lines = [
+    "LaTeX Source Result",
+    `Library: ${options.params.libraryID}`,
+    `Item: ${options.params.key}`,
+    `Granularity: ${granularity}`,
+    "",
+  ];
+  if (granularity === "headings") {
+    lines.push("[Headings]");
+    for (const heading of data.headings ?? []) {
+      lines.push(
+        `${"  ".repeat(Math.max(0, Number(heading.level || 1) - 1))}- ${heading.title} (${heading.command})`,
+        `  path: ${formatPath(heading.path)}`,
+        `  source: ${heading.file}:${heading.line}`,
+      );
+    }
+    if (!data.headings?.length) lines.push("(none)");
+  } else if (granularity === "section") {
+    lines.push(
+      "[Section]",
+      `Heading: ${data.heading?.title ?? ""}`,
+      `Path: ${formatPath(data.heading?.path)}`,
+      `Source: ${data.heading?.file}:${data.heading?.line}`,
+      "",
+      data.content ?? "",
+    );
+  } else if (granularity === "search") {
+    const matches = data.matches ?? [];
+    lines.push(`Query: ${data.query}`, `Matches: ${matches.length}`);
+    matches.forEach((match, index) => {
+      lines.push("", `[Match ${index + 1}] ${match.file}:${match.line}`);
+      for (const paragraph of match.before ?? []) lines.push("", paragraph);
+      lines.push("", `>> ${match.hit}`);
+      for (const paragraph of match.after ?? []) lines.push("", paragraph);
+    });
+  } else {
+    lines.push("[Content]", data.content ?? "");
+  }
   return lines.join("\n");
 }
 
@@ -659,6 +847,27 @@ function formatSearchMatches(data) {
  * Formats table query responses as compact, readable text.
  */
 function formatTableText(options, data) {
+  if (options.source === "latex") {
+    const tables = data.tables ?? [];
+    const lines = [
+      "LaTeX Table Query Result",
+      `Library: ${options.params.libraryID}`,
+      `Item: ${options.params.key}`,
+      `Query: ${data.query ?? options.params.q}`,
+      `Tables: ${tables.length}`,
+    ];
+    tables.forEach((table, index) => {
+      lines.push(
+        "",
+        `[Table ${index + 1}]`,
+        `Caption: ${table.caption ?? ""}`,
+        `Source: ${table.file}:${table.lineStart}-${table.lineEnd}`,
+        "",
+        table.content ?? "",
+      );
+    });
+    return lines.join("\n");
+  }
   const tables = Array.isArray(data.tables) ? data.tables : [];
   const lines = [
     "Markdown Table Query Result",
@@ -689,6 +898,21 @@ function formatTableText(options, data) {
  * Formats image query responses without writing binary bytes to stdout.
  */
 function formatImageText(options, data) {
+  if (options.source === "latex") {
+    const lines = [
+      "LaTeX Image Query Result",
+      `Library: ${options.params.libraryID}`,
+      `Item: ${options.params.key}`,
+      `Images: ${data.images.length}`,
+    ];
+    for (const image of data.images) {
+      lines.push("", `- ${image.path}`, `  status: ${image.status}`);
+      if (image.mime) lines.push(`  mime: ${image.mime}`);
+      if (image.output)
+        lines.push(`  output: ${image.output}`, `  bytes: ${image.bytes}`);
+    }
+    return lines.join("\n");
+  }
   if (typeof data.output === "string") {
     return [
       `Image saved: ${data.output}`,
@@ -734,7 +958,7 @@ function formatTextError(envelope) {
     `Message: ${envelope.error.message}`,
     `HTTP Status: ${envelope.status}`,
   ];
-  const hint = hintForError(envelope.error.code);
+  const hint = hintForError(envelope.error.code, envelope.request.command);
   if (hint) {
     lines.push("", `Hint: ${hint}`);
   }
@@ -742,6 +966,12 @@ function formatTextError(envelope) {
   if (Array.isArray(candidates) && candidates.length > 0) {
     lines.push("", "Candidates:");
     for (const candidate of candidates) {
+      if (envelope.error.code === "ambiguous-section") {
+        lines.push(
+          `- ${formatPath(candidate.path)} ${candidate.file}:${candidate.line}`,
+        );
+        continue;
+      }
       lines.push(
         `- ${valueOrUnknown(candidate.fileName)} key=${valueOrUnknown(
           candidate.key,
@@ -755,7 +985,9 @@ function formatTextError(envelope) {
 /**
  * Returns a short next-step hint for common API errors.
  */
-function hintForError(code) {
+function hintForError(code, command) {
+  if (code === "invalid-path" && command === "latex.image")
+    return "Use a safe relative path listed in the stored LaTeX source.";
   const hints = {
     "api-disabled": "Enable the Markdown query API in Zotero preferences.",
     "invalid-token": "Check the --token value from Zotero preferences.",
@@ -763,6 +995,8 @@ function hintForError(code) {
       "Pass --attachment-key with one of the candidate keys.",
     "parse-result-not-found":
       "Parse this PDF in Zotero first, or choose another attachment with --attachment-key.",
+    "invalid-main-file":
+      "Pass --main-file with a relative .tex path present in the arXiv archive.",
     "section-not-found":
       "Run with --granularity headings first and use an exact heading path.",
     "missing-query": "Pass a non-empty --query value.",
@@ -785,33 +1019,32 @@ function writeArgumentError(error) {
 function helpText() {
   return [
     "Usage:",
-    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs search --library-id <id> --title <text> [--format text|json]",
-    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs markdown --library-id <id> --key <key> [--granularity full|headings|section|search] [--format text|json]",
-    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs table --library-id <id> --key <key> --query <text> [--match caption|content|both|caption-exact] [--table-format html|markdown|tsv|latex|json]",
-    "  node mineru-for-zotero-cli/scripts/query-markdown.mjs image --library-id <id> --key <key> --path <images/...> (--output <file>|--output-dir <dir>)",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs search --library-id <id> --title <text> [--format text|json]",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs markdown read --library-id <id> --key <key> [--granularity full|headings|section|search] [--format text|json]",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs markdown table --library-id <id> --key <key> --query <text> [--match caption|content|both|caption-exact] [--table-format html|markdown|tsv|latex|json]",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs markdown image --library-id <id> --key <key> --path <images/...> (--output <file>|--output-dir <dir>)",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs latex fetch --library-id <id> --key <key> [--refresh] [--main-file <relative-path>]",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs latex read --library-id <id> --key <key> [--granularity full|headings|section|search] [--section-path <path>|--query <text>]",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs latex table --library-id <id> --key <key> --query <text>",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs latex image --library-id <id> --key <key> --path <paths> (--output <file>|--output-dir <dir>)",
     "",
     "Common options:",
+    "  --library-id <id>            Zotero library ID. Required for every command.",
+    "  --key <key>                  Zotero item key. Required for markdown and latex commands; not used by search.",
     "  --port <number>              Zotero local server port. Default: auto-detect from Zotero profile, then 23119",
-    "  --token <token>              Markdown query API token. Sent as Authorization: Bearer.",
+    "  --token <token>              Source query API token. Sent as Authorization: Bearer.",
     "  --format <text|json>         Output format. Default: text",
     "  --timeout-ms <number>        Request timeout. Default: 30000",
     "",
-    "Markdown options:",
-    "  --attachment-key <key>       Select a specific PDF attachment under a regular item.",
-    "  --section-path <path>        Section path for granularity=section.",
-    "  --section-number <expr>      Section numbers for granularity=section, such as 5.1,5.3-5.5.",
-    "  --query <text>               Search query for granularity=search.",
-    "  --context-paragraphs <n>     Context paragraphs for granularity=search.",
-    "",
-    "Table options:",
-    "  --query <text>               Required table caption or content query.",
-    "  --match <kind>               caption, content, both, or caption-exact. Default: both",
-    "  --table-format <format>      html, markdown, tsv, latex, or json. Default: html",
-    "",
-    "Image options:",
-    "  --path <paths>               Required image path or comma-separated paths.",
-    "  --output <file>              Save a single image response to a file. Required unless --output-dir is set.",
-    "  --output-dir <dir>           Save image responses under a directory. Required unless --output is set.",
+    "Command options:",
+    "  search --title <text>        Required title search text.",
+    "  markdown read                --attachment-key, --granularity, --section-number, --section-path, --query, --context-paragraphs",
+    "  markdown table               --query, --match, --table-format",
+    "  markdown image               --path, --output, --output-dir",
+    "  latex fetch                  --refresh, --main-file",
+    "  latex read                   --granularity, --section-path (exact path or unique title), --query, --context-paragraphs (search only)",
+    "  latex table                  --query (returns LaTeX code; --table-format is unavailable)",
+    "  latex image                  --path, --output, --output-dir (per-path status; partial failure exits 1)",
   ].join("\n");
 }
 

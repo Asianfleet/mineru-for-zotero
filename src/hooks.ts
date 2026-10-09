@@ -5,6 +5,10 @@ import {
   unregisterMarkdownQueryApiEndpoint,
 } from "./modules/markdownQuery/apiEndpoint";
 import {
+  registerSourceQueryApiEndpoint,
+  unregisterSourceQueryApiEndpoint,
+} from "./modules/sourceQuery/apiEndpoint";
+import {
   registerItemTreeColumn,
   unregisterItemTreeColumn,
 } from "./modules/itemTreeColumn";
@@ -27,6 +31,7 @@ async function onStartup() {
 
   registerPreferencePane();
   registerMarkdownQueryApiEndpoint();
+  registerSourceQueryApiEndpoint();
 
   await Promise.all(
     Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
@@ -92,6 +97,7 @@ function onShutdown(): void {
   });
   unregisterReaderToolbar();
   unregisterMarkdownQueryApiEndpoint();
+  unregisterSourceQueryApiEndpoint();
   destroyAllReaderOverlays();
   unregisterItemTreeColumn();
   ztoolkit.unregisterAll();
