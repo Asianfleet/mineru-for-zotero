@@ -195,7 +195,7 @@ Common error codes:
 
 ### Companion Skill and CLI
 
-The repository includes a companion Skill in `mineru-for-zotero-cli/`. It is intended for Codex or other local agents and wraps HTTP parameters, token headers, port detection, error hints, and readable text formatting. It has the same preconditions as the HTTP API: Zotero is running and the plugin's local Markdown query API is enabled. If the settings page requires a token, pass `--token <token>`.
+The repository includes two companion Skills: `mineru-for-zotero-cli/` for agents that can run the Node CLI, and `mineru-for-zotero-mcp/` for agents that can only connect to an MCP server. Both have the same preconditions as the HTTP API: Zotero is running and the plugin's local Markdown query API is enabled. If token validation is enabled, pass `--token <token>` to the CLI or configure `Authorization: Bearer <token>` in the MCP client.
 
 Run the CLI from the repository root:
 

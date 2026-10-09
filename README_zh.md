@@ -195,7 +195,7 @@ node mineru-for-zotero-cli/scripts/query-source.mjs markdown image \
 
 ### 配套 Skill 与 CLI
 
-仓库内提供了配套 Skill：`mineru-for-zotero-cli/`。它面向 Codex 或其他本地 agent，封装了 HTTP 参数、token header、端口读取、错误提示和文本排版。前置条件与 HTTP API 相同：Zotero 正在运行，插件已启用本地 Markdown 查询 API；如果设置页要求 token，调用时传入 `--token <token>`。
+仓库内提供了两个配套 Skill：`mineru-for-zotero-cli/` 适用于可以执行 Node CLI 的 agent，`mineru-for-zotero-mcp/` 适用于只能连接 MCP server 的 agent。两者的前置条件与 HTTP API 相同：Zotero 正在运行，插件已启用本地 Markdown 查询 API；如果设置页要求 token，CLI 传入 `--token <token>`，MCP 客户端配置 `Authorization: Bearer <token>`。
 
 在仓库根目录可以直接运行 CLI：
 
