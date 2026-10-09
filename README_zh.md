@@ -229,6 +229,33 @@ CLI 默认会尝试从 Zotero 默认 profile 读取本地 HTTP server 端口，�
 
 使用 `image` 时，单图路径用 `--output <file>`；多图逗号分隔路径必须用 `--output-dir <dir>`。LaTeX 图片在输出目录中保留 `imgs/`、`logo/` 等源码子目录；每个请求路径返回独立状态，重复路径只写一次，部分失败仍保留成功文件并返回非零退出码。text 和 JSON 输出均不含图片 base64。LaTeX 末级标题有歧义时返回候选完整路径，未找到章节时返回 `section-not-found`。
 
+## MCP 查询服务
+
+如果 MCP 客户端不能执行 Node CLI，可以直接连接插件提供的无状态 Streamable HTTP MCP endpoint。它使用 Zotero 已有的本地 HTTP server，不会启动额外进程或端口：
+
+```text
+http://127.0.0.1:23119/mineru-for-zotero/mcp
+```
+
+请先在设置页启用 `本地 Markdown 查询 API`。如果开启了 token 校验，在 MCP 客户端配置中加入 `Authorization: Bearer <token>` header。Zotero 端口不是默认值 `23119` 时，请替换 URL 中的端口。
+
+支持 URL MCP server 配置的客户端可以使用类似下面的配置：
+
+```json
+{
+  "mcpServers": {
+    "mineru-for-zotero": {
+      "url": "http://127.0.0.1:23119/mineru-for-zotero/mcp",
+      "headers": {
+        "Authorization": "Bearer <token>"
+      }
+    }
+  }
+}
+```
+
+工具包括 `zotero_search_items`、`mineru_read_markdown`、`mineru_query_markdown_table`、`mineru_get_markdown_image`、`mineru_fetch_latex`、`mineru_read_latex`、`mineru_query_latex_table` 和 `mineru_get_latex_image`。普通查询返回结构化结果和可读文本，图片工具会返回 MCP image content block。服务是无状态的，每个 JSON-RPC 请求独立处理；插件关闭后 endpoint 会注销。
+
 ## 常见问题
 
 ### 提示未配置 API Key

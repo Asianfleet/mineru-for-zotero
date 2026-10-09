@@ -28,6 +28,7 @@ class Addon {
     itemTreeColumn?: ItemTreeColumnState;
     readerOverlays?: Map<ReaderOverlayKey, ReaderOverlayState>;
     readerToolbar?: ReaderToolbarRegistration;
+    mcp?: { registered: boolean };
     dialog?: DialogHelper;
   };
   // Lifecycle hooks

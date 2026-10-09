@@ -229,6 +229,33 @@ The CLI tries to read Zotero's local HTTP server port from the default Zotero pr
 
 For `image`, use `--output <file>` for a single path. For multiple comma-separated paths, use `--output-dir <dir>` so each image is written under that directory. LaTeX image output preserves source subdirectories such as `imgs/` and `logo/`; each requested path has its own status, duplicate paths are written once, and a partial failure returns a nonzero exit code while retaining successful files. Text and JSON output never include image base64 data. An ambiguous LaTeX section title returns candidate full paths; a missing section returns `section-not-found`.
 
+## MCP Query Service
+
+If an MCP client cannot run the Node CLI, connect it directly to the plugin's stateless Streamable HTTP MCP endpoint. It uses Zotero's existing local HTTP server and does not start another process or port:
+
+```text
+http://127.0.0.1:23119/mineru-for-zotero/mcp
+```
+
+Enable `Local Markdown Query API` in the plugin settings first. If token validation is enabled, add an `Authorization: Bearer <token>` header in the MCP client configuration. Replace `23119` when Zotero uses another local HTTP server port.
+
+For clients that support URL MCP servers, a configuration can look like this:
+
+```json
+{
+  "mcpServers": {
+    "mineru-for-zotero": {
+      "url": "http://127.0.0.1:23119/mineru-for-zotero/mcp",
+      "headers": {
+        "Authorization": "Bearer <token>"
+      }
+    }
+  }
+}
+```
+
+The endpoint exposes `zotero_search_items`, `mineru_read_markdown`, `mineru_query_markdown_table`, `mineru_get_markdown_image`, `mineru_fetch_latex`, `mineru_read_latex`, `mineru_query_latex_table`, and `mineru_get_latex_image`. Query tools return both structured data and readable text; image tools also return MCP image content blocks. The service is stateless, so each JSON-RPC request is independent, and the endpoint is removed when the plugin shuts down.
+
 ## Troubleshooting
 
 ### API Key Not Configured
