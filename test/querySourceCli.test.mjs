@@ -80,6 +80,35 @@ test("latex fetch accepts the refresh switch and main-file option", async () => 
   );
 });
 
+test("shows LaTeX entry candidates with the main-file hint", async () => {
+  await withServer(
+    {
+      status: 400,
+      body: {
+        error: "ambiguous-main-file",
+        candidates: ["a.tex", "paper/b.tex"],
+      },
+    },
+    async ({ port }) => {
+      const result = await runCli([
+        "latex",
+        "fetch",
+        "--port",
+        String(port),
+        "--library-id",
+        "1",
+        "--key",
+        "ABCD1234",
+      ]);
+      assert.equal(result.code, 1);
+      assert.match(result.stderr, /--main-file/);
+      assert.match(result.stderr, /- a\.tex/);
+      assert.match(result.stderr, /- paper\/b\.tex/);
+      assert.doesNotMatch(result.stderr, /unknown/);
+    },
+  );
+});
+
 test("formats a LaTeX fetch manifest without unknown fields", async () => {
   await withServer(
     {

@@ -7,6 +7,7 @@ import { getMinerUStorageRoot } from "../preferenceScript";
 import { createTexSourceStorage } from "../texSource/storage";
 import { extractArxivId } from "../texSource/arxivId";
 import { decodeSourceArchive } from "../texSource/archive";
+import { selectTexMainFile } from "../texSource/mainFile";
 import { createLatexQueryService } from "../latexQuery/service";
 
 export const SOURCE_ENDPOINT_PATHS = [
@@ -207,7 +208,12 @@ export async function fetchLatex(
 ) {
   if (!refresh) {
     try {
-      return await store.readReadyManifest({ libraryID, key });
+      const cached = await store.readReadyManifest({ libraryID, key });
+      if (
+        requestedMainFile === undefined ||
+        requestedMainFile === cached.mainFile
+      )
+        return cached;
     } catch {
       /* fetch below */
     }
@@ -223,15 +229,7 @@ export async function fetchLatex(
   const files = await decodeSourceArchive(
     new Uint8Array(await response.arrayBuffer()),
   );
-  const mainFile = requestedMainFile
-    ? files.find((file) => file.path === requestedMainFile)?.path
-    : files.find((file) =>
-        /\\documentclass|\\begin\s*\{document\}/.test(
-          new TextDecoder().decode(file.bytes),
-        ),
-      )?.path;
-  if (requestedMainFile && !mainFile) throw new Error("invalid-main-file");
-  if (!mainFile) throw new Error("ambiguous-main-file");
+  const mainFile = selectTexMainFile(files, requestedMainFile);
   const manifest = {
     libraryID,
     itemKey: key,

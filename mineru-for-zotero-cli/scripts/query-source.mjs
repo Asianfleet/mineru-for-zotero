@@ -966,6 +966,10 @@ function formatTextError(envelope) {
   if (Array.isArray(candidates) && candidates.length > 0) {
     lines.push("", "Candidates:");
     for (const candidate of candidates) {
+      if (envelope.error.code === "ambiguous-main-file") {
+        lines.push(`- ${candidate}`);
+        continue;
+      }
       if (envelope.error.code === "ambiguous-section") {
         lines.push(
           `- ${formatPath(candidate.path)} ${candidate.file}:${candidate.line}`,
@@ -997,6 +1001,8 @@ function hintForError(code, command) {
       "Parse this PDF in Zotero first, or choose another attachment with --attachment-key.",
     "invalid-main-file":
       "Pass --main-file with a relative .tex path present in the arXiv archive.",
+    "ambiguous-main-file":
+      "Pass --main-file with one of the candidate .tex paths; use --refresh when replacing cached source.",
     "section-not-found":
       "Run with --granularity headings first and use an exact heading path.",
     "missing-query": "Pass a non-empty --query value.",
