@@ -221,13 +221,32 @@ node mineru-for-zotero-cli/scripts/query-source.mjs latex image --library-id 1 -
 node mineru-for-zotero-cli/scripts/query-source.mjs latex image --library-id 1 --key ABCD1234 --path imgs/one.pdf,imgs/two.pdf --output-dir extracted --token "<token>"
 ```
 
-For CLI commands, `--library-id` is required for every command and `--key` is required for every `markdown` and `latex` command. LaTeX sections require `--section-path`: use a case-insensitive exact full heading path separated by `/`, or a unique final title. LaTeX does not support `--section-number`, number ranges, or fuzzy path fragments. LaTeX search requires a non-empty `--query` and accepts `--context-paragraphs` (default `1`); matches report the source file and line. The `--table-format` option is available only for `markdown table`; `latex table` always returns the original LaTeX code and does not accept it.
+For CLI commands, `--library-id` is required for `search`, `markdown`, and `latex`; `--key` is required for every `markdown` and `latex` command. LaTeX sections require `--section-path`: use a case-insensitive exact full heading path separated by `/`, or a unique final title. LaTeX does not support `--section-number`, number ranges, or fuzzy path fragments. LaTeX search requires a non-empty `--query` and accepts `--context-paragraphs` (default `1`); matches report the source file and line. The `--table-format` option is available only for `markdown table`; `latex table` always returns the original LaTeX code and does not accept it.
 
 `latex table` always returns the original LaTeX table code. Use `latex fetch --refresh` to replace the stored source with a newly downloaded version.
 
 The CLI tries to read Zotero's local HTTP server port from the default Zotero profile. If it cannot, it uses `23119`. Add `--port <number>` to set the port manually. The default output is `--format text`, which is easier for agents to read directly. Use `--format json` for scripts and pipelines.
 
 For `image`, use `--output <file>` for a single path. For multiple comma-separated paths, use `--output-dir <dir>` so each image is written under that directory. LaTeX image output preserves source subdirectories such as `imgs/` and `logo/`; each requested path has its own status, duplicate paths are written once, and a partial failure returns a nonzero exit code while retaining successful files. Text and JSON output never include image base64 data. An ambiguous LaTeX section title returns candidate full paths; a missing section returns `section-not-found`.
+
+### Open Tabs and Selected Boxes
+
+Query the current reading context without supplying item identifiers:
+
+```shell
+node mineru-for-zotero-cli/scripts/query-source.mjs tabs list --scope all --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs tabs list --scope active --format json --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs boxes selected --scope all --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs boxes selected --scope active --format json --token "<token>"
+```
+
+Both commands default to `--scope active`: the selected tab in the most recently active Zotero main window, even after switching to a terminal. A selected library tab returns no items. `tabs all` includes item tabs in every main window, including unloaded tabs; it excludes library tabs. `boxes all` includes live standalone PDF readers as well as background tab readers. Active box queries include all selected boxes in that tab, including boxes outside the viewport.
+
+Tab results contain `tabId`, `active`, `libraryId`, `itemId`, `itemKey`, `title`, `attachmentId`, `attachmentKey`, `tabTitle`, `status`, and `parseStatus`. Item fields identify the parent paper or the standalone attachment; attachment fields identify the actual opened attachment. PDF parse status contains `preciseReady`, `liteReady`, `preciseRunning`, `liteRunning`, and `preferredMode` (`precise`, `lite`, or null). A ready result may remain available while its replacement is running. Non-PDF tabs have null parseStatus; unavailable items or status reads are reported per tab as `item-unavailable` or `parse-status-unavailable`.
+
+Selected-box results are grouped under `readers`, with source identifiers, `readerInstanceId`, `selectedCount`, `boxes`, combined `markdown`, `missingRawIndexes`, and per-reader `status`. Boxes are ordered by rawIndex and use the existing box page numbering; formulas retain dollar delimiters and images remain Markdown references. Empty selections return `empty-selection` with empty content, never full Markdown. `stale-selection`, `parse-result-unavailable`, or `item-unavailable` preserve other successful groups and cause CLI exit code 1; normal empty results exit 0. Reading does not change selection or the clipboard and does not start parsing or downloads.
+
+The corresponding read-only HTTP routes are `GET /mineru-for-zotero/tabs?scope=all|active` and `GET /mineru-for-zotero/boxes/selected?scope=all|active`. They reuse existing API enablement and authorization. Invalid scope returns 400; per-item outcomes return 200. CLI JSON retains the existing envelope and marks `ok: false` for partial box failures.
 
 ## MCP Query Service
 
@@ -254,7 +273,7 @@ For clients that support URL MCP servers, a configuration can look like this:
 }
 ```
 
-The endpoint exposes `zotero_search_items`, `mineru_read_markdown`, `mineru_query_markdown_table`, `mineru_get_markdown_image`, `mineru_fetch_latex`, `mineru_read_latex`, `mineru_query_latex_table`, and `mineru_get_latex_image`. Query tools return both structured data and readable text; image tools also return MCP image content blocks. The service is stateless, so each JSON-RPC request is independent, and the endpoint is removed when the plugin shuts down.
+The endpoint exposes `zotero_search_items`, `mineru_read_markdown`, `mineru_query_markdown_table`, `mineru_get_markdown_image`, `mineru_fetch_latex`, `mineru_read_latex`, `mineru_query_latex_table`, `mineru_get_latex_image`, `zotero_list_tabs`, and `mineru_get_selected_boxes`. The two runtime tools accept only `{ "scope": "all" }` or `{ "scope": "active" }`, defaulting to active with `{}`; their results and scope rules match the CLI commands above. Partial box failures set `isError: true` while retaining successful content. Query tools return both structured data and readable text; image tools also return MCP image content blocks. The service is stateless, so each JSON-RPC request is independent, and the endpoint is removed when the plugin shuts down.
 
 ## Troubleshooting
 

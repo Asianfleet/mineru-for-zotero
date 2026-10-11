@@ -14,6 +14,103 @@ const cliPath = fileURLToPath(
   new URL("../mineru-for-zotero-cli/scripts/query-source.mjs", import.meta.url),
 );
 
+test("tabs list uses runtime scope without item identifiers", async () => {
+  await withServer(
+    { status: 200, body: { scope: "all", tabs: [] } },
+    async ({ port, requests }) => {
+      const result = await runCli([
+        "tabs",
+        "list",
+        "--scope",
+        "all",
+        "--port",
+        String(port),
+        "--token",
+        "test-runtime-token",
+        "--format",
+        "json",
+      ]);
+      assert.equal(result.code, 0);
+      assert.equal(requests[0].pathname, "/mineru-for-zotero/tabs");
+      assert.deepEqual(requests[0].searchParams, { scope: "all" });
+      assert.deepEqual(JSON.parse(result.stdout).data.tabs, []);
+      assert.doesNotMatch(result.stdout, /test-runtime-token/);
+    },
+  );
+});
+
+test("boxes selected defaults to active and empty selection succeeds", async () => {
+  await withServer(
+    { status: 200, body: { scope: "active", readers: [] } },
+    async ({ port, requests }) => {
+      const result = await runCli([
+        "boxes",
+        "selected",
+        "--port",
+        String(port),
+      ]);
+      assert.equal(result.code, 0);
+      assert.equal(requests[0].pathname, "/mineru-for-zotero/boxes/selected");
+      assert.deepEqual(requests[0].searchParams, { scope: "active" });
+      assert.match(result.stdout, /Readers: 0/);
+    },
+  );
+});
+
+test("boxes partial failure preserves successful markdown and exits 1", async () => {
+  await withServer(
+    {
+      status: 200,
+      body: {
+        scope: "all",
+        readers: [
+          {
+            title: "Paper A",
+            status: "ok",
+            selectedCount: 1,
+            markdown: "selected text",
+          },
+          {
+            title: "Paper B",
+            status: "stale-selection",
+            selectedCount: 2,
+            markdown: "remaining text",
+            missingRawIndexes: [9],
+          },
+        ],
+      },
+    },
+    async ({ port }) => {
+      const result = await runCli([
+        "boxes",
+        "selected",
+        "--scope",
+        "all",
+        "--port",
+        String(port),
+        "--format",
+        "json",
+      ]);
+      assert.equal(result.code, 1);
+      const response = JSON.parse(result.stdout);
+      assert.equal(response.ok, false);
+      assert.equal(response.data.readers[0].markdown, "selected text");
+      assert.deepEqual(response.data.readers[1].missingRawIndexes, [9]);
+    },
+  );
+});
+
+test("runtime commands reject invalid scope and irrelevant item flags", async () => {
+  for (const flags of [
+    ["--scope", "visible"],
+    ["--library-id", "1"],
+  ]) {
+    const result = await runCli(["tabs", "list", ...flags]);
+    assert.equal(result.code, 2);
+    assert.match(result.stderr, /scope|does not accept/);
+  }
+});
+
 test("help lists command-scoped options without misleading source sections", async () => {
   const result = await runCli(["--help"]);
 

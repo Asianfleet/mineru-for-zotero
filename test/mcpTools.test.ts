@@ -14,7 +14,55 @@ describe("MCP tools", function () {
       "mineru_read_latex",
       "mineru_query_latex_table",
       "mineru_get_latex_image",
+      "zotero_list_tabs",
+      "mineru_get_selected_boxes",
     ]);
+  });
+
+  it("queries runtime tabs without item identifiers", async function () {
+    let received: unknown;
+    const context = {
+      reader: {
+        async listTabs(scope: unknown) {
+          received = scope;
+          return { scope, tabs: [] };
+        },
+      },
+    } as never;
+    const result = await callMcpTool("zotero_list_tabs", {}, context);
+    assert.equal(received, "active");
+    assert.deepEqual(result.structuredContent.tabs, []);
+    assert.match(result.content[0].text, /tabs/);
+  });
+
+  it("preserves partial selected content and marks selection failures", async function () {
+    const readers = [
+      { status: "ok", markdown: "selected" },
+      { status: "stale-selection", missingRawIndexes: [9] },
+    ];
+    const context = {
+      reader: {
+        async selectedBoxes(scope: unknown) {
+          return { scope, readers };
+        },
+      },
+    } as never;
+    const result = await callMcpTool(
+      "mineru_get_selected_boxes",
+      { scope: "all" },
+      context,
+    );
+    assert.isTrue(result.isError);
+    assert.deepEqual(result.structuredContent.readers, readers);
+  });
+
+  it("rejects invalid runtime scope", async function () {
+    try {
+      await callMcpTool("zotero_list_tabs", { scope: "visible" }, {} as never);
+      assert.fail("expected invalid scope");
+    } catch (error) {
+      assert.equal((error as { code: string }).code, "invalid-params");
+    }
   });
 
   it("converts MCP camelCase arguments to Markdown service arguments", async function () {

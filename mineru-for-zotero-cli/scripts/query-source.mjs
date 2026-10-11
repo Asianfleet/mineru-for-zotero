@@ -56,13 +56,18 @@ async function main(argv) {
       data.images?.some(
         (image) => !["ok", "duplicate-path"].includes(image.status),
       );
-    if (partialImageFailure) envelope.ok = false;
+    const partialBoxFailure =
+      options.command === "boxes.selected" &&
+      data.readers?.some(
+        (reader) => !["ok", "empty-selection"].includes(reader.status),
+      );
+    if (partialImageFailure || partialBoxFailure) envelope.ok = false;
     if (options.format === "json") {
       console.log(JSON.stringify(envelope, null, 2));
     } else {
       console.log(formatTextSuccess(options, data));
     }
-    return partialImageFailure ? 1 : 0;
+    return partialImageFailure || partialBoxFailure ? 1 : 0;
   } catch (error) {
     const envelope = createErrorEnvelope(options, error);
     if (options.format === "json") {
@@ -83,10 +88,15 @@ function parseCommand(argv) {
   }
 
   const [source, operation, ...remaining] = argv;
-  if (source !== "search" && !VALID_SOURCES.has(source)) {
+  const runtimeCommand = source === "tabs" || source === "boxes";
+  if (source !== "search" && !runtimeCommand && !VALID_SOURCES.has(source)) {
     throw new CliArgumentError(`Unknown source: ${source}`);
   }
-  if (source !== "search") {
+  if (runtimeCommand) {
+    if (operation !== (source === "tabs" ? "list" : "selected")) {
+      throw new CliArgumentError(`Unknown operation: ${operation}`);
+    }
+  } else if (source !== "search") {
     const valid =
       source === "markdown"
         ? VALID_MARKDOWN_OPERATIONS
@@ -110,6 +120,40 @@ function parseCommand(argv) {
     "--timeout-ms",
   );
   const token = getFlag(flags, "--token");
+  if (runtimeCommand) {
+    const allowed = new Set([
+      "--scope",
+      "--port",
+      "--token",
+      "--format",
+      "--timeout-ms",
+    ]);
+    for (const flag of flags.keys()) {
+      if (!allowed.has(flag)) {
+        throw new CliArgumentError(
+          `${source} ${operation} does not accept ${flag}`,
+        );
+      }
+    }
+    const scope = getFlag(flags, "--scope", "active");
+    if (!["all", "active"].includes(scope)) {
+      throw new CliArgumentError("Invalid --scope. Expected all or active.");
+    }
+    return {
+      command,
+      source,
+      listenPort,
+      baseUrl,
+      format,
+      timeoutMs,
+      token,
+      endpoint:
+        source === "tabs"
+          ? "/mineru-for-zotero/tabs"
+          : "/mineru-for-zotero/boxes/selected",
+      params: { scope },
+    };
+  }
   const libraryID = getRequiredFlag(flags, "--library-id");
   parseInteger(libraryID, "--library-id");
 
@@ -605,6 +649,9 @@ function createRequestSummary(options) {
  * Formats successful API payloads as direct agent-readable text.
  */
 function formatTextSuccess(options, data) {
+  if (options.command === "tabs.list" || options.command === "boxes.selected") {
+    return formatReaderContextText(options, data);
+  }
   if (options.command === "search") {
     return formatSearchText(options, data);
   }
@@ -615,6 +662,44 @@ function formatTextSuccess(options, data) {
     return formatImageText(options, data);
   }
   return formatSourceText(options, data);
+}
+
+/** 按 tab 或 Reader 来源输出运行时上下文与逐项状态。 */
+function formatReaderContextText(options, data) {
+  const tabs = options.command === "tabs.list";
+  const entries = (tabs ? data.tabs : data.readers) ?? [];
+  const lines = [
+    tabs ? "Zotero Tabs" : "Selected MinerU Boxes",
+    `Scope: ${data.scope}`,
+    `${tabs ? "Tabs" : "Readers"}: ${entries.length}`,
+  ];
+  for (const entry of entries) {
+    lines.push(
+      "",
+      `${entry.active ? "* " : ""}[${entry.itemId ?? "?"} / ${entry.itemKey ?? "?"}] ${entry.title ?? entry.tabTitle ?? "?"}`,
+      `Library: ${entry.libraryId ?? "?"} | Attachment: ${entry.attachmentKey ?? "none"}`,
+      `Tab: ${entry.tabId ?? "standalone"} | Status: ${entry.status}`,
+    );
+    if (tabs) {
+      const status = entry.parseStatus;
+      lines.push(
+        status
+          ? `Parsed: precise=${yesNo(status.preciseReady)} lite=${yesNo(status.liteReady)} | Running: precise=${yesNo(status.preciseRunning)} lite=${yesNo(status.liteRunning)} | Preferred: ${status.preferredMode ?? "none"}`
+          : "Parse status: unavailable or not applicable",
+      );
+    } else {
+      lines.push(
+        `Reader: ${entry.readerInstanceId ?? "?"} | Selected: ${entry.selectedCount}`,
+      );
+      if (entry.missingRawIndexes?.length) {
+        lines.push(
+          `Missing raw indexes: ${entry.missingRawIndexes.join(", ")}`,
+        );
+      }
+      if (entry.markdown) lines.push("", entry.markdown);
+    }
+  }
+  return lines.join("\n");
 }
 
 /**
@@ -1025,6 +1110,8 @@ function writeArgumentError(error) {
 function helpText() {
   return [
     "Usage:",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs tabs list [--scope all|active] [--format text|json]",
+    "  node mineru-for-zotero-cli/scripts/query-source.mjs boxes selected [--scope all|active] [--format text|json]",
     "  node mineru-for-zotero-cli/scripts/query-source.mjs search --library-id <id> --title <text> [--format text|json]",
     "  node mineru-for-zotero-cli/scripts/query-source.mjs markdown read --library-id <id> --key <key> [--granularity full|headings|section|search] [--format text|json]",
     "  node mineru-for-zotero-cli/scripts/query-source.mjs markdown table --library-id <id> --key <key> --query <text> [--match caption|content|both|caption-exact] [--table-format html|markdown|tsv|latex|json]",
@@ -1035,7 +1122,7 @@ function helpText() {
     "  node mineru-for-zotero-cli/scripts/query-source.mjs latex image --library-id <id> --key <key> --path <paths> (--output <file>|--output-dir <dir>)",
     "",
     "Common options:",
-    "  --library-id <id>            Zotero library ID. Required for every command.",
+    "  --library-id <id>            Zotero library ID. Required for search, markdown and latex commands.",
     "  --key <key>                  Zotero item key. Required for markdown and latex commands; not used by search.",
     "  --port <number>              Zotero local server port. Default: auto-detect from Zotero profile, then 23119",
     "  --token <token>              Source query API token. Sent as Authorization: Bearer.",
@@ -1043,6 +1130,9 @@ function helpText() {
     "  --timeout-ms <number>        Request timeout. Default: 30000",
     "",
     "Command options:",
+    "  tabs list                   --scope all|active (default active; item titles and per-attachment parse status; includes unloaded tabs)",
+    "  boxes selected              --scope all|active (default active; all selected boxes, including offscreen; partial failure exits 1)",
+    "  Runtime scope active uses the most recently active main window's selected tab; all boxes includes standalone PDF readers. No item identifiers required.",
     "  search --title <text>        Required title search text.",
     "  markdown read                --attachment-key, --granularity, --section-number, --section-path, --query, --context-paragraphs",
     "  markdown table               --query, --match, --table-format",

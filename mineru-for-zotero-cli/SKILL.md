@@ -1,6 +1,6 @@
 ---
 name: mineru-for-zotero-cli
-description: Query Markdown parse results and arXiv LaTeX sources for Zotero items through a bundled CLI. Use this skill when the task requires searching Zotero items, reading MinerU Markdown, or fetching and querying an item's arXiv LaTeX source. Produces agent-readable text output or structured JSON for pipeline usage.
+description: Query Markdown parse results, open Zotero tabs, selected MinerU boxes, and arXiv LaTeX sources through a bundled CLI. Use when searching Zotero items, identifying the currently displayed paper, reading selected boxes or saved Markdown, or fetching and querying an item's arXiv LaTeX source.
 ---
 
 # MinerU for Zotero CLI
@@ -41,6 +41,8 @@ node mineru-for-zotero-cli/scripts/query-source.mjs <command> [options]
 | Command          | Purpose                                                       |
 | ---------------- | ------------------------------------------------------------- |
 | `search`         | Search Zotero items by title.                                 |
+| `tabs list`      | Identify opened or active item tabs and MinerU parse status.  |
+| `boxes selected` | Read selected MinerU boxes from active or all PDF readers.    |
 | `markdown read`  | Read saved MinerU Markdown.                                   |
 | `markdown table` | Find a table in MinerU Markdown and choose its output format. |
 | `markdown image` | Fetch an image referenced by MinerU Markdown.                 |
@@ -53,7 +55,7 @@ node mineru-for-zotero-cli/scripts/query-source.mjs <command> [options]
 
 The following options are shared by the source commands. `search` uses `--library-id` but does not use `--key`.
 
-- `--library-id <id>` — Zotero library ID; required for every command
+- `--library-id <id>` — Zotero library ID; required for search, markdown and latex commands
 - `--key <key>` — Zotero item key; required for every `markdown` and `latex` command
 - `--port <number>` — Zotero local server port; default is auto-detected from the Zotero profile, then 23119
 - `--token <token>` — API token, sent as Authorization: Bearer
@@ -61,6 +63,23 @@ The following options are shared by the source commands. `search` uses `--librar
 - `--timeout-ms <number>` — Request timeout; default is 30000
 
 ### Commands
+
+#### Runtime tabs and selected boxes
+
+```powershell
+node mineru-for-zotero-cli/scripts/query-source.mjs tabs list --scope all
+node mineru-for-zotero-cli/scripts/query-source.mjs tabs list --scope active
+node mineru-for-zotero-cli/scripts/query-source.mjs boxes selected --scope all
+node mineru-for-zotero-cli/scripts/query-source.mjs boxes selected --scope active
+```
+
+Both accept only `--scope all|active` plus `--port`, `--token`, `--format`, and `--timeout-ms`; scope defaults to active. Do not supply item identifiers. Active means the selected tab in the most recently active Zotero main window, including after switching to the terminal; a library tab gives an empty result. All tabs includes unloaded item tabs across main windows, excludes library tabs, and retains duplicate paper tabs. All boxes includes standalone PDF readers and background readers; active boxes includes every selected box in that tab, even outside the viewport.
+
+`tabs` entries contain parent-paper `libraryId`, `itemId`, `itemKey`, and `title` (standalone attachments identify themselves), actual `attachmentId` and `attachmentKey`, `tabId`, `tabTitle`, `active`, `status`, and `parseStatus`. For PDF tabs, parseStatus contains `preciseReady`, `liteReady`, `preciseRunning`, `liteRunning`, and `preferredMode` (`precise`, `lite`, or null). Ready and running can both be true during replacement. Non-PDF parseStatus is null; `item-unavailable` and `parse-status-unavailable` are per-tab outcomes. Use the returned identifiers, including the actual attachmentKey, for subsequent Markdown/image queries about the opened PDF.
+
+Selected results are grouped under `readers` with source identifiers, `readerInstanceId`, `selectedCount`, rawIndex-ordered `boxes` (`rawIndex`, `page`, `type`, `markdown`), combined `markdown`, `missingRawIndexes`, and `status`. Formula Markdown retains dollar delimiters; images remain references. `empty-selection` is a successful empty result and must never be interpreted as full-document content. `stale-selection`, `parse-result-unavailable`, or `item-unavailable` cause exit 1 and JSON `ok: false`, retaining successful groups. Queries do not write the clipboard, clear selection, download sources, or trigger parsing. Native PDF text selection and partial text selection inside box panels are not box selection.
+
+The HTTP routes are GET `/mineru-for-zotero/tabs` and `/mineru-for-zotero/boxes/selected`, with optional scope. Existing enablement and token requirements apply; invalid scope is 400 and per-group outcomes are 200.
 
 #### `search`
 

@@ -221,13 +221,32 @@ node mineru-for-zotero-cli/scripts/query-source.mjs latex image --library-id 1 -
 node mineru-for-zotero-cli/scripts/query-source.mjs latex image --library-id 1 --key ABCD1234 --path imgs/one.pdf,imgs/two.pdf --output-dir extracted --token "<token>"
 ```
 
-CLI 命令中，所有命令都需要 `--library-id`；所有 `markdown` 和 `latex` 命令都需要 `--key`。LaTeX 章节只接受 `--section-path`：用 `/` 分隔、大小写不敏感的完整精确标题路径，或唯一的末级标题；不支持 `--section-number`、编号范围和模糊片段。LaTeX 搜索需要非空 `--query`，可用 `--context-paragraphs` 设置前后源码段落数（默认 `1`），结果显示原文件和行号。`--table-format` 只适用于 `markdown table`；`latex table` 始终返回原始 LaTeX 代码，不接受该参数。
+CLI 命令中，`search`、`markdown` 和 `latex` 需要 `--library-id`；所有 `markdown` 和 `latex` 命令都需要 `--key`。LaTeX 章节只接受 `--section-path`：用 `/` 分隔、大小写不敏感的完整精确标题路径，或唯一的末级标题；不支持 `--section-number`、编号范围和模糊片段。LaTeX 搜索需要非空 `--query`，可用 `--context-paragraphs` 设置前后源码段落数（默认 `1`），结果显示原文件和行号。`--table-format` 只适用于 `markdown table`；`latex table` 始终返回原始 LaTeX 代码，不接受该参数。
 
 `latex table` 始终返回原始 LaTeX 表格代码。需要重新下载源码时，使用 `latex fetch --refresh`。
 
 CLI 默认会尝试从 Zotero 默认 profile 读取本地 HTTP server 端口，读不到时使用 `23119`。如果需要手动指定端口，添加 `--port <number>`。默认输出 `--format text`，适合 agent 直接阅读；需要脚本处理时使用 `--format json`。
 
 使用 `image` 时，单图路径用 `--output <file>`；多图逗号分隔路径必须用 `--output-dir <dir>`。LaTeX 图片在输出目录中保留 `imgs/`、`logo/` 等源码子目录；每个请求路径返回独立状态，重复路径只写一次，部分失败仍保留成功文件并返回非零退出码。text 和 JSON 输出均不含图片 base64。LaTeX 末级标题有歧义时返回候选完整路径，未找到章节时返回 `section-not-found`。
+
+### 打开的 tab 与已选 box
+
+无需传入条目标识即可查询当前阅读上下文：
+
+```shell
+node mineru-for-zotero-cli/scripts/query-source.mjs tabs list --scope all --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs tabs list --scope active --format json --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs boxes selected --scope all --token "<token>"
+node mineru-for-zotero-cli/scripts/query-source.mjs boxes selected --scope active --format json --token "<token>"
+```
+
+两个命令默认 `--scope active`，指最近活动的 Zotero 主窗口中选中的 tab，切换到终端后仍使用该主窗口。当前为图书馆 tab 时返回空结果。`tabs all` 包含所有主窗口中的条目 tab，包括未加载 tab，排除图书馆 tab。`boxes all` 包含后台 tab 的 Reader 和独立 PDF 阅读窗口；active 返回当前 tab 内全部已选 box，不限制屏幕可视区域。
+
+tab 返回 `tabId`、`active`、`libraryId`、`itemId`、`itemKey`、`title`、`attachmentId`、`attachmentKey`、`tabTitle`、`status` 和 `parseStatus`。条目字段对应父文献或独立附件，附件字段始终对应实际打开的附件。PDF 的解析情况包括 `preciseReady`、`liteReady`、`preciseRunning`、`liteRunning` 和 `preferredMode`（`precise`、`lite` 或 null）。重新解析期间旧结果仍可用，因此就绪和解析中可同时为 true。非 PDF 的 parseStatus 为 null；条目或解析状态不可读时，逐项返回 `item-unavailable` 或 `parse-status-unavailable`。
+
+已选 box 按 Reader 分组返回 `readers`，包含来源标识、`readerInstanceId`、`selectedCount`、`boxes`、合并的 `markdown`、`missingRawIndexes` 和逐组 `status`。box 按 rawIndex 排序，页码沿用既有 box 约定；公式保留美元定界符，图片保留 Markdown 引用。空选择返回 `empty-selection` 和空内容，不回退全文。`stale-selection`、`parse-result-unavailable` 或 `item-unavailable` 保留其他成功组，CLI 退出码为 1；正常空结果退出码为 0。查询不改变选择或剪贴板，也不启动解析或下载。
+
+对应 HTTP 路径为 `GET /mineru-for-zotero/tabs?scope=all|active` 和 `GET /mineru-for-zotero/boxes/selected?scope=all|active`，复用既有 API 开关和鉴权。非法 scope 返回 400，逐项状态返回 200。CLI JSON 沿用既有 envelope，box 部分失败时 `ok: false`。
 
 ## MCP 查询服务
 
@@ -254,7 +273,7 @@ http://127.0.0.1:23119/mineru-for-zotero/mcp
 }
 ```
 
-工具包括 `zotero_search_items`、`mineru_read_markdown`、`mineru_query_markdown_table`、`mineru_get_markdown_image`、`mineru_fetch_latex`、`mineru_read_latex`、`mineru_query_latex_table` 和 `mineru_get_latex_image`。普通查询返回结构化结果和可读文本，图片工具会返回 MCP image content block。服务是无状态的，每个 JSON-RPC 请求独立处理；插件关闭后 endpoint 会注销。
+工具包括 `zotero_search_items`、`mineru_read_markdown`、`mineru_query_markdown_table`、`mineru_get_markdown_image`、`mineru_fetch_latex`、`mineru_read_latex`、`mineru_query_latex_table`、`mineru_get_latex_image`、`zotero_list_tabs` 和 `mineru_get_selected_boxes`。两个运行时工具只接受 `{ "scope": "all" }` 或 `{ "scope": "active" }`，传入 `{}` 时默认 active；范围与返回字段同上面的 CLI。box 部分失败时 `isError: true`，同时保留成功内容。普通查询返回结构化结果和可读文本，图片工具会返回 MCP image content block。服务是无状态的，每个 JSON-RPC 请求独立处理；插件关闭后 endpoint 会注销。
 
 ## 常见问题
 

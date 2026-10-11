@@ -65,7 +65,7 @@ export function createMarkdownQueryEndpoint(service: MarkdownQueryService) {
     async init(options: MarkdownEndpointRequest) {
       try {
         const query = getQuery(options);
-        authorize(query, options.headers);
+        authorizeMarkdownQueryApi(query, options.headers);
         if (options.pathname === "/mineru-for-zotero/search") {
           return json(
             200,
@@ -171,7 +171,7 @@ async function searchItemsByTitle(input: {
 /**
  * 校验 API 开关与 token，支持 Bearer 和 query token 两种来源。
  */
-function authorize(
+export function authorizeMarkdownQueryApi(
   query: Record<string, string>,
   headers: Record<string, string>,
 ): void {

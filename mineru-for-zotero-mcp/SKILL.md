@@ -1,6 +1,6 @@
 ---
 name: mineru-for-zotero-mcp
-description: Use when needs to find a Zotero paper or retrieve its parsed Markdown or arXiv LaTeX source.
+description: Use when finding a Zotero paper, identifying opened or active Zotero tabs and parse status, reading selected MinerU boxes, or retrieving parsed Markdown or arXiv LaTeX source.
 ---
 
 # MinerU for Zotero MCP
@@ -17,6 +17,8 @@ For any subsequent task that requires acquiring paper content (such as reading, 
 
 ## Paper workflow
 
+When the user refers to the currently displayed paper or selected boxes, use the runtime tools below before title search. Returned libraryId, itemKey, and attachmentKey can be passed directly to the existing Markdown and image tools.
+
 1. Search by title with `zotero_search_items`.
 2. Choose the regular Zotero item key from the search result. If several records match, compare their metadata and use the record that best matches the requested paper.
 3. Prefer parsed Markdown for normal reading. Read headings first with `mineru_read_markdown`, then request only the needed section or search context. Use table and image tools only with references returned by the Markdown result.
@@ -24,6 +26,21 @@ For any subsequent task that requires acquiring paper content (such as reading, 
 5. Use the LaTeX path when source-level text, formulas, labels, or included source files are needed. Call `mineru_fetch_latex` before any other LaTeX operation, then inspect headings or search before reading a larger section. Pass the regular Zotero item key to LaTeX tools; do not pass a PDF attachment key.
 
 Markdown and LaTeX are separate source paths. A cached LaTeX source must be fetched before it can be read, searched, or queried for tables and images.
+
+## Reading context
+
+| Request                                       | Tool arguments                                  |
+| --------------------------------------------- | ----------------------------------------------- |
+| All opened item tabs and parse status         | `zotero_list_tabs({"scope":"all"})`             |
+| Currently displayed item tab and parse status | `zotero_list_tabs({"scope":"active"})`          |
+| All selected MinerU boxes                     | `mineru_get_selected_boxes({"scope":"all"})`    |
+| Selected boxes in the currently displayed tab | `mineru_get_selected_boxes({"scope":"active"})` |
+
+These tools accept only scope; `{}` defaults to active. Active uses the selected tab in the most recently active Zotero main window, even after switching to another app. A selected library tab yields no items. All tabs includes unloaded item tabs across main windows and excludes library tabs; all boxes includes background readers and standalone PDF reader windows. Active box queries include all selected boxes in that tab, including offscreen boxes.
+
+Tab results contain parent-paper libraryId/itemId/itemKey/title (standalone attachments identify themselves), actual attachmentId/attachmentKey, tabId, tabTitle, active, status, and parseStatus. PDF parseStatus contains preciseReady, liteReady, preciseRunning, liteRunning, and preferredMode (precise, lite, or null). Ready and running may coexist during replacement. Non-PDF parseStatus is null; item-unavailable and parse-status-unavailable are per-tab outcomes. Keep the actual attachmentKey when querying the opened PDF.
+
+Selections are grouped under readers with source identifiers, readerInstanceId, selectedCount, rawIndex-ordered boxes (rawIndex, page, type, markdown), combined markdown, missingRawIndexes, and per-reader status. Formula Markdown retains dollar delimiters; images remain references. Empty-selection returns empty content and never falls back to full Markdown. Stale-selection, parse-result-unavailable, or item-unavailable set isError while retaining successful groups; inspect structuredContent before retrying. These queries do not change selection or the clipboard, download sources, or trigger parsing. Native PDF text selection and partial selections within box panels are not box selection.
 
 ## Query discipline
 

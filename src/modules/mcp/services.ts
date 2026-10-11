@@ -8,9 +8,12 @@ import type { ZoteroItemLike } from "../markdownQuery/types";
 import { createLatexQueryService } from "../latexQuery/service";
 import { createTexSourceStorage } from "../texSource/storage";
 import { fetchLatex as fetchLatexSource } from "../sourceQuery/apiEndpoint";
+import { createZoteroReaderQueryService } from "../readerQuery/runtime";
+import type { ReaderQueryService } from "../readerQuery/types";
 
 /** MCP 查询层共享的 Markdown、LaTeX 和图片存储依赖。 */
 export interface McpQueryContext {
+  reader: ReaderQueryService;
   markdown: MarkdownQueryService;
   latex: ReturnType<typeof createLatexQueryService>;
   markdownStorage: StorageAdapter;
@@ -46,6 +49,7 @@ export function createMcpQueryContext(): McpQueryContext {
   });
 
   return {
+    reader: createZoteroReaderQueryService(),
     markdown,
     latex,
     markdownStorage,

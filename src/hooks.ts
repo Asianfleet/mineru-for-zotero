@@ -23,6 +23,10 @@ import {
   unregisterReaderToolbar,
 } from "./modules/readerToolbar";
 import { createZToolkit } from "./utils/ztoolkit";
+import {
+  registerReaderQueryApiEndpoint,
+  unregisterReaderQueryApiEndpoint,
+} from "./modules/readerQuery/apiEndpoint";
 
 async function onStartup() {
   await Promise.all([
@@ -36,6 +40,7 @@ async function onStartup() {
   registerPreferencePane();
   registerMarkdownQueryApiEndpoint();
   registerSourceQueryApiEndpoint();
+  registerReaderQueryApiEndpoint();
   registerMcpApiEndpoint();
 
   await Promise.all(
@@ -102,6 +107,7 @@ function onShutdown(): void {
   });
   unregisterReaderToolbar();
   unregisterMcpApiEndpoint();
+  unregisterReaderQueryApiEndpoint();
   unregisterMarkdownQueryApiEndpoint();
   unregisterSourceQueryApiEndpoint();
   destroyAllReaderOverlays();

@@ -5,6 +5,35 @@ import { normalizedBoxes } from "./domainFixtures";
 const rootDir = "TmpD/mineru-copy";
 
 describe("storage", function () {
+  it("strict parse status distinguishes missing cache from corrupted manifests", async function () {
+    const storage = createStorage("TmpD/mineru-strict-status-test");
+    const ref = { libraryID: 12, key: "STRICT" };
+    const dir = resolveTmpPath(storage.getAttachmentDir(ref));
+    await IOUtils.makeDirectory(dir, { ignoreExisting: true });
+    const manifestPath = PathUtils.join(dir, "manifest.json");
+    await IOUtils.remove(manifestPath, { ignoreAbsent: true });
+    assert.deepEqual(await storage.readParseStatus(ref, { strict: true }), {
+      preciseReady: false,
+      liteReady: false,
+    });
+    await IOUtils.writeUTF8(manifestPath, "broken json");
+    try {
+      let rejected = false;
+      try {
+        await storage.readParseStatus(ref, { strict: true });
+      } catch {
+        rejected = true;
+      }
+      assert.isTrue(rejected, "corrupted manifest must not look unparsed");
+      assert.deepEqual(await storage.readParseStatus(ref), {
+        preciseReady: false,
+        liteReady: false,
+      });
+    } finally {
+      await IOUtils.remove(manifestPath, { ignoreAbsent: true });
+    }
+  });
+
   it("uses libraryID and attachmentKey as stable directory name", function () {
     const storage = createStorage(rootDir);
 

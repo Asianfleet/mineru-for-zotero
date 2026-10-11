@@ -20,6 +20,20 @@ export type ItemTreeColumnState = {
 
 type AttachmentStatusKeyRef = Pick<AttachmentRef, "libraryID" | "key">;
 
+/** 读取实际附件的解析中状态，不创建列状态或改变就绪信息。 */
+export function readAttachmentParseRunning(ref: AttachmentStatusKeyRef): {
+  preciseRunning: boolean;
+  liteRunning: boolean;
+} {
+  const status = addon.data.itemTreeColumn?.statuses.get(
+    getAttachmentStatusKey(ref),
+  );
+  return {
+    preciseRunning: status?.precise === "running",
+    liteRunning: status?.lite === "running",
+  };
+}
+
 type ItemTreeColumnRegistration =
   _ZoteroTypes.ItemTreeManager.ItemTreeCustomColumnOptions;
 

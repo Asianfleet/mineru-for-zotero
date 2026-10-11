@@ -8,6 +8,19 @@ import { getReaderAttachmentKey } from "./windows";
 
 export const fallbackStates = new Map<ReaderOverlayKey, ReaderOverlayState>();
 
+/** 只读复制当前 Reader 的选择，不创建或修复 overlay state。 */
+export function readReaderSelectedRawIndexes(
+  readerInstanceID: string,
+  attachmentKey: string,
+): number[] {
+  const states =
+    typeof addon === "undefined" ? fallbackStates : addon.data.readerOverlays;
+  return [
+    ...(states?.get(getReaderOverlayKey(readerInstanceID, attachmentKey))
+      ?.selectedRawIndexes ?? []),
+  ];
+}
+
 /** 根据 reader 实例和 attachment 生成唯一 overlay key。 */
 export function getReaderOverlayKey(
   readerInstanceID: string,

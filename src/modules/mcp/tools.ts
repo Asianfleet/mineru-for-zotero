@@ -138,6 +138,26 @@ export function listMcpTools(): McpToolDefinition[] {
         required: ["libraryId", "itemKey", "paths"],
       },
     },
+    {
+      name: "zotero_list_tabs",
+      description:
+        "List item tabs, including unloaded tabs, with parent item identifiers and per-attachment MinerU parse status. Active scope uses the most recent main window's selected tab; library tabs yield no items.",
+      inputSchema: {
+        type: "object",
+        properties: { scope: { enum: ["all", "active"], default: "active" } },
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "mineru_get_selected_boxes",
+      description:
+        "Read all selected MinerU boxes as Markdown, including offscreen boxes. Active scope uses the most recent main window's selected tab; all includes standalone PDF readers. Empty selection never falls back to full text.",
+      inputSchema: {
+        type: "object",
+        properties: { scope: { enum: ["all", "active"], default: "active" } },
+        additionalProperties: false,
+      },
+    },
   ];
 }
 
@@ -149,6 +169,22 @@ export async function callMcpTool(
 ): Promise<McpToolResult> {
   const args = objectArguments(rawArguments);
   switch (name) {
+    case "zotero_list_tabs": {
+      const scope = runtimeScope(args);
+      return mapQueryResult(await context.reader.listTabs(scope));
+    }
+    case "mineru_get_selected_boxes": {
+      const scope = runtimeScope(args);
+      const result = await context.reader.selectedBoxes(scope);
+      return {
+        ...mapQueryResult(result),
+        ...(result.readers.some(
+          (reader) => !["ok", "empty-selection"].includes(reader.status),
+        )
+          ? { isError: true }
+          : {}),
+      };
+    }
     case "zotero_search_items":
       return mapQueryResult(
         await context.markdown.searchByTitle({
@@ -275,6 +311,14 @@ export async function callMcpTool(
     default:
       throw new McpError("unknown-tool", `Unknown tool: ${name}`, 404);
   }
+}
+
+/** 校验运行时工具仅接收 scope，保持实际调用与 schema 一致。 */
+function runtimeScope(args: Record<string, unknown>) {
+  if (Object.keys(args).some((key) => key !== "scope")) {
+    throw new McpError("invalid-params", "Runtime tools only accept scope");
+  }
+  return optionalEnum(args.scope, ["all", "active"]) ?? "active";
 }
 
 /** 检查工具参数为普通对象，拒绝数组或空值。 */
