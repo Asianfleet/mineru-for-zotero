@@ -54,7 +54,7 @@ CLI text 输出每个 tab 的条目标识、标题、附件 key、激活标记�
 - `boxes` 每项包含 rawIndex、page、type、markdown，按 rawIndex 升序排列；page 沿用 normalized box 的现有页码约定。
 - 单 box 的 markdown 复用 `formatBoxForCopy()`，组 markdown 复用 `formatBoxesForCopy()`，保持公式定界符及空行连接行为一致。
 - 图片保持 Markdown 引用，不嵌入图片 base64。来源附件标识可用于后续图片查询。
-- 无选择的 Reader 返回 `status: empty-selection`、selectedCount 为 0、空 boxes、空 markdown 和空 missingRawIndexes。无目标 Reader 时 readers 为空。
+- 无选择的 Reader 不返回。全部无选择或无目标 Reader 时 readers 为空，CLI/MCP 文本只显示“No selected boxes.”，不附带 tab 或 Reader 信息。
 - selectedCount 是查询快照中的选中索引数，不一定等于成功读取的 boxes 数量。
 - 部分索引失效返回 `status: stale-selection` 和 missingRawIndexes，同时保留成功读取的内容；解析结果不可用返回 `status: parse-result-unavailable`。
 - 单组错误不丢弃其他组的成功结果。HTTP 返回 200 并保留逐组状态；MCP 存在非空选择错误时标记 isError，CLI 对同类情况退出 1。正常空选择退出 0。

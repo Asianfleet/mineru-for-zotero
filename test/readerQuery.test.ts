@@ -97,8 +97,24 @@ describe("reader context query service", function () {
       snapshot: () => snapshot,
       storage: deps,
     }).selectedBoxes();
-    assert.equal(result.readers[0].status, "empty-selection");
-    assert.equal(result.readers[0].markdown, "");
+    assert.deepEqual(result, { scope: "active", readers: [] });
+  });
+
+  it("omits unselected readers from all scope", async function () {
+    const snapshot = context();
+    snapshot.readers.push({
+      ...snapshot.readers[0],
+      readerInstanceId: "empty",
+      selectedRawIndexes: [],
+    });
+    const result = await createReaderQueryService({
+      snapshot: () => snapshot,
+      storage: storage(),
+    }).selectedBoxes("all");
+    assert.deepEqual(
+      result.readers.map((reader) => reader.readerInstanceId),
+      ["reader-a"],
+    );
   });
 
   it("preserves other readers and content when selected indexes are stale", async function () {

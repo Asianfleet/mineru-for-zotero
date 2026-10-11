@@ -35,10 +35,13 @@ export function createReaderQueryService(
     /** 返回目标 Reader 的选中内容，不更改用户选择或剪贴板。 */
     async selectedBoxes(requestedScope) {
       const scope = parseReaderQueryScope(requestedScope);
-      const readers = deps.snapshot(scope).readers.map((reader) => ({
-        ...reader,
-        selectedRawIndexes: [...reader.selectedRawIndexes],
-      }));
+      const readers = deps
+        .snapshot(scope)
+        .readers.filter((reader) => reader.selectedRawIndexes.length > 0)
+        .map((reader) => ({
+          ...reader,
+          selectedRawIndexes: [...reader.selectedRawIndexes],
+        }));
       return { scope, readers: await Promise.all(readers.map(readSelection)) };
     },
   };
@@ -90,13 +93,12 @@ export function createReaderQueryService(
     const selected = new Set(selectedRawIndexes);
     const result: ReaderSelectionResult = {
       ...identity,
-      status: selected.size ? "ok" : "empty-selection",
+      status: "ok",
       selectedCount: selected.size,
       boxes: [],
       markdown: "",
       missingRawIndexes: [],
     };
-    if (!selected.size) return result;
     if (status !== "ok" || reader.libraryId === null || !reader.attachmentKey) {
       result.status = "item-unavailable";
       return result;

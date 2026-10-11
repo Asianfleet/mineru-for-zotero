@@ -63,7 +63,6 @@ export interface ReaderSelectionResult extends ReaderItemIdentity {
   tabTitle: string;
   status:
     | "ok"
-    | "empty-selection"
     | "stale-selection"
     | "parse-result-unavailable"
     | "item-unavailable";

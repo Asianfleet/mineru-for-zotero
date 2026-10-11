@@ -3,6 +3,25 @@ import { callMcpTool, listMcpTools } from "../src/modules/mcp/tools";
 import { mapImageResult } from "../src/modules/mcp/resultMapper";
 
 describe("MCP tools", function () {
+  it("reports no selected boxes without reader metadata", async function () {
+    const context = {
+      reader: {
+        async selectedBoxes() {
+          return { scope: "active", readers: [] };
+        },
+      },
+    } as never;
+    const result = await callMcpTool("mineru_get_selected_boxes", {}, context);
+    assert.deepEqual(result.structuredContent, {
+      scope: "active",
+      readers: [],
+    });
+    assert.deepEqual(result.content, [
+      { type: "text", text: "No selected boxes." },
+    ]);
+    assert.isUndefined(result.isError);
+  });
+
   it("lists the supported query tools with required identifiers", function () {
     const names = listMcpTools().map((tool) => tool.name);
     assert.deepEqual(names, [

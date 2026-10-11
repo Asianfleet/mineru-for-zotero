@@ -176,11 +176,15 @@ export async function callMcpTool(
     case "mineru_get_selected_boxes": {
       const scope = runtimeScope(args);
       const result = await context.reader.selectedBoxes(scope);
+      if (result.readers.length === 0) {
+        return {
+          structuredContent: result,
+          content: [{ type: "text", text: "No selected boxes." }],
+        };
+      }
       return {
         ...mapQueryResult(result),
-        ...(result.readers.some(
-          (reader) => !["ok", "empty-selection"].includes(reader.status),
-        )
+        ...(result.readers.some((reader) => reader.status !== "ok")
           ? { isError: true }
           : {}),
       };

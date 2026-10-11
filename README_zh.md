@@ -244,7 +244,7 @@ node mineru-for-zotero-cli/scripts/query-source.mjs boxes selected --scope activ
 
 tab 返回 `tabId`、`active`、`libraryId`、`itemId`、`itemKey`、`title`、`attachmentId`、`attachmentKey`、`tabTitle`、`status` 和 `parseStatus`。条目字段对应父文献或独立附件，附件字段始终对应实际打开的附件。PDF 的解析情况包括 `preciseReady`、`liteReady`、`preciseRunning`、`liteRunning` 和 `preferredMode`（`precise`、`lite` 或 null）。重新解析期间旧结果仍可用，因此就绪和解析中可同时为 true。非 PDF 的 parseStatus 为 null；条目或解析状态不可读时，逐项返回 `item-unavailable` 或 `parse-status-unavailable`。
 
-已选 box 按 Reader 分组返回 `readers`，包含来源标识、`readerInstanceId`、`selectedCount`、`boxes`、合并的 `markdown`、`missingRawIndexes` 和逐组 `status`。box 按 rawIndex 排序，页码沿用既有 box 约定；公式保留美元定界符，图片保留 Markdown 引用。空选择返回 `empty-selection` 和空内容，不回退全文。`stale-selection`、`parse-result-unavailable` 或 `item-unavailable` 保留其他成功组，CLI 退出码为 1；正常空结果退出码为 0。查询不改变选择或剪贴板，也不启动解析或下载。
+已选 box 按 Reader 分组返回 `readers`，包含来源标识、`readerInstanceId`、`selectedCount`、`boxes`、合并的 `markdown`、`missingRawIndexes` 和逐组 `status`。box 按 rawIndex 排序，页码沿用既有 box 约定；公式保留美元定界符，图片保留 Markdown 引用。没有选中 box 的 Reader 不返回；全部没有选择时，`readers` 为空，文本只显示“No selected boxes.”，不附带 tab 信息，也不回退全文。`stale-selection`、`parse-result-unavailable` 或 `item-unavailable` 保留其他成功组，CLI 退出码为 1；正常空结果退出码为 0。查询不改变选择或剪贴板，也不启动解析或下载。
 
 对应 HTTP 路径为 `GET /mineru-for-zotero/tabs?scope=all|active` 和 `GET /mineru-for-zotero/boxes/selected?scope=all|active`，复用既有 API 开关和鉴权。非法 scope 返回 400，逐项状态返回 200。CLI JSON 沿用既有 envelope，box 部分失败时 `ok: false`。
 

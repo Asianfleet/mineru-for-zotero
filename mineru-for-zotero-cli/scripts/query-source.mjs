@@ -58,9 +58,7 @@ async function main(argv) {
       );
     const partialBoxFailure =
       options.command === "boxes.selected" &&
-      data.readers?.some(
-        (reader) => !["ok", "empty-selection"].includes(reader.status),
-      );
+      data.readers?.some((reader) => reader.status !== "ok");
     if (partialImageFailure || partialBoxFailure) envelope.ok = false;
     if (options.format === "json") {
       console.log(JSON.stringify(envelope, null, 2));
@@ -668,6 +666,7 @@ function formatTextSuccess(options, data) {
 function formatReaderContextText(options, data) {
   const tabs = options.command === "tabs.list";
   const entries = (tabs ? data.tabs : data.readers) ?? [];
+  if (!tabs && entries.length === 0) return "No selected boxes.";
   const lines = [
     tabs ? "Zotero Tabs" : "Selected MinerU Boxes",
     `Scope: ${data.scope}`,

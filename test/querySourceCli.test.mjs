@@ -52,7 +52,7 @@ test("boxes selected defaults to active and empty selection succeeds", async () 
       assert.equal(result.code, 0);
       assert.equal(requests[0].pathname, "/mineru-for-zotero/boxes/selected");
       assert.deepEqual(requests[0].searchParams, { scope: "active" });
-      assert.match(result.stdout, /Readers: 0/);
+      assert.equal(result.stdout.trim(), "No selected boxes.");
     },
   );
 });
