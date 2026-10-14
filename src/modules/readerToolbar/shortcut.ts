@@ -59,12 +59,36 @@ export function matchesReaderShortcut(
 export function createReaderShortcutController(
   readShortcut: () => string,
   cycle: () => Promise<void>,
-): { sync: (windows: Window[]) => void; cleanup: () => void } {
+  onRelease: () => void = () => {},
+): {
+  sync: (windows: Window[]) => void;
+  cleanup: () => void;
+  isHeld: () => boolean;
+} {
   const windows = new Set<Window>();
+  const pressedKeys = new Set<string>();
+  let held = false;
   let pending = false;
+  /** 结束快捷键保持状态，并通知菜单关闭。 */
+  const release = () => {
+    pressedKeys.clear();
+    if (held) {
+      held = false;
+      onRelease();
+    }
+  };
   /** 消费有效按键并执行当前阅读器的模式切换。 */
   const onKeyDown = (event: KeyboardEvent) => {
-    if (!matchesReaderShortcut(event, readShortcut())) {
+    const matches = matchesReaderShortcut(event, readShortcut());
+    // 修饰键使用事件标志判断，普通键单独记录以支持任意释放顺序。
+    if (
+      (held || matches) &&
+      event.code &&
+      !/^(Shift|Control|Alt|Meta)/.test(event.code)
+    ) {
+      pressedKeys.add(event.code);
+    }
+    if (!matches) {
       return;
     }
     event.preventDefault();
@@ -72,24 +96,44 @@ export function createReaderShortcutController(
     if (pending) {
       return;
     }
+    held = true;
     pending = true;
     void cycle().finally(() => {
       pending = false;
     });
   };
+  /** 最后一个普通键和全部修饰键释放后关闭快捷键面板。 */
+  const onKeyUp = (event: KeyboardEvent) => {
+    pressedKeys.delete(event.code);
+    if (
+      !pressedKeys.size &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.shiftKey &&
+      !event.metaKey
+    ) {
+      release();
+    }
+  };
   return {
+    /** 返回快捷键面板是否仍受按键保持保护。 */
+    isHeld: () => held,
     /** 添加新出现的 iframe，并移除消失窗口的监听。 */
     sync(currentWindows) {
       const current = new Set(currentWindows);
       for (const win of windows) {
         if (!current.has(win)) {
           win.removeEventListener("keydown", onKeyDown, true);
+          win.removeEventListener("keyup", onKeyUp, true);
+          win.removeEventListener("blur", release);
           windows.delete(win);
         }
       }
       for (const win of current) {
         if (!windows.has(win)) {
           win.addEventListener("keydown", onKeyDown, true);
+          win.addEventListener("keyup", onKeyUp, true);
+          win.addEventListener("blur", release);
           windows.add(win);
         }
       }
@@ -98,8 +142,11 @@ export function createReaderShortcutController(
     cleanup() {
       for (const win of windows) {
         win.removeEventListener("keydown", onKeyDown, true);
+        win.removeEventListener("keyup", onKeyUp, true);
+        win.removeEventListener("blur", release);
       }
       windows.clear();
+      release();
     },
   };
 }

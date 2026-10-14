@@ -66,7 +66,7 @@ If parsing fails during replacement, the existing usable result is kept.
 
 For multi-box copying, hold `Shift` or `Ctrl` while clicking boxes. Then use the toolbar menu to copy the selected content or clear the selection. If no boxes are selected, the same copy button copies the full parsed Markdown.
 
-Press `Alt+Shift+B` to cycle through all boxes, hovered boxes, and off. Each press opens the toolbar menu and highlights the current mode. To change the binding, click the input under Reader Shortcuts in the plugin settings and press a new key combination. Click Clear to disable the shortcut.
+Press `Alt+Shift+B` to cycle through all boxes, hovered boxes, and off. Each press opens the toolbar menu and highlights the current mode. The menu stays open while any keys remain held and closes when all keys are released or the reader loses focus. To change the binding, click the input under Reader Shortcuts in the plugin settings and press a new key combination. Click Clear to disable the shortcut.
 
 ## Local Results
 

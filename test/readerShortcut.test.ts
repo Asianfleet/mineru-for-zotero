@@ -111,6 +111,56 @@ describe("reader mode shortcut", function () {
     assert.equal(calls, 2);
   });
 
+  it("keeps the menu held across windows until every key is released and resets on blur", async function () {
+    const first = new EventTarget();
+    const second = new EventTarget();
+    let releases = 0;
+    const controller = createReaderShortcutController(
+      () => "Alt+Shift+KeyB",
+      async () => {},
+      () => {
+        releases++;
+      },
+    );
+    controller.sync([first as Window, second as Window]);
+    first.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        code: "KeyB",
+        altKey: true,
+        shiftKey: true,
+      }),
+    );
+    second.dispatchEvent(
+      new KeyboardEvent("keyup", {
+        code: "KeyB",
+        altKey: true,
+        shiftKey: true,
+      }),
+    );
+    assert.isTrue(controller.isHeld());
+    second.dispatchEvent(
+      new KeyboardEvent("keyup", { code: "ShiftLeft", altKey: true }),
+    );
+    assert.equal(releases, 0);
+    second.dispatchEvent(new KeyboardEvent("keyup", { code: "AltLeft" }));
+    assert.isFalse(controller.isHeld());
+    assert.equal(releases, 1);
+    await Promise.resolve();
+    first.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        code: "KeyB",
+        altKey: true,
+        shiftKey: true,
+      }),
+    );
+    first.dispatchEvent(new Event("blur"));
+    assert.isFalse(controller.isHeld());
+    assert.equal(releases, 2);
+    controller.cleanup();
+    second.dispatchEvent(new KeyboardEvent("keyup", { code: "KeyB" }));
+    assert.equal(releases, 2);
+  });
+
   it("opens the bound menu and refreshes the actual mode after a shortcut", async function () {
     const globals = globalThis as typeof globalThis & { addon?: unknown };
     const previousAddon = globals.addon;
@@ -163,6 +213,35 @@ describe("reader mode shortcut", function () {
       assert.equal(modes[2].getAttribute("aria-pressed"), "true");
       assert.equal(modes[0].getAttribute("aria-pressed"), "false");
       assert.isFalse(binding!.menu.hidden);
+      document.body.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      assert.isFalse(binding!.menu.hidden);
+      readerWindow.dispatchEvent(
+        new KeyboardEvent("keyup", {
+          code: "AltLeft",
+          shiftKey: true,
+        }),
+      );
+      readerWindow.dispatchEvent(
+        new KeyboardEvent("keyup", { code: "ShiftLeft" }),
+      );
+      assert.isFalse(binding!.menu.hidden);
+      readerWindow.dispatchEvent(new KeyboardEvent("keyup", { code: "KeyB" }));
+      assert.isTrue(binding!.menu.hidden);
+      assert.isFalse(store.isOpen(reader._instanceID));
+      setReaderOverlayModeForReader(reader, "hover");
+      readerWindow.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          code: "KeyB",
+          altKey: true,
+          shiftKey: true,
+        }),
+      );
+      readerWindow.dispatchEvent(new KeyboardEvent("keyup", { code: "KeyB" }));
+      assert.isTrue(binding!.menu.hidden);
+      for (let i = 0; i < 6; i++) {
+        await Promise.resolve();
+      }
+      assert.isTrue(binding!.menu.hidden);
       destroyButtonBinding(reader._instanceID);
       readerWindow.dispatchEvent(
         new KeyboardEvent("keydown", {

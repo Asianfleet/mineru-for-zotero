@@ -136,6 +136,11 @@ export function ensureButtonBinding(
         sync();
       }
     },
+    /** 全部松键或阅读器失焦时，自动收起快捷键展开的菜单。 */
+    () => {
+      menuState.close();
+      sync();
+    },
   );
   /** 让新加载的 PDF 内层 iframe 也能接收快捷键。 */
   const syncShortcutWindows = () =>
@@ -155,20 +160,28 @@ export function ensureButtonBinding(
     }
     event.preventDefault();
     event.stopPropagation();
-    panelStore.toggle(reader._instanceID);
+    if (!shortcutController.isHeld()) {
+      panelStore.toggle(reader._instanceID);
+    }
     updateMenu(reader, doc, menu, sync);
     sync();
   };
   /** 当 reader document 收到外部 pointer event 时关闭菜单。 */
   const onDocumentPointerDown = (event: Event) => {
-    if (isOutsideToolbarMenu(event, button, menu)) {
+    if (
+      !shortcutController.isHeld() &&
+      isOutsideToolbarMenu(event, button, menu)
+    ) {
       menuState.close();
       sync();
     }
   };
   /** 当 Zotero main window 收到外部 pointer event 时关闭菜单。 */
   const onMainWindowPointerDown = (event: Event) => {
-    if (isOutsideToolbarMenu(event, button, menu)) {
+    if (
+      !shortcutController.isHeld() &&
+      isOutsideToolbarMenu(event, button, menu)
+    ) {
       menuState.close();
       sync();
     }
