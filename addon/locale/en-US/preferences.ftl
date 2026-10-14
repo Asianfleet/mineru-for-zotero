@@ -1,4 +1,10 @@
 pref-title = MinerU for Zotero
+pref-reader-shortcuts-title = Reader Shortcuts
+pref-overlay-cycle-shortcut = Cycle box display mode
+pref-shortcut-input =
+    .placeholder = Not set
+    .title = Press a combination with Ctrl, Alt, or Meta
+pref-shortcut-clear = Clear
 pref-api-service-title = API Service
 pref-api-key = MinerU API Token
 pref-api-key-help = The API Token is stored only in local Zotero preferences and used to call the MinerU API.

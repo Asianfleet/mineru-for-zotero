@@ -9,6 +9,17 @@ const DEFAULT_LOCAL_API_TIMEOUT_MINUTES = 30;
 export type ParseSource = "online" | "local";
 export type ParseMode = "precise" | "lite";
 
+/** 读取 box 模式循环快捷键；空字符串表示禁用。 */
+export function getOverlayCycleShortcut(): string {
+  const value = getPref("overlayCycleShortcut");
+  return typeof value === "string" ? value : "Alt+Shift+KeyB";
+}
+
+/** 保存用户录入的模式循环快捷键。 */
+export function setOverlayCycleShortcut(value: string): void {
+  setPref("overlayCycleShortcut", value);
+}
+
 /**
  * Get preference value.
  * Wrapper of `Zotero.Prefs.get`.

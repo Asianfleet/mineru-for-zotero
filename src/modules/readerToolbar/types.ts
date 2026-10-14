@@ -48,6 +48,7 @@ export interface ReaderToolbarButtonBinding {
   menu: HTMLDivElement;
   win: Window;
   attachmentKey: string;
+  syncShortcutWindows: () => void;
   cleanup: () => void;
 }
 

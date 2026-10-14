@@ -16,6 +16,7 @@ declare namespace _ZoteroTypes {
       "apiRequireToken": boolean;
       "apiToken": string;
       "saveImages": boolean;
+      "overlayCycleShortcut": string;
     };
   }
 }

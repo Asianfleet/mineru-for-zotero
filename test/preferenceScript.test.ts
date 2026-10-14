@@ -3,6 +3,7 @@ import {
   openExternalURL,
   registerPrefsScripts,
   registerPreferenceValueSync,
+  registerReaderShortcutPreference,
 } from "../src/modules/preferenceScript";
 import {
   generateMarkdownApiToken,
@@ -14,6 +15,9 @@ import {
   getParseMode,
   getParseSource,
   getSaveImages,
+  getPref,
+  getOverlayCycleShortcut,
+  setOverlayCycleShortcut,
   setMarkdownApiEnabled,
   setMarkdownApiRequireToken,
   setMarkdownApiToken,
@@ -25,6 +29,56 @@ import {
 } from "../src/utils/prefs";
 
 describe("preferenceScript", function () {
+  it("defaults the reader mode cycle shortcut", function () {
+    assert.equal(getPref("overlayCycleShortcut"), "Alt+Shift+KeyB");
+  });
+
+  it("records and clears the shortcut immediately without capturing focus navigation", function () {
+    const document =
+      Zotero.getMainWindow().document.implementation.createHTMLDocument();
+    const input = document.createElement("input");
+    input.id = "zotero-prefpane-mineruForZotero-overlay-cycle-shortcut";
+    const clear = document.createElement("button");
+    clear.id = "mineruForZotero-clear-overlay-cycle-shortcut";
+    document.body.append(input, clear);
+    const previous = getOverlayCycleShortcut();
+    try {
+      setOverlayCycleShortcut("Alt+Shift+KeyB");
+      registerReaderShortcutPreference(document);
+      assert.equal(input.value, "Alt+Shift+B");
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { code: "KeyM", ctrlKey: true }),
+      );
+      assert.equal(getOverlayCycleShortcut(), "Ctrl+KeyM");
+      assert.equal(input.value, "Ctrl+M");
+      const tab = new KeyboardEvent("keydown", {
+        code: "Tab",
+        cancelable: true,
+      });
+      input.dispatchEvent(tab);
+      assert.isFalse(tab.defaultPrevented);
+      assert.equal(getOverlayCycleShortcut(), "Ctrl+KeyM");
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          code: "KeyB",
+          altKey: true,
+          isComposing: true,
+        }),
+      );
+      assert.equal(getOverlayCycleShortcut(), "Ctrl+KeyM");
+      clear.click();
+      assert.equal(getOverlayCycleShortcut(), "");
+      assert.equal(input.value, "");
+      input.dispatchEvent(
+        new KeyboardEvent("keydown", { code: "KeyM", ctrlKey: true }),
+      );
+      input.dispatchEvent(new KeyboardEvent("keydown", { code: "Backspace" }));
+      assert.equal(getOverlayCycleShortcut(), "");
+    } finally {
+      setOverlayCycleShortcut(previous);
+    }
+  });
+
   it("groups preferences into API service, data storage, and about sections", async function () {
     const preferences = await fetchPreferencePanelMarkup();
 

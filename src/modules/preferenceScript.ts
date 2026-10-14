@@ -17,10 +17,16 @@ import {
   setParseMode,
   setParseSource,
   setSaveImages,
+  getOverlayCycleShortcut,
+  setOverlayCycleShortcut,
   type ParseMode,
   type ParseSource,
 } from "../utils/prefs";
 import { createStorage } from "./storage";
+import {
+  formatReaderShortcut,
+  getReaderShortcutFromEvent,
+} from "./readerToolbar/shortcut";
 
 const STORAGE_ROOT = "ProfD/mineru-copy";
 
@@ -84,6 +90,7 @@ export function getMinerUStorageRoot(): string {
  * 显式同步 preferences.xhtml 控件值，避免 Zotero 重启前读取到旧偏好。
  */
 export function registerPreferenceValueSync(document: Document): void {
+  registerReaderShortcutPreference(document);
   registerTextPreferenceSync(
     document,
     `zotero-prefpane-${config.addonRef}-api-key`,
@@ -132,6 +139,53 @@ export function registerPreferenceValueSync(document: Document): void {
     getSaveImages,
     setSaveImages,
   );
+}
+
+/** 通过实际按键录入快捷键，并支持立即清除绑定。 */
+export function registerReaderShortcutPreference(document: Document): void {
+  const input = document.getElementById(
+    `zotero-prefpane-${config.addonRef}-overlay-cycle-shortcut`,
+  ) as HTMLInputElement | null;
+  if (!input) {
+    return;
+  }
+  /** 同步偏好页显示，不把可读标签写回物理键绑定。 */
+  const refresh = () => {
+    input.value = formatReaderShortcut(getOverlayCycleShortcut());
+  };
+  /** 按下组合键即保存；保留 Tab 和 Escape 的原生焦点行为。 */
+  const record = (event: KeyboardEvent) => {
+    if (event.code === "Tab" || event.code === "Escape") {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.isComposing || event.keyCode === 229 || event.repeat) {
+      return;
+    }
+    if (event.code === "Backspace" || event.code === "Delete") {
+      setOverlayCycleShortcut("");
+      refresh();
+      return;
+    }
+    const shortcut = getReaderShortcutFromEvent(event);
+    if (shortcut) {
+      setOverlayCycleShortcut(shortcut);
+      refresh();
+    }
+  };
+  input.addEventListener("keydown", record);
+  document
+    .getElementById(`${config.addonRef}-clear-overlay-cycle-shortcut`)
+    ?.addEventListener(
+      "click",
+      /** 清除当前快捷键并立即更新显示。 */
+      () => {
+        setOverlayCycleShortcut("");
+        refresh();
+      },
+    );
+  refresh();
 }
 
 export function openExternalURL(

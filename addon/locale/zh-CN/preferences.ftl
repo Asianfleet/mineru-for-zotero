@@ -1,4 +1,10 @@
 pref-title = MinerU for Zotero
+pref-reader-shortcuts-title = 阅读器快捷键
+pref-overlay-cycle-shortcut = 循环切换 box 显示模式
+pref-shortcut-input =
+    .placeholder = 未设置
+    .title = 按下包含 Ctrl、Alt 或 Meta 的组合键
+pref-shortcut-clear = 清除
 pref-api-service-title = API 服务
 pref-api-key = MinerU API Token
 pref-api-key-help = API Token 仅保存在本机 Zotero 首选项中，用于调用 MinerU API。

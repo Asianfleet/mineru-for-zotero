@@ -1,6 +1,16 @@
-import { destroyReaderOverlaysByReaderID } from "../readerOverlay";
+import { getOverlayCycleShortcut } from "../../utils/prefs";
+import {
+  applyReaderOverlayMode,
+  destroyReaderOverlaysByReaderID,
+  getReaderOverlayStateForReader,
+  getReaderOverlayWindows,
+} from "../readerOverlay";
 import { getReaderToolbarIconURI } from "./assets";
-import { readerString } from "./commands";
+import { readerString, runReaderToolbarCommand } from "./commands";
+import {
+  createReaderShortcutController,
+  getNextReaderOverlayMode,
+} from "./shortcut";
 import {
   createReaderToolbarPanel,
   setReaderToolbarIconButtonContent,
@@ -57,6 +67,7 @@ export function ensureButtonBinding(
       destroyButtonBinding(reader._instanceID);
     } else {
       updateButtonBinding(reader, existing);
+      existing.syncShortcutWindows();
       return existing;
     }
   }
@@ -88,8 +99,12 @@ export function ensureButtonBinding(
 
   const menu = createReaderToolbarPanel(doc);
   const menuState = panelStore.ensure(reader._instanceID);
+  let destroyed = false;
   /** 同步菜单可见性和 button 激活样式。 */
   const sync = () => {
+    if (destroyed) {
+      return;
+    }
     const open = menuState.isOpen();
     menu.hidden = !open;
     button.style.backgroundColor = open
@@ -100,6 +115,31 @@ export function ensureButtonBinding(
       positionMenu(button, menu);
     }
   };
+  const shortcutController = createReaderShortcutController(
+    getOverlayCycleShortcut,
+    /** 自动展开菜单，并在切换结束后显示实际 overlay 模式。 */
+    async () => {
+      menuState.open();
+      updateMenu(reader, doc, menu, sync);
+      sync();
+      const mode = getNextReaderOverlayMode(
+        getReaderOverlayStateForReader(reader)?.mode ?? "off",
+      );
+      await runReaderToolbarCommand(
+        reader,
+        `cycle-mode-${mode}`,
+        /** 复用工具栏的模式应用流程和失败提示。 */
+        () => applyReaderOverlayMode(reader, mode),
+      );
+      if (!destroyed) {
+        updateMenu(reader, doc, menu, sync);
+        sync();
+      }
+    },
+  );
+  /** 让新加载的 PDF 内层 iframe 也能接收快捷键。 */
+  const syncShortcutWindows = () =>
+    shortcutController.sync(getReaderOverlayWindows(reader));
   /** 在菜单关闭时应用悬停样式。 */
   const setHover = (hovered: boolean) => {
     if (!menuState.isOpen()) {
@@ -161,6 +201,8 @@ export function ensureButtonBinding(
 
   /** 移除此绑定对应的 DOM listener 和 toolbar 节点。 */
   const cleanup = () => {
+    destroyed = true;
+    shortcutController.cleanup();
     doc.removeEventListener("pointerdown", onDocumentPointerDown, true);
     win.document.removeEventListener(
       "pointerdown",
@@ -170,10 +212,18 @@ export function ensureButtonBinding(
     button.remove();
     menu.remove();
   };
-  const binding = { button, menu, win, attachmentKey: attachment.key, cleanup };
+  const binding = {
+    button,
+    menu,
+    win,
+    attachmentKey: attachment.key,
+    syncShortcutWindows,
+    cleanup,
+  };
   buttonBindings.set(reader._instanceID, binding);
   updateButtonBinding(reader, binding);
   sync();
+  syncShortcutWindows();
   return binding;
 }
 
